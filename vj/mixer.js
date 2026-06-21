@@ -163,6 +163,34 @@ export class Mixer {
     return L;
   }
 
+  // compile a layer from raw GLSL source (a user-opened .glsl file)
+  async loadLayerSource(index, { id, src, imageUrl }) {
+    const gl = this.gl;
+    const L = this.layers[index];
+    L.error = null;
+    try {
+      const isPhoto = /sampler2D\s+iChannel0/.test(src);
+      const prog = program(gl, VERT, HEADER + "\n" + src);
+      if (L.program) gl.deleteProgram(L.program);
+      L.program = prog;
+      L.meta = { id: id || "custom", type: isPhoto ? "photo" : "procedural", custom: true };
+      L.enabled = true;
+      L.matteTex = null; // no matte for custom shaders
+      if (imageUrl) await this._loadImage(L, imageUrl, "imgTex", "imgRes");
+    } catch (e) {
+      L.error = String(e.message || e);
+      L.enabled = false;
+      throw e;
+    }
+    return L;
+  }
+
+  // swap just the iChannel0 image of a layer (a user-opened image file)
+  async setLayerImage(index, url) {
+    await this._loadImage(this.layers[index], url, "imgTex", "imgRes");
+    return this.layers[index];
+  }
+
   _loadImage(L, url, texField = "imgTex", resField = null) {
     const gl = this.gl;
     return new Promise((resolve, reject) => {
@@ -210,11 +238,15 @@ export class Mixer {
     const set = (n, v) => { const l = u(n); if (l) gl.uniform1f(l, v); };
     set("iBass", audio.bass); set("iMid", audio.mid);
     set("iTreble", audio.treble); set("iLevel", audio.level); set("iBeat", audio.beat);
-    if (L.meta && L.meta.type === "photo" && L.imgTex) {
+    // bind iChannel0 for any shader that declares it (custom image or library photo);
+    // black fallback so a photo shader without an image yet shows black, not garbage
+    const ch = u("iChannel0");
+    if (ch) {
       gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, L.imgTex);
-      const ch = u("iChannel0"); if (ch) gl.uniform1i(ch, 0);
-      const ir = u("iImageResolution"); if (ir) gl.uniform2f(ir, L.imgRes[0], L.imgRes[1]);
+      gl.bindTexture(gl.TEXTURE_2D, L.imgTex || this.blackTex);
+      gl.uniform1i(ch, 0);
+      const ir = u("iImageResolution");
+      if (ir) gl.uniform2f(ir, L.imgTex ? L.imgRes[0] : 1, L.imgTex ? L.imgRes[1] : 1);
     }
     // foreground matte on unit 1 (black fallback => fg=0 => no effect)
     const im = u("iMatte");

@@ -77,8 +77,22 @@
     <div id="meter"><div id="meterFill"></div></div>
   </div>
 
+  <div class="layer">
+    <h2><span>CUSTOM FILES</span></h2>
+    <label>apply to</label>
+    <select id="ctarget"><option value="0">Layer 1</option><option value="1">Layer 2</option></select>
+    <div class="row">
+      <button id="openShader">📂 Shader .glsl</button>
+      <button id="openImage">🖼 Image</button>
+    </div>
+    <input type="file" id="shaderFile" accept=".glsl,.frag,.fs,.txt" hidden />
+    <input type="file" id="imageFile" accept="image/*" hidden />
+    <div class="err" id="errC"></div>
+  </div>
+
   <div class="hint">
-    <kbd>H</kbd> hide UI · <kbd>R</kbd> random both · <kbd>F</kbd> fullscreen<br>
+    <kbd>↑</kbd><kbd>↓</kbd> cycle Layer 1 (<kbd>Shift</kbd> = Layer 2) · <kbd>R</kbd> random<br>
+    <kbd>H</kbd> hide UI · <kbd>F</kbd> fullscreen<br>
     Run via a local server (e.g. <code>npx serve</code>) — file:// blocks shader fetch.
   </div>
 </div>
@@ -143,8 +157,62 @@ async function boot() {
   $("file").onchange = async (e) => { if (e.target.files[0]) { await audio.useFile(e.target.files[0]); } };
   $("play").onclick = () => audio.playPause();
 
+  // --- custom files: open a .glsl or an image and apply to the chosen layer ---
+  const target = () => +$("ctarget").value;
+  const ensureEnabled = (i) => { if (i === 1) { $("en1").checked = true; mixer.layers[1].enabled = true; } };
+  $("openShader").onclick = () => $("shaderFile").click();
+  $("shaderFile").onchange = async (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    $("errC").textContent = "";
+    try {
+      const src = await f.text();
+      const i = target(); ensureEnabled(i);
+      await mixer.loadLayerSource(i, { id: f.name, src });
+      if (mixer.layers[i].meta.type === "photo" && !mixer.layers[i].imgTex)
+        $("errC").textContent = "loaded — open an image for this photo shader";
+    } catch (err) { $("errC").textContent = "shader error — see console"; console.error(err); }
+    e.target.value = "";
+  };
+  $("openImage").onclick = () => $("imageFile").click();
+  $("imageFile").onchange = async (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    $("errC").textContent = "";
+    const i = target(); ensureEnabled(i);
+    const url = URL.createObjectURL(f);
+    try {
+      // if the target layer isn't running a photo shader, load one so the image is visible
+      if (!mixer.layers[i].meta || mixer.layers[i].meta.type !== "photo") {
+        const photo = byId($(i === 0 ? "sel0" : "sel1").value);
+        const pick = (photo && photo.type === "photo") ? photo : manifest.shaders.find((s) => s.type === "photo");
+        await mixer.loadLayer(i, pick);
+        if (i === 0) $("sel0").value = pick.id; else $("sel1").value = pick.id;
+      }
+      await mixer.setLayerImage(i, url);
+    } catch (err) { $("errC").textContent = "image error — see console"; console.error(err); }
+    e.target.value = "";
+  };
+
+  // cycle a layer's shader through its dropdown list
+  function cycleLayer(sel, layerIndex, dir) {
+    const vals = [...sel.options].map((o) => o.value);
+    if (!vals.length) return;
+    let idx = vals.indexOf(sel.value);
+    idx = (idx + dir + vals.length) % vals.length;
+    sel.value = vals[idx];
+    setLayer(layerIndex, sel.value, layerIndex === 0 ? $("err0") : $("err1"));
+  }
+
   addEventListener("keydown", (e) => {
     const k = e.key.toLowerCase();
+    if (k === "arrowup" || k === "arrowdown") {
+      const tag = (document.activeElement && document.activeElement.tagName) || "";
+      if (/INPUT|SELECT|TEXTAREA/.test(tag)) return; // don't hijack focused controls
+      e.preventDefault();
+      const li = e.shiftKey ? 1 : 0;
+      if (li === 1 && !$("en1").checked) return;
+      cycleLayer(li === 0 ? $("sel0") : $("sel1"), li, k === "arrowdown" ? 1 : -1);
+      return;
+    }
     if (k === "h") $("panel").classList.toggle("hidden");
     if (k === "f") (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen());
     if (k === "r") {
