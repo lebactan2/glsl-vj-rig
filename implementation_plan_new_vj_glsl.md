@@ -87,10 +87,10 @@ Update photo shaders to sample the matte/depth as `iChannel1`, isolate foregroun
 ## Open Questions
 
 > [!IMPORTANT]
-> 1. **Host:** Build in the browser (full control, this plan) or port shaders to Synesthesia/Resolume ISF (audio + layer mixing for free, less custom work)?
-> 2. **Audio input:** Mic, audio-file upload, or both? (Plan assumes both.)
-> 3. **Scope of Phase 2/4:** Confirm a hero set (~10–15) rather than all ~200 shaders, to keep token/effort cost bounded.
-> 4. **Phase 4 dependency:** OK to add `rembg`/depth-model Python deps for matte generation?
+> 1. **Host:** Build in the browser (full control, this plan) or port shaders to Synesthesia/Resolume ISF (audio + layer mixing for free, less custom work)? -> fully in browser
+> 2. **Audio input:** Mic, audio-file upload, or both? (Plan assumes both.) -> both
+> 3. **Scope of Phase 2/4:** Confirm a hero set (~10–15) rather than all ~200 shaders, to keep token/effort cost bounded.-> use random 5 from procedural batch, other 5 from photo derived. specify in the naming of these glsl
+> 4. **Phase 4 dependency:** OK to add `rembg`/depth-model Python deps for matte generation? -> ok
 
 ## Suggested Build Order
 

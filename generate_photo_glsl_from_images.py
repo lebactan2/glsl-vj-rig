@@ -215,8 +215,8 @@ vec2 coverUv(vec2 uv, vec2 canvas, vec2 image) {{
     float canvasAspect = canvas.x / canvas.y;
     float imageAspect = image.x / image.y;
     vec2 scale = canvasAspect > imageAspect
-        ? vec2(1.0, canvasAspect / imageAspect)
-        : vec2(imageAspect / canvasAspect, 1.0);
+        ? vec2(1.0, imageAspect / canvasAspect)
+        : vec2(canvasAspect / imageAspect, 1.0);
     return (uv - 0.5) * scale + 0.5;
 }}
 
