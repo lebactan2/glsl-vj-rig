@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shader: IMG_5346</title>
+    <style>body {{ margin: 0; overflow: hidden; background-color: #000; }} canvas {{ display: block; width: 100vw; height: 100vh; }}</style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float; uniform vec2 iResolution; uniform float iTime;
+        
+void main() {
+    vec2 uv = gl_FragCoord.xy / iResolution.xy;
+    vec2 p = uv * 2.0 - 1.0;
+    p.x *= iResolution.x / iResolution.y;
+    
+    vec3 col = vec3(0.0);
+    
+    if (p.y > 0.2) {
+        // Top: Red Banner
+        col = vec3(0.8, 0.15, 0.15);
+        
+        vec3 yellow = vec3(0.95, 0.8, 0.2);
+        float highlight = 0.0;
+        
+        // Large XIII
+        if (p.y > 0.6) {
+            float x1 = max(abs(p.x + p.y*0.5 + 0.4) - 0.05, abs(p.y - 0.8) - 0.15);
+            float x2 = max(abs(p.x - p.y*0.5 + 0.4) - 0.05, abs(p.y - 0.8) - 0.15);
+            float i1 = max(abs(p.x - 0.1) - 0.04, abs(p.y - 0.8) - 0.15);
+            float i2 = max(abs(p.x - 0.3) - 0.04, abs(p.y - 0.8) - 0.15);
+            float i3 = max(abs(p.x - 0.5) - 0.04, abs(p.y - 0.8) - 0.15);
+            
+            float numerals = min(min(x1, x2), min(min(i1, i2), i3));
+            if (numerals < 0.0) highlight = 1.0;
+        }
+        
+        // Text "DANG CONG SAN VIET NAM" abstract
+        if (p.y > 0.3 && p.y < 0.5) {
+            float letters = fract(p.x * 8.0);
+            if (letters < 0.6 && abs(p.x) < 1.2) {
+                if (fract(p.x * 24.0 + p.y*10.0) > 0.3) {
+                    highlight = 1.0;
+                }
+            }
+        }
+        
+        if (highlight > 0.0) {
+            col = yellow;
+            // Animated glint passing over the text
+            float glint = smoothstep(0.1, 0.0, abs(p.x + p.y - mod(iTime * 1.5, 4.0) + 1.0));
+            col += vec3(0.5) * glint;
+        }
+        
+    } else if (p.y > -0.25) {
+        col = vec3(0.5, 0.45, 0.4);
+        if (p.y > 0.18) col = vec3(0.6, 0.55, 0.5);
+    } else {
+        col = vec3(0.5, 0.35, 0.3);
+        vec2 floorP = vec2(p.x / (p.y - 0.1), p.y);
+        float pattern = sin(floorP.x * 20.0 + floorP.y * 30.0) * sin(floorP.x * 20.0 - floorP.y * 30.0);
+        if (pattern > 0.5) col = vec3(0.6, 0.45, 0.4);
+        if (abs(pattern) < 0.1) col = vec3(0.3, 0.25, 0.2);
+    }
+    
+    // Foreground Plants (Animated Sway)
+    float cellWidth = 0.6;
+    float potIdx = floor((p.x + cellWidth*2.5) / cellWidth);
+    
+    if (potIdx >= 0.0 && potIdx <= 4.0) {
+        vec2 pp = vec2(mod(p.x + cellWidth*2.5, cellWidth) - cellWidth*0.5, p.y);
+        
+        float potBase = -0.25;
+        float potTop = 0.0;
+        float potW = 0.1 + (pp.y) * 0.12; 
+        
+        if (pp.y > potBase && pp.y < potTop && abs(pp.x) < potW) {
+            col = vec3(0.9);
+            col *= 0.7 + 0.3 * smoothstep(0.0, potW, pp.x + 0.05);
+        }
+        
+        if (pp.y > -0.05 && pp.y < 0.4 && abs(pp.x) < 0.3) {
+            // Apply sway to the upper parts of the plant
+            float sway = sin(iTime * 1.5 + potIdx) * (pp.y + 0.05) * 0.2;
+            vec2 ppp = pp - vec2(sway, 0.0);
+            
+            float dCenter = length(ppp - vec2(0.0, 0.15));
+            float leafShape = dCenter - 0.15 - sin(atan(ppp.y-0.15, ppp.x)*10.0 + potIdx)*0.08;
+            
+            if (leafShape < 0.0) {
+                col = vec3(0.1, 0.25, 0.1);
+                col *= 0.8 + 0.2 * sin(ppp.x*50.0 + potIdx);
+            }
+            
+            for(int i=0; i<3; i++) {
+                float fi = float(i) + potIdx;
+                vec2 fPos = vec2(sin(fi*7.3)*0.15, 0.2 + cos(fi*4.1)*0.1);
+                vec2 fp = ppp - fPos;
+                
+                float a = atan(fPos.x, fPos.y);
+                mat2 rot = mat2(cos(a), -sin(a), sin(a), cos(a));
+                fp = rot * fp;
+                
+                float flower = length(vec2(fp.x, max(0.0, fp.y) + min(0.0, fp.y)*2.0)) - 0.03;
+                
+                if (flower < 0.0) {
+                    col = vec3(0.95);
+                    if (abs(fp.x) < 0.005 && fp.y > -0.02 && fp.y < 0.02) {
+                        col = vec3(0.8, 0.8, 0.2);
+                    }
+                }
+            }
+        }
+    }
+    
+    gl_FragColor = vec4(col, 1.0);
+}
+
+    </script>
+    <script>
+        function main() {
+            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
+            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            
+            if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+                console.error("Link error: " + gl.getProgramInfoLog(prog));
+                console.error("FS Log: " + gl.getShaderInfoLog(fs));
+            }
+
+            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
+            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            function render(t) {
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        } window.onload = main;
+    </script>
+</body>
+</html>

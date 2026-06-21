@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shader: Vietnamese Hầu Đồng Ceremony Float</title>
+    <style>body { margin: 0; overflow: hidden; background-color: #000; } canvas { display: block; width: 100vw; height: 100vh; }</style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float;
+        uniform vec2 iResolution;
+        uniform float iTime;
+
+        // ── Utilities ──────────────────────────────────────────────────────────
+        vec3 hsv2rgb(vec3 c) {
+            vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
+            vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+            return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+        }
+
+        float hash(vec2 p) {
+            p = fract(p * vec2(127.1, 311.7));
+            p += dot(p, p + 45.32);
+            return fract(p.x * p.y);
+        }
+        float hash1(float p) { return fract(sin(p * 127.1 + 311.7) * 43758.5453); }
+
+        float noise(vec2 p) {
+            vec2 i = floor(p), f = fract(p);
+            vec2 u = f * f * (3.0 - 2.0 * f);
+            return mix(mix(hash(i), hash(i + vec2(1,0)), u.x),
+                       mix(hash(i + vec2(0,1)), hash(i + vec2(1,1)), u.x), u.y);
+        }
+
+        float fbm(vec2 p) {
+            float v = 0.0, a = 0.5;
+            for(int i = 0; i < 5; i++) { v += a * noise(p); p *= 2.1; a *= 0.5; }
+            return v;
+        }
+
+        // ── SDFs ───────────────────────────────────────────────────────────────
+        float sdCircle(vec2 p, float r) { return length(p) - r; }
+
+        float sdBox(vec2 p, vec2 b) {
+            vec2 d = abs(p) - b;
+            return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+        }
+
+        float sdCapsule(vec2 p, vec2 a, vec2 b, float r) {
+            vec2 pa = p - a, ba = b - a;
+            float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+            return length(pa - ba * h) - r;
+        }
+
+        float sdEllipse(vec2 p, vec2 ab) {
+            float k1 = length(p / ab);
+            float k2 = length(p / (ab * ab));
+            return k1 * (k1 - 1.0) / k2;
+        }
+
+        // Smoke wisp SDF — sinusoidal curve
+        float sdSmoke(vec2 p, float phase, float t) {
+            float x = sin(p.y * 4.0 + phase + t * 0.6) * 0.018 * (1.0 + p.y * 0.5);
+            return abs(p.x - x) - 0.008;
+        }
+
+        // ── Main ───────────────────────────────────────────────────────────────
+        void main() {
+            vec2 uv   = gl_FragCoord.xy / iResolution.xy;
+            float aspect = iResolution.x / iResolution.y;
+            vec2 p    = (uv - 0.5) * vec2(aspect, 1.0);
+
+            // 4 animation speeds
+            float tUltra = iTime * 0.025;
+            float tSlow  = iTime * 0.13;
+            float tMed   = iTime * 0.55;
+            float tFast  = iTime * 2.5;
+
+            // ── Domain warp background ──────────────────────────────────────────
+            vec2 wp   = p * 2.0;
+            vec2 warp = vec2(fbm(wp + tUltra), fbm(wp + 3.7 + tUltra * 0.9));
+            vec2 wp2  = p + 0.5 * warp;
+
+            // White room background
+            float roomNoise = fbm(wp2 * 2.5 + tUltra * 0.3) * 0.03;
+            vec3 col = vec3(0.88, 0.87, 0.85) + roomNoise;
+
+            // Wall color projected from float (gold + purple spill)
+            float wallGold = exp(-abs(p.x) * 1.5) * 0.12 * (0.5 + 0.5 * sin(tSlow * 0.8));
+            float wallPurple = exp(-(p.x + 0.3) * (p.x + 0.3) * 4.0) * 0.08;
+            col += vec3(0.6, 0.5, 0.1) * wallGold;
+            col += vec3(0.35, 0.1, 0.45) * wallPurple;
+
+            // Floor line
+            float floorY = -0.38;
+            float floorMask = smoothstep(floorY + 0.01, floorY - 0.01, p.y);
+            col = mix(col, vec3(0.78, 0.76, 0.74) + roomNoise * 0.5, floorMask);
+
+            // ── Floor reflection (watery distorted float image) ─────────────────
+            if(p.y < floorY) {
+                float rf = smoothstep(floorY - 0.0, floorY - 0.28, p.y);
+                vec2 reflP = vec2(p.x, floorY + (floorY - p.y) * 0.45);
+                float ripple = noise(reflP * 12.0 + tMed * 0.5) * 0.015;
+                vec2 distRefl = reflP + vec2(ripple, ripple * 0.5);
+                float refN = fbm(distRefl * 3.0 + tUltra);
+                vec3 refCol = mix(vec3(0.55, 0.45, 0.05), vec3(0.35, 0.1, 0.5), refN);
+                col = mix(col, refCol * 0.65, rf * 0.7);
+            }
+
+            // ── Black boat hull ─────────────────────────────────────────────────
+            vec2 hullCenter = vec2(0.0, -0.15);
+            float hullW = 0.38, hullH = 0.10;
+            vec2 hullP = p - hullCenter;
+            // Curved boat shape: box with rounded bottom
+            float hull = sdBox(hullP, vec2(hullW, hullH));
+            // Narrow at ends (oval)
+            hull = max(hull, length(hullP / vec2(hullW + 0.06, hullH * 2.5)) - 1.0);
+            float hullMask = smoothstep(0.006, -0.006, hull);
+            vec3 hullCol = vec3(0.06, 0.04, 0.03);
+            // Lacquer specular highlight
+            float specU = dot(normalize(hullP), vec2(0.707, 0.707));
+            float lacquerSpec = exp(-abs(specU - sin(tSlow * 0.4) * 0.3) * 18.0) * 0.35;
+            hullCol += vec3(0.55, 0.25, 0.1) * lacquerSpec;
+            col = mix(col, hullCol, hullMask);
+            col += vec3(0.4, 0.2, 0.05) * exp(-abs(hull) * 20.0) * 0.2;
+
+            // ── Purple ribbons (hanging, with light scroll) ─────────────────────
+            for(int ri = 0; ri < 6; ri++) {
+                float fi    = float(ri);
+                float rx    = (fi / 5.0 - 0.5) * 0.72;
+                float rTop  = 0.08;
+                float rBot  = -0.15;
+                vec2 ra     = vec2(rx, rTop);
+                vec2 rb     = vec2(rx + sin(fi * 1.7 + tSlow * 0.4) * 0.02, rBot);
+                float ribbon = sdCapsule(p, ra, rb, 0.007);
+                float rMask = smoothstep(0.005, -0.005, ribbon);
+                // Scroll reflection band
+                float scrollT = fract(p.y * 3.0 - tMed * 0.5 + fi * 0.3);
+                float scrollBand = exp(-abs(scrollT - 0.5) * 14.0) * 0.6;
+                vec3 ribbonCol = vec3(0.42, 0.08, 0.58) + vec3(0.55, 0.45, 0.7) * scrollBand;
+                col = mix(col, ribbonCol, rMask);
+                col += vec3(0.55, 0.1, 0.75) * exp(-abs(ribbon) * 28.0) * 0.3;
+            }
+
+            // ── Gold foliage (left cluster + right cluster) ─────────────────────
+            for(int gi = 0; gi < 20; gi++) {
+                float fi  = float(gi);
+                float side = (fi < 10.0) ? -1.0 : 1.0;
+                float idx  = fi - (fi < 10.0 ? 0.0 : 10.0);
+                float gx   = side * (0.22 + hash1(fi * 1.3) * 0.14);
+                float gy   = -0.05 + (hash1(fi * 2.7) - 0.5) * 0.32;
+                float gr   = 0.035 + hash1(fi * 3.9) * 0.03;
+
+                vec2 gp = p - vec2(gx, gy);
+                float leafD = sdCircle(gp, gr);
+
+                // Individual shimmer timing (left vs right cluster)
+                float clusterTime = (side < 0.0) ? tMed : tMed * 1.2 + 1.5;
+                float shimPhase   = hash1(fi * 5.1) * 6.28;
+                float shimmer = 0.5 + 0.5 * sin(clusterTime * 1.8 + shimPhase);
+
+                float goldNoise = noise(gp * 20.0 + tUltra);
+                vec3 goldCol = mix(vec3(0.55, 0.42, 0.05),
+                                   vec3(0.95, 0.82, 0.15) * (0.7 + shimmer * 0.5),
+                                   goldNoise);
+                float gMask = smoothstep(0.005, -0.005, leafD);
+                col = mix(col, goldCol, gMask);
+                col += goldCol * 0.8 * exp(-abs(leafD) * 22.0) * shimmer * 0.4;
+            }
+
+            // ── Pink/purple flowers in foliage ─────────────────────────────────
+            for(int fi2 = 0; fi2 < 10; fi2++) {
+                float fi = float(fi2);
+                float side = (fi < 5.0) ? -1.0 : 1.0;
+                float fx = side * (0.20 + hash1(fi * 4.1) * 0.15);
+                float fy = -0.02 + (hash1(fi * 5.3) - 0.5) * 0.28;
+                float fr = 0.018 + hash1(fi * 6.7) * 0.012;
+                vec2 fp = p - vec2(fx, fy);
+                float fDist = sdCircle(fp, fr);
+                float fMask = smoothstep(0.004, -0.004, fDist);
+                float fHue = 0.85 + hash1(fi * 9.1) * 0.12;  // pink-purple range
+                vec3 flCol = hsv2rgb(vec3(fHue, 0.7, 1.0));
+                col = mix(col, flCol, fMask);
+                col += flCol * exp(-abs(fDist) * 35.0) * 0.45;
+            }
+
+            // ── Altar box on boat ───────────────────────────────────────────────
+            vec2 altarP = p - vec2(0.0, 0.00);
+            float altarBox = sdBox(altarP, vec2(0.18, 0.14));
+            float altarMask = smoothstep(0.006, -0.006, altarBox);
+            vec3 altarCol = vec3(0.72, 0.08, 0.35);
+            col = mix(col, altarCol, altarMask);
+
+            // ── Deity figure ───────────────────────────────────────────────────
+            vec2 deityP = p - vec2(0.0, 0.22);
+            // Face (pink circle)
+            float face = sdCircle(deityP - vec2(0.0, 0.05), 0.055);
+            float faceMask = smoothstep(0.005, -0.005, face);
+            col = mix(col, vec3(0.95, 0.78, 0.72), faceMask);
+            // Red lips
+            float lips = sdBox(deityP - vec2(0.0, -0.005), vec2(0.018, 0.006));
+            col = mix(col, vec3(0.85, 0.1, 0.12), smoothstep(0.003, -0.003, lips) * faceMask);
+            // Orange headdress
+            float headDress = sdBox(deityP - vec2(0.0, 0.125), vec2(0.06, 0.065));
+            float hdMask = smoothstep(0.006, -0.006, headDress);
+            col = mix(col, vec3(0.95, 0.55, 0.05), hdMask);
+            // Headdress glow
+            col += vec3(1.0, 0.6, 0.1) * exp(-abs(headDress) * 18.0) * 0.4;
+
+            // Body robes (colorful)
+            float body = sdBox(deityP - vec2(0.0, -0.06), vec2(0.075, 0.08));
+            float bodyMask = smoothstep(0.006, -0.006, body);
+            float robeStripe = sin(deityP.y * 40.0 + tSlow) * 0.5 + 0.5;
+            vec3 robeCol = mix(vec3(0.85, 0.1, 0.35), vec3(0.1, 0.4, 0.85), robeStripe);
+            col = mix(col, robeCol, bodyMask);
+
+            // ── Deity aura (color-cycling halo) ────────────────────────────────
+            float auraR = length(deityP) - 0.16;
+            // Cycle: red -> gold -> green -> blue -> purple
+            float auraCycle = fract(tSlow * 0.25);
+            vec3 auraCol = hsv2rgb(vec3(auraCycle, 0.85, 1.0));
+            float auraMask = exp(-abs(auraR) * 12.0) * 0.55;
+            col += auraCol * auraMask;
+
+            // ── Headdress flowers (8 small, rotating/blooming) ─────────────────
+            for(int hfi = 0; hfi < 8; hfi++) {
+                float fi = float(hfi);
+                float hfAngle = fi * 6.2832 / 8.0 + tSlow * 0.5;
+                float hfR = 0.065;
+                vec2 hfPos = deityP - vec2(0.0, 0.13) - vec2(sin(hfAngle), cos(hfAngle)) * hfR;
+                float bloomPhase = hash1(fi * 3.3) + tMed * 0.3;
+                float bloomR = 0.008 + 0.005 * sin(bloomPhase * 2.0);
+                float hfDist = sdCircle(hfPos, bloomR);
+                float hfMask = smoothstep(0.003, -0.003, hfDist);
+                vec3 hfCol = hsv2rgb(vec3(fract(fi * 0.13 + tSlow * 0.2), 0.9, 1.0));
+                col = mix(col, hfCol, hfMask);
+                col += hfCol * exp(-abs(hfDist) * 45.0) * 0.5;
+            }
+
+            // ── Incense smoke wisps (3 columns) ────────────────────────────────
+            for(int si = 0; si < 3; si++) {
+                float fi   = float(si);
+                float sx   = (fi - 1.0) * 0.08;
+                float sBot = -0.18;
+                vec2 sp    = p - vec2(sx, sBot);
+                // Only draw upward from base
+                if(sp.y > 0.0 && sp.y < 0.45) {
+                    float smokeD = sdSmoke(sp, fi * 2.1, tSlow * 0.6 + fi * 1.3);
+                    float smokeFade = smoothstep(0.38, 0.0, sp.y) * smoothstep(0.0, 0.04, sp.y);
+                    float sMask = smoothstep(0.008, -0.008, smokeD) * smokeFade;
+                    col = mix(col, vec3(0.80, 0.80, 0.80) * 0.9, sMask * 0.55);
+                    col += vec3(0.8, 0.8, 0.8) * exp(-abs(smokeD) * 25.0) * smokeFade * 0.2;
+                }
+            }
+
+            // ── Incense ember sparks (16 rising orange-gold sparks) ────────────
+            for(int ei = 0; ei < 16; ei++) {
+                float fi   = float(ei);
+                float ex0  = (hash1(fi * 1.17) - 0.5) * 0.18;
+                float ey0  = -0.22;
+                float phase = hash1(fi * 2.33) * 6.28;
+                float spd   = 0.05 + hash1(fi * 3.77) * 0.08;
+                // Looping upward drift + Brownian wobble
+                float lt   = fract(tSlow * spd + hash1(fi * 4.51));
+                float ex   = ex0 + sin(lt * 6.28 * 1.3 + phase) * 0.02
+                                 + cos(lt * 6.28 * 0.8 + phase * 1.6) * 0.015;
+                float ey   = ey0 + lt * 0.45;
+                float efade = smoothstep(0.95, 0.3, lt) * smoothstep(0.0, 0.1, lt);
+
+                vec2 ep = p - vec2(ex, ey);
+                float eDist = length(ep);
+                vec3 emCol = mix(vec3(1.0, 0.6, 0.05), vec3(1.0, 0.9, 0.3), lt);
+                col += emCol * exp(-eDist * 120.0) * efade * 2.0;
+                col += emCol * 0.4 * exp(-eDist * 45.0) * efade;
+            }
+
+            // ── Chromatic aberration (purple-shifted) ──────────────────────────
+            vec2 toCenter = uv - 0.5;
+            float caAmt = length(toCenter) * 0.014 + 0.003;
+            // Purple shift: offset r toward red-left, b toward blue-right extra
+            vec2 pR = (uv + vec2(caAmt, 0.001) - 0.5) * vec2(aspect, 1.0);
+            vec2 pB = (uv - vec2(caAmt, -0.001) - 0.5) * vec2(aspect, 1.0);
+            col.r += fbm(pR * 2.0 + warp * 0.5 + tUltra) * 0.012;
+            col.b += fbm(pB * 2.0 + warp * 0.5 + tUltra) * 0.018;  // extra blue for purple
+
+            // ── Film grain ─────────────────────────────────────────────────────
+            col += (hash(uv * 900.0 + iTime) - 0.5) * 0.03;
+
+            col = pow(clamp(col, 0.0, 1.0), vec3(0.85));
+            gl_FragColor = vec4(col, 1.0);
+        }
+    </script>
+    <script>
+        function main() {
+            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
+            if(!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) console.error(gl.getShaderInfoLog(fs));
+            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
+            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            function render(t) {
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        } window.onload = main;
+    </script>
+</body>
+</html>

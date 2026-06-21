@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shader: IMG_5762 (Manual)</title>
+    <style>body { margin: 0; overflow: hidden; background-color: #000; } canvas { display: block; width: 100vw; height: 100vh; }</style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float; uniform vec2 iResolution; uniform float iTime;
+
+        float hash(float n) { return fract(sin(n) * 43758.5453123); }
+        vec2 hash2(vec2 p) {
+            p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
+            return -1.0 + 2.0 * fract(sin(p) * 43758.5453123);
+        }
+        float noise(vec2 p) {
+            vec2 i = floor(p); vec2 f = fract(p);
+            f = f * f * (3.0 - 2.0 * f);
+            return mix(mix(dot(hash2(i + vec2(0.0, 0.0)), f - vec2(0.0, 0.0)),
+                           dot(hash2(i + vec2(1.0, 0.0)), f - vec2(1.0, 0.0)), f.x),
+                       mix(dot(hash2(i + vec2(0.0, 1.0)), f - vec2(0.0, 1.0)),
+                           dot(hash2(i + vec2(1.0, 1.0)), f - vec2(1.0, 1.0)), f.x), f.y);
+        }
+        float fbm(vec2 p) {
+            float v = 0.0, a = 0.5;
+            mat2 rot = mat2(0.8, -0.6, 0.6, 0.8);
+            for(int i=0; i<5; i++) { v += a * noise(p); p = rot * p * 2.0; a *= 0.5; }
+            return v;
+        }
+
+        mat2 rot(float a) { float s = sin(a), c = cos(a); return mat2(c, -s, s, c); }
+
+        float sdBox(vec2 p, vec2 b) {
+            vec2 d = abs(p) - b;
+            return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+        }
+        float sdCircle(vec2 p, float r) { return length(p) - r; }
+        
+        float sdSegment(vec2 p, vec2 a, vec2 b) {
+            vec2 pa = p-a, ba = b-a;
+            float h = clamp(dot(pa,ba)/dot(ba,ba), 0.0, 1.0);
+            return length(pa - ba*h);
+        }
+
+        float smin(float a, float b, float k) {
+            float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+            return mix(b, a, h) - k * h * (1.0 - h);
+        }
+
+        void main() {
+            vec2 uv = gl_FragCoord.xy / iResolution.xy;
+            vec2 p = uv * 2.0 - 1.0;
+            p.x *= iResolution.x / iResolution.y;
+
+            vec3 col = vec3(0.0);
+
+            // --- SKY ---
+            col = mix(vec3(0.5, 0.7, 0.9), vec3(0.3, 0.5, 0.8), uv.y);
+            float clouds = fbm(p * 2.0 + vec2(iTime*0.05, 0.0));
+            col = mix(col, vec3(1.0), smoothstep(0.5, 0.9, clouds) * 0.7);
+
+            // --- BACKGROUND STRUCTURES ---
+            // 1. White Building (Right)
+            float dBuilding = sdBox(p - vec2(0.8, 0.1), vec2(0.4, 0.4));
+            if (dBuilding < 0.0 && p.y > 0.0) {
+                col = vec3(0.85, 0.85, 0.85);
+                col *= 0.9 + 0.1 * noise(p * 20.0);
+                if (p.y > 0.45) col = vec3(0.6, 0.3, 0.3); // roof
+            }
+
+            // 2. Concrete Pillars & Rebar
+            for(int i=0; i<8; i++) {
+                float fi = float(i);
+                vec2 pos = vec2(-1.2 + fi * 0.25 + hash(fi)*0.1, 0.0);
+                
+                // Concrete base
+                if (sdBox(p - pos, vec2(0.03, 0.15)) < 0.0) {
+                    col = vec3(0.6);
+                    col *= 0.8 + 0.2 * noise(p * 50.0);
+                }
+                
+                // Rebar
+                if (p.x > pos.x - 0.02 && p.x < pos.x + 0.02 && p.y > 0.15 && p.y < 0.6 + hash(fi*2.0)*0.3) {
+                    if (fract((p.x - pos.x) * 60.0) < 0.3) col = vec3(0.2);
+                }
+            }
+
+            // 3. Yellow Crane (Center-Right)
+            vec2 craneP = p - vec2(0.6, 0.3);
+            if (craneP.x > -0.05 && craneP.x < 0.0) {
+                col = vec3(0.9, 0.7, 0.1);
+                if (fract(craneP.y * 30.0) < 0.2 || fract((craneP.y + craneP.x)*30.0) < 0.1) col = vec3(0.2);
+            }
+            if (craneP.y > 0.4 && craneP.y < 0.45 && craneP.x > -1.0 && craneP.x < 0.2) {
+                col = vec3(0.9, 0.7, 0.1);
+                if (fract(craneP.x * 20.0) < 0.2) col = vec3(0.2);
+            }
+
+            // 4. Dead Tree (Center)
+            vec2 treeOrig = vec2(0.4, 0.0);
+            float dTreeMain = sdSegment(p, treeOrig, treeOrig + vec2(0.1, 1.0));
+            if (dTreeMain < 0.03 - p.y*0.02) {
+                col = vec3(0.25, 0.2, 0.15); // dark trunk
+                col *= 0.8 + 0.2 * noise(p * vec2(100.0, 10.0));
+            }
+            // Branches
+            for(int i=0; i<15; i++) {
+                float fi = float(i);
+                vec2 start = treeOrig + vec2(0.05, 0.3 + hash(fi)*0.6);
+                float angle = (hash(fi*2.0) - 0.5) * 2.0;
+                vec2 end = start + vec2(cos(angle), sin(angle)) * (0.2 + hash(fi*3.0)*0.3);
+                
+                // Add noise to branch
+                vec2 pa = p - start; vec2 ba = end - start;
+                float h = clamp(dot(pa,ba)/dot(ba,ba), 0.0, 1.0);
+                float n = noise(vec2(h * 5.0, fi)) * 0.02;
+                vec2 perp = normalize(vec2(-ba.y, ba.x));
+                float dBranch = length(p - (start + ba*h + perp*n));
+                
+                if (dBranch < 0.005 * (1.0 - h)) col = vec3(0.2, 0.15, 0.1);
+            }
+
+            // --- MIDGROUND: GREEN CORRUGATED FENCE ---
+            if (p.y < 0.1 && p.y > -0.5) {
+                col = vec3(0.4, 0.65, 0.45); // Green base
+                float corr = sin(p.x * 250.0);
+                col *= 0.8 + 0.2 * corr;
+                
+                // Top edge
+                if (p.y > 0.08) col = vec3(0.5, 0.75, 0.55);
+                
+                // Dirt
+                float dirt = noise(p * vec2(5.0, 30.0));
+                col = mix(col, vec3(0.4, 0.3, 0.2), smoothstep(-0.3, -0.5, p.y) * dirt);
+            }
+
+            // --- FOREGROUND ---
+            // 1. Ground
+            if (p.y < -0.5) {
+                if (p.y > -0.65 + noise(p*5.0)*0.1) {
+                    // Concrete/Dirt block
+                    col = vec3(0.5, 0.5, 0.45);
+                    col *= 0.9 + 0.1 * noise(p * 80.0);
+                    // Cracks
+                    if (abs(fbm(p * 20.0)) < 0.02) col *= 0.6;
+                } else {
+                    // Asphalt road
+                    col = vec3(0.65, 0.65, 0.65);
+                    col *= 0.9 + 0.1 * noise(p * 150.0);
+                }
+            }
+
+            // 2. Person's Head (Hair & Ear) - Lower Left
+            vec2 headP = p - vec2(-0.8, -0.8);
+            
+            // Basic shapes
+            float headShape = sdCircle(headP - vec2(0.0, 0.2), 0.6); // Main head bulk
+            float neckShape = sdBox(headP - vec2(0.2, -0.4), vec2(0.15, 0.3));
+            float bodyShape = smin(headShape, neckShape, 0.2);
+            
+            if (bodyShape < 0.0) {
+                // Default to skin for neck/ear area
+                col = vec3(0.8, 0.6, 0.5); // tan skin
+                
+                // Draw Hair
+                // Hair mask (covers most of the head, leaving neck/ear)
+                float hairMask = sdCircle(headP - vec2(-0.1, 0.3), 0.65);
+                
+                // Exclude ear
+                float earShape = sdCircle(headP - vec2(0.15, 0.0), 0.1);
+                
+                if (hairMask < 0.0 && earShape > 0.0) {
+                    col = vec3(0.05); // Dark hair base
+                    
+                    // Hair strands texture (Anisotropic Specular)
+                    // We need a direction field for the hair. It flows from top-left curving down to bottom-right.
+                    vec2 flowDir = normalize(vec2(1.0, -1.0 + headP.x)); // rough flow
+                    
+                    // Anisotropic noise stretched along flow
+                    mat2 rotFlow = mat2(flowDir.x, -flowDir.y, flowDir.y, flowDir.x);
+                    vec2 hairUV = rotFlow * headP;
+                    
+                    // High freq noise across flow, low freq along flow
+                    float strandNoise = noise(vec2(hairUV.y * 300.0, hairUV.x * 10.0));
+                    col *= 0.8 + 0.4 * strandNoise;
+                    
+                    // Silver Highlights (Specular reflection from sun)
+                    // The sun is roughly top-center.
+                    vec3 n = normalize(vec3(headP.x + 0.1, headP.y - 0.3, 0.6)); // Sphere-like normal
+                    vec3 lightDir = normalize(vec3(0.5, 1.0, 0.5));
+                    vec3 viewDir = vec3(0.0, 0.0, 1.0);
+                    vec3 halfDir = normalize(lightDir + viewDir);
+                    
+                    // Anisotropic specular math (Kajiya-Kay roughly)
+                    vec3 tangent = normalize(vec3(flowDir.x, flowDir.y, 0.1));
+                    float dotTL = dot(tangent, lightDir);
+                    float dotTV = dot(tangent, viewDir);
+                    float sinTL = sqrt(1.0 - dotTL*dotTL);
+                    float sinTV = sqrt(1.0 - dotTV*dotTV);
+                    
+                    float anisoSpec = pow(max(0.0, dotTL*dotTV + sinTL*sinTV), 40.0);
+                    
+                    // Add the bright silvery highlight
+                    col += vec3(0.9, 0.95, 1.0) * anisoSpec * 1.5;
+                    
+                    // Add some secondary, thinner highlights
+                    float anisoSpec2 = pow(max(0.0, dotTL*dotTV + sinTL*sinTV), 150.0);
+                    col += vec3(1.0) * anisoSpec2 * 2.0;
+                }
+                
+                // Ear details
+                if (earShape < 0.0) {
+                    col = vec3(0.8, 0.55, 0.45); // slightly pinker/darker
+                    // Inner ear shadow
+                    if (sdCircle(headP - vec2(0.12, 0.0), 0.05) < 0.0) col *= 0.7;
+                }
+                
+                // Pink scrunchie at bottom left
+                if (sdCircle(headP - vec2(-0.5, -0.4), 0.1) < 0.0) {
+                    col = vec3(0.8, 0.5, 0.5);
+                    col *= 0.8 + 0.2 * noise(headP * 100.0);
+                }
+            } else if (bodyShape < 0.05) {
+                // Shadow on fence
+                col *= mix(0.6, 1.0, bodyShape/0.05);
+            }
+
+            // Global trippy overlay to match aesthetic theme
+            vec2 trippyP = p * 1.5 + vec2(sin(iTime*0.4), cos(iTime*0.5)) * 0.1;
+            col += 0.02 * vec3(
+                sin(trippyP.x * 4.0 + iTime * 2.0),
+                sin(trippyP.y * 5.0 + iTime * 2.5),
+                sin((trippyP.x - trippyP.y) * 4.0 + iTime * 3.0)
+            );
+
+            gl_FragColor = vec4(col, 1.0);
+        }
+    </script>
+    <script>
+        function main() {
+            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
+            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
+            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            function render(t) {
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        } window.onload = main;
+    </script>
+</body>
+</html>

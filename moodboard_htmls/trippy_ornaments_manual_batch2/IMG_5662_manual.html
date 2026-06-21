@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shader: IMG_5662 (Manual)</title>
+    <style>body { margin: 0; overflow: hidden; background-color: #000; } canvas { display: block; width: 100vw; height: 100vh; }</style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float; uniform vec2 iResolution; uniform float iTime;
+
+        float hash(float n) { return fract(sin(n) * 43758.5453123); }
+        float noise(vec2 p) {
+            vec2 i = floor(p); vec2 f = fract(p);
+            f = f * f * (3.0 - 2.0 * f);
+            float n = i.x + i.y * 157.0;
+            return mix(mix(hash(n + 0.0), hash(n + 1.0), f.x),
+                       mix(hash(n + 157.0), hash(n + 158.0), f.x), f.y);
+        }
+        float fbm(vec2 p) {
+            float v = 0.0, a = 0.5;
+            for(int i=0; i<5; i++) { v += a * noise(p); p *= 2.0; a *= 0.5; }
+            return v;
+        }
+
+        mat2 rot(float a) { float s = sin(a), c = cos(a); return mat2(c, -s, s, c); }
+
+        float sdBox(vec2 p, vec2 b) {
+            vec2 d = abs(p) - b;
+            return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+        }
+        
+        float sdCircle(vec2 p, float r) { return length(p) - r; }
+        
+        float sdSegment(vec2 p, vec2 a, vec2 b) {
+            vec2 pa = p-a, ba = b-a;
+            float h = clamp(dot(pa,ba)/dot(ba,ba), 0.0, 1.0);
+            return length(pa - ba*h);
+        }
+        
+        float sdTriangle(in vec2 p, in vec2 p0, in vec2 p1, in vec2 p2) {
+            vec2 e0 = p1-p0, e1 = p2-p1, e2 = p0-p2;
+            vec2 v0 = p -p0, v1 = p -p1, v2 = p -p2;
+            vec2 pq0 = v0 - e0*clamp( dot(v0,e0)/dot(e0,e0), 0.0, 1.0 );
+            vec2 pq1 = v1 - e1*clamp( dot(v1,e1)/dot(e1,e1), 0.0, 1.0 );
+            vec2 pq2 = v2 - e2*clamp( dot(v2,e2)/dot(e2,e2), 0.0, 1.0 );
+            float s = sign( e0.x*e2.y - e0.y*e2.x );
+            vec2 d = min(min(vec2(dot(pq0,pq0), s*(v0.x*e0.y-v0.y*e0.x)),
+                             vec2(dot(pq1,pq1), s*(v1.x*e1.y-v1.y*e1.x))),
+                             vec2(dot(pq2,pq2), s*(v2.x*e2.y-v2.y*e2.x)));
+            return -sqrt(d.x)*sign(d.y);
+        }
+
+        // Accordion Gate Pattern
+        float gatePattern(vec2 p) {
+            float d = 1000.0;
+            
+            // Vertical bars
+            float vertGrid = fract(p.x * 10.0);
+            if (abs(vertGrid - 0.5) < 0.1) {
+                d = min(d, abs(vertGrid - 0.5));
+            }
+            
+            // Criss-cross diagonals
+            float tileY = p.y * 10.0;
+            float tileX = p.x * 10.0;
+            
+            vec2 grid = vec2(fract(tileX), fract(tileY));
+            
+            // Diagonals crossing
+            float diag1 = abs(grid.x - grid.y);
+            float diag2 = abs(grid.x - (1.0 - grid.y));
+            
+            if (min(diag1, diag2) < 0.05) {
+                d = min(d, min(diag1, diag2));
+            }
+            
+            return d;
+        }
+
+        void main() {
+            vec2 uv = gl_FragCoord.xy / iResolution.xy;
+            vec2 p = uv * 2.0 - 1.0;
+            p.x *= iResolution.x / iResolution.y;
+
+            vec3 col = vec3(0.0);
+
+            // --- BACKGROUND (Dark interior & Ground) ---
+            if (p.y < -0.8) {
+                // Concrete ground
+                col = vec3(0.6, 0.6, 0.55);
+                col *= 0.8 + 0.2 * noise(p * 50.0);
+            } else {
+                // Dark inside
+                col = vec3(0.05, 0.05, 0.06);
+            }
+
+            // --- ACCORDION GATES ---
+            float gateOpenWidth = 0.45; // Gap in the middle
+            
+            if (abs(p.x) > gateOpenWidth) {
+                // Gate region
+                float dGate = gatePattern(p);
+                if (dGate < 0.1) {
+                    // Metal color
+                    col = vec3(0.5, 0.5, 0.45); // dull grey
+                    col *= 0.7 + 0.3 * noise(p * 20.0); // rust/dirt
+                    
+                    // 3D bevel
+                    if (dGate > 0.02) col *= 0.5;
+                    
+                    // Add rivets at intersections
+                    float tileY = p.y * 10.0;
+                    float tileX = p.x * 10.0;
+                    vec2 grid = vec2(fract(tileX), fract(tileY));
+                    if (length(grid - vec2(0.5)) < 0.15) {
+                        col = vec3(0.3, 0.3, 0.25);
+                    }
+                } else {
+                    // Shadow from gate onto ground
+                    if (p.y < -0.8) col *= 0.8;
+                }
+                
+                // Heavy locking mechanism / handle in the middle of each gate edge
+                if (abs(abs(p.x) - gateOpenWidth - 0.05) < 0.08 && abs(p.y - 0.0) < 0.15) {
+                    col = vec3(0.4, 0.4, 0.35); // solid metal box
+                    col *= 0.8 + 0.2 * noise(p * 50.0);
+                    // keyhole
+                    if (length(p - vec2(sign(p.x)*(gateOpenWidth+0.05), 0.0)) < 0.02) col = vec3(0.0);
+                }
+            } else if (abs(p.x) < gateOpenWidth + 0.05) {
+                // Ambient occlusion / shadow from gates framing the opening
+                col *= smoothstep(gateOpenWidth, gateOpenWidth - 0.2, abs(p.x));
+            }
+
+            // --- THE EFFIGY (Center Object) ---
+            if (abs(p.x) < gateOpenWidth) {
+                vec2 effP = p - vec2(0.0, -0.1);
+                
+                float dEff = 1000.0;
+                vec3 effCol = vec3(0.0);
+                
+                // 1. Red Base
+                float dBase = sdBox(effP - vec2(0.0, -0.7), vec2(0.25, 0.1));
+                if (dBase < 0.0) {
+                    dEff = dBase;
+                    effCol = vec3(0.8, 0.1, 0.1);
+                }
+                
+                // 2. Red Metallic Robe
+                // Tapered shape
+                float robeW = 0.35 - effP.y * 0.1;
+                float dRobe = sdBox(effP - vec2(0.0, -0.2), vec2(robeW, 0.4));
+                
+                if (dRobe < 0.0) {
+                    dEff = dRobe;
+                    
+                    // Shiny metallic red with embossed diamond pattern
+                    vec3 redBase = vec3(0.8, 0.0, 0.0);
+                    vec3 redLight = vec3(1.0, 0.4, 0.4);
+                    
+                    // Embossed pattern (foil texture)
+                    vec2 foilP = effP * 100.0;
+                    float foil = abs(fract(foilP.x + foilP.y) - 0.5) * abs(fract(foilP.x - foilP.y) - 0.5);
+                    
+                    // Lighting simulation
+                    vec3 n = normalize(vec3(effP.x, 0.5, 1.0)); // fake cylindrical normal
+                    vec3 l = normalize(vec3(-0.5, 0.5, 1.0));
+                    float diff = max(0.0, dot(n, l));
+                    float spec = pow(max(0.0, dot(n, normalize(l + vec3(0.0, 0.0, 1.0)))), 20.0);
+                    
+                    effCol = redBase * (0.4 + 0.6 * diff);
+                    effCol += redLight * spec;
+                    
+                    // Add foil effect to specular
+                    effCol += vec3(0.5) * smoothstep(0.0, 0.05, foil) * spec;
+                    
+                    // Central vertical stick
+                    if (abs(effP.x) < 0.015 && effP.y < 0.1 && effP.y > -0.4) {
+                        effCol = vec3(0.5, 0.6, 0.5); // greenish stick
+                    }
+                }
+                
+                // 3. White side skirts and fringes
+                if (effP.y < -0.2 && effP.y > -0.7 && abs(effP.x) > 0.15 && abs(effP.x) < 0.4) {
+                    // Slanted cut
+                    if (effP.y > -0.6 - abs(effP.x)*0.5) {
+                        dEff = -1.0;
+                        effCol = vec3(0.9, 0.9, 0.95); // white paper
+                        
+                        // Orange fringe at bottom edge
+                        float edgeDist = abs(effP.y - (-0.6 - abs(effP.x)*0.5));
+                        if (edgeDist < 0.02) {
+                            float fringes = fract(effP.x * 50.0);
+                            if (fringes < 0.5) effCol = vec3(1.0, 0.5, 0.0); // orange
+                        }
+                    }
+                }
+                
+                // 4. Intricate White Cutout Headpiece (Clouds/Flames)
+                vec2 headP = effP - vec2(0.0, 0.35);
+                float dHeadOuter = sdBox(headP, vec2(0.4, 0.25));
+                
+                if (dHeadOuter < 0.0) {
+                    // Create the intricate cutout shape using noise and distance fields
+                    float headShape = length(headP * vec2(1.0, 1.5)) - 0.25;
+                    
+                    // Add swirls using FBM
+                    float n = fbm(headP * 10.0 + iTime*0.1);
+                    headShape += (n - 0.5) * 0.3;
+                    
+                    // Mirror symmetry
+                    vec2 symP = vec2(abs(headP.x), headP.y);
+                    
+                    // Hardcoded cutouts to make it look like dragon/flame horns
+                    float cut1 = sdCircle(symP - vec2(0.2, 0.1), 0.1);
+                    float cut2 = sdCircle(symP - vec2(0.1, -0.1), 0.08);
+                    float cut3 = sdCircle(symP - vec2(0.3, -0.05), 0.12);
+                    
+                    headShape = max(headShape, -cut1);
+                    headShape = max(headShape, -cut2);
+                    headShape = max(headShape, -cut3);
+                    
+                    if (headShape < 0.0) {
+                        dEff = headShape;
+                        effCol = vec3(0.95, 0.95, 1.0); // bright white paper
+                        
+                        // Fake shading for depth
+                        if (headShape > -0.01) effCol *= 0.8;
+                    }
+                }
+                
+                // 5. Red Pointy Hat
+                if (sdTriangle(effP, vec2(-0.05, 0.6), vec2(0.05, 0.6), vec2(0.0, 0.8)) < 0.0) {
+                    dEff = -1.0;
+                    effCol = vec3(0.9, 0.1, 0.1);
+                    if (fract(effP.y * 30.0) < 0.2) effCol = vec3(0.9, 0.8, 0.2); // yellow stripes
+                }
+
+                if (dEff < 0.0) {
+                    col = effCol;
+                }
+            }
+
+            // Global trippy overlay to match aesthetic theme
+            vec2 trippyP = p * 1.5 + vec2(sin(iTime*0.4), cos(iTime*0.5)) * 0.1;
+            col += 0.02 * vec3(
+                sin(trippyP.x * 4.0 + iTime * 2.0),
+                sin(trippyP.y * 5.0 + iTime * 2.5),
+                sin((trippyP.x - trippyP.y) * 4.0 + iTime * 3.0)
+            );
+
+            gl_FragColor = vec4(col, 1.0);
+        }
+    </script>
+    <script>
+        function main() {
+            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
+            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
+            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            function render(t) {
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        } window.onload = main;
+    </script>
+</body>
+</html>

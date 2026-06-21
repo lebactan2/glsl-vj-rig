@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Codex Batch Preview</title>
+  <style>
+    :root {
+      --bg: #101114;
+      --panel: #181b20;
+      --panel2: #20242b;
+      --text: #f4f0e8;
+      --muted: #aaa39a;
+      --line: #333841;
+      --accent: #f1c15d;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text); font-family: Arial, sans-serif; display: grid; grid-template-columns: 330px 1fr; }
+    aside { border-right: 1px solid var(--line); background: var(--panel); min-height: 100vh; display: flex; flex-direction: column; }
+    header { padding: 18px; border-bottom: 1px solid var(--line); }
+    h1 { margin: 0 0 6px; font-size: 20px; letter-spacing: 0; }
+    p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.4; }
+    input { width: 100%; margin-top: 14px; padding: 10px 11px; border: 1px solid var(--line); background: #0d0f12; color: var(--text); border-radius: 6px; outline: none; }
+    .list { overflow: auto; padding: 10px; display: grid; gap: 8px; }
+    .item { width: 100%; border: 1px solid transparent; background: transparent; color: var(--text); border-radius: 7px; padding: 7px; display: grid; grid-template-columns: 58px 1fr; gap: 10px; text-align: left; cursor: pointer; align-items: center; }
+    .item:hover { background: #20242b; }
+    .item.active { border-color: rgba(241,193,93,.65); background: #252516; }
+    .item img { width: 58px; height: 44px; object-fit: cover; background: #000; border-radius: 4px; }
+    .item strong { display: block; font-size: 13px; margin-bottom: 3px; }
+    .item small { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--muted); font-size: 11px; line-height: 1.25; }
+    main { min-width: 0; display: grid; grid-template-rows: auto 1fr; min-height: 100vh; }
+    .topbar { padding: 14px 18px; border-bottom: 1px solid var(--line); background: #121418; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+    .title strong { display: block; font-size: 16px; }
+    .title span { color: var(--muted); font-size: 13px; }
+    .actions { display: flex; gap: 8px; }
+    .actions a { color: #101114; background: var(--accent); text-decoration: none; padding: 8px 10px; border-radius: 5px; font-size: 12px; font-weight: 700; }
+    .stage { min-height: 0; padding: 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .pane { min-width: 0; min-height: 0; background: #050506; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; display: grid; grid-template-rows: auto 1fr; }
+    .pane h2 { margin: 0; padding: 9px 11px; font-size: 12px; color: var(--muted); background: var(--panel2); border-bottom: 1px solid var(--line); text-transform: uppercase; letter-spacing: .04em; }
+    .pane img, .pane iframe { width: 100%; height: 100%; border: 0; object-fit: contain; background: #000; display: block; }
+    @media (max-width: 900px) {
+      body { grid-template-columns: 1fr; }
+      aside { min-height: 0; max-height: 42vh; border-right: 0; border-bottom: 1px solid var(--line); }
+      .stage { grid-template-columns: 1fr; grid-auto-rows: 52vh; }
+    }
+  </style>
+</head>
+<body>
+  <aside>
+    <header>
+      <h1>Codex Batch</h1>
+      <p>Detailed procedural GLSL interpretations with source-photo comparison.</p>
+      <input id="search" placeholder="Search image or subject">
+    </header>
+    <div class="list" id="list">
+        <button class="item active" data-name="IMG_6349">
+          <img src="../trippy_ornaments_all/assets/IMG_6349.jpg" alt="IMG_6349 original">
+          <span>
+            <strong>IMG_6349</strong>
+            <small>red scooter nose with gold tote beside a pale wall</small>
+          </span>
+        </button>
+        <button class="item" data-name="IMG_6350">
+          <img src="../trippy_ornaments_all/assets/IMG_6350.jpg" alt="IMG_6350 original">
+          <span>
+            <strong>IMG_6350</strong>
+            <small>night street food cart with white box, red lettering, worker, and bright lamps</small>
+          </span>
+        </button>
+        <button class="item" data-name="IMG_6385">
+          <img src="../trippy_ornaments_all/assets/IMG_6385.jpg" alt="IMG_6385 original">
+          <span>
+            <strong>IMG_6385</strong>
+            <small>yellow awning storefront sign with small street scene below</small>
+          </span>
+        </button>
+        <button class="item" data-name="IMG_6442">
+          <img src="../trippy_ornaments_all/assets/IMG_6442.jpg" alt="IMG_6442 original">
+          <span>
+            <strong>IMG_6442</strong>
+            <small>blue embossed square tile on cream floor</small>
+          </span>
+        </button>
+        <button class="item" data-name="IMG_6444">
+          <img src="../trippy_ornaments_all/assets/IMG_6444.jpg" alt="IMG_6444 original">
+          <span>
+            <strong>IMG_6444</strong>
+            <small>red roadside leasing banner under blue sky</small>
+          </span>
+        </button>
+        <button class="item" data-name="IMG_6469">
+          <img src="../trippy_ornaments_all/assets/IMG_6469.jpg" alt="IMG_6469 original">
+          <span>
+            <strong>IMG_6469</strong>
+            <small>black embroidered textile with pastel figures and floral border</small>
+          </span>
+        </button>
+        <button class="item" data-name="IMG_6494">
+          <img src="../trippy_ornaments_all/assets/IMG_6494.jpg" alt="IMG_6494 original">
+          <span>
+            <strong>IMG_6494</strong>
+            <small>metal wheelchair cart on tiled sidewalk beside seated man</small>
+          </span>
+        </button>
+        <button class="item" data-name="IMG_6495">
+          <img src="../trippy_ornaments_all/assets/IMG_6495.jpg" alt="IMG_6495 original">
+          <span>
+            <strong>IMG_6495</strong>
+            <small>same wheelchair cart closer with beige shutter and black pillar</small>
+          </span>
+        </button>
+        <button class="item" data-name="IMG_6496">
+          <img src="../trippy_ornaments_all/assets/IMG_6496.jpg" alt="IMG_6496 original">
+          <span>
+            <strong>IMG_6496</strong>
+            <small>green construction fence, gray mesh facade, and leafy branches</small>
+          </span>
+        </button>
+        <button class="item" data-name="IMG_6516">
+          <img src="../trippy_ornaments_all/assets/IMG_6516.jpg" alt="IMG_6516 original">
+          <span>
+            <strong>IMG_6516</strong>
+            <small>night restaurant table with green legs, blue chairs, and bowls</small>
+          </span>
+        </button>
+        <button class="item" data-name="IMG_6527">
+          <img src="../trippy_ornaments_all/assets/IMG_6527.jpg" alt="IMG_6527 original">
+          <span>
+            <strong>IMG_6527</strong>
+            <small>yellow Nasi Bebek food banner with red header and bird silhouettes</small>
+          </span>
+        </button>
+        <button class="item" data-name="IMG_6529">
+          <img src="../trippy_ornaments_all/assets/IMG_6529.jpg" alt="IMG_6529 original">
+          <span>
+            <strong>IMG_6529</strong>
+            <small>flower congratulation board with blue sign and orange blossoms</small>
+          </span>
+        </button>
+        <button class="item" data-name="IMG_6581">
+          <img src="../trippy_ornaments_all/assets/IMG_6581.jpg" alt="IMG_6581 original">
+          <span>
+            <strong>IMG_6581</strong>
+            <small>black pickup rear on city road with stickers and skyline</small>
+          </span>
+        </button>
+        <button class="item" data-name="IMG_8926">
+          <img src="../trippy_ornaments_all/assets/IMG_8926.jpg" alt="IMG_8926 original">
+          <span>
+            <strong>IMG_8926</strong>
+            <small>dense abstract painting of cream ribbons and red blue orange shapes</small>
+          </span>
+        </button>
+        <button class="item" data-name="IMG_8953">
+          <img src="../trippy_ornaments_all/assets/IMG_8953.jpg" alt="IMG_8953 original">
+          <span>
+            <strong>IMG_8953</strong>
+            <small>framed colorful Chau Tuan print above floral cloth in dark interior</small>
+          </span>
+        </button>
+        <button class="item" data-name="IMG_9015">
+          <img src="../trippy_ornaments_all/assets/IMG_9015.jpg" alt="IMG_9015 original">
+          <span>
+            <strong>IMG_9015</strong>
+            <small>brown driftwood relief mounted on pale wall under fluorescent light</small>
+          </span>
+        </button>
+        <button class="item" data-name="IMG_9017">
+          <img src="../trippy_ornaments_all/assets/IMG_9017.jpg" alt="IMG_9017 original">
+          <span>
+            <strong>IMG_9017</strong>
+            <small>aerial view of patched metal shacks and pale roofs</small>
+          </span>
+        </button>
+        <button class="item" data-name="IMG_9031">
+          <img src="../trippy_ornaments_all/assets/IMG_9031.jpg" alt="IMG_9031 original">
+          <span>
+            <strong>IMG_9031</strong>
+            <small>turquoise wall with white decorative window grille</small>
+          </span>
+        </button>
+        <button class="item" data-name="IMG_9072">
+          <img src="../trippy_ornaments_all/assets/IMG_9072.jpg" alt="IMG_9072 original">
+          <span>
+            <strong>IMG_9072</strong>
+            <small>gray stone mosaic house facade with arches and glass canopy</small>
+          </span>
+        </button>
+        <button class="item" data-name="IMG_9074">
+          <img src="../trippy_ornaments_all/assets/IMG_9074.jpg" alt="IMG_9074 original">
+          <span>
+            <strong>IMG_9074</strong>
+            <small>wall packed with blue white ceramic shards and broken cups</small>
+          </span>
+        </button>
+        <button class="item" data-name="IMG_9077">
+          <img src="../trippy_ornaments_all/assets/IMG_9077.jpg" alt="IMG_9077 original">
+          <span>
+            <strong>IMG_9077</strong>
+            <small>red rack with dark blue diamond net over white bundles</small>
+          </span>
+        </button>
+        <button class="item" data-name="IMG_9078">
+          <img src="../trippy_ornaments_all/assets/IMG_9078.jpg" alt="IMG_9078 original">
+          <span>
+            <strong>IMG_9078</strong>
+            <small>second view of red rack and blue diamond netting</small>
+          </span>
+        </button>
+    </div>
+  </aside>
+  <main>
+    <div class="topbar">
+      <div class="title"><strong id="name"></strong><span id="desc"></span></div>
+      <div class="actions"><a id="openShader" href="#">Open Shader</a><a id="openPhoto" href="#">Open Photo</a></div>
+    </div>
+    <section class="stage">
+      <article class="pane"><h2>Original Photo</h2><img id="photo" alt=""></article>
+      <article class="pane"><h2>Generated GLSL</h2><iframe id="shader" title="GLSL preview"></iframe></article>
+    </section>
+  </main>
+  <script>
+    const scenes = [
+  {
+    "name": "IMG_6349",
+    "title": "red scooter nose with gold tote beside a pale wall",
+    "shader": "IMG_6349_manual.html",
+    "photo": "../trippy_ornaments_all/assets/IMG_6349.jpg"
+  },
+  {
+    "name": "IMG_6350",
+    "title": "night street food cart with white box, red lettering, worker, and bright lamps",
+    "shader": "IMG_6350_manual.html",
+    "photo": "../trippy_ornaments_all/assets/IMG_6350.jpg"
+  },
+  {
+    "name": "IMG_6385",
+    "title": "yellow awning storefront sign with small street scene below",
+    "shader": "IMG_6385_manual.html",
+    "photo": "../trippy_ornaments_all/assets/IMG_6385.jpg"
+  },
+  {
+    "name": "IMG_6442",
+    "title": "blue embossed square tile on cream floor",
+    "shader": "IMG_6442_manual.html",
+    "photo": "../trippy_ornaments_all/assets/IMG_6442.jpg"
+  },
+  {
+    "name": "IMG_6444",
+    "title": "red roadside leasing banner under blue sky",
+    "shader": "IMG_6444_manual.html",
+    "photo": "../trippy_ornaments_all/assets/IMG_6444.jpg"
+  },
+  {
+    "name": "IMG_6469",
+    "title": "black embroidered textile with pastel figures and floral border",
+    "shader": "IMG_6469_manual.html",
+    "photo": "../trippy_ornaments_all/assets/IMG_6469.jpg"
+  },
+  {
+    "name": "IMG_6494",
+    "title": "metal wheelchair cart on tiled sidewalk beside seated man",
+    "shader": "IMG_6494_manual.html",
+    "photo": "../trippy_ornaments_all/assets/IMG_6494.jpg"
+  },
+  {
+    "name": "IMG_6495",
+    "title": "same wheelchair cart closer with beige shutter and black pillar",
+    "shader": "IMG_6495_manual.html",
+    "photo": "../trippy_ornaments_all/assets/IMG_6495.jpg"
+  },
+  {
+    "name": "IMG_6496",
+    "title": "green construction fence, gray mesh facade, and leafy branches",
+    "shader": "IMG_6496_manual.html",
+    "photo": "../trippy_ornaments_all/assets/IMG_6496.jpg"
+  },
+  {
+    "name": "IMG_6516",
+    "title": "night restaurant table with green legs, blue chairs, and bowls",
+    "shader": "IMG_6516_manual.html",
+    "photo": "../trippy_ornaments_all/assets/IMG_6516.jpg"
+  },
+  {
+    "name": "IMG_6527",
+    "title": "yellow Nasi Bebek food banner with red header and bird silhouettes",
+    "shader": "IMG_6527_manual.html",
+    "photo": "../trippy_ornaments_all/assets/IMG_6527.jpg"
+  },
+  {
+    "name": "IMG_6529",
+    "title": "flower congratulation board with blue sign and orange blossoms",
+    "shader": "IMG_6529_manual.html",
+    "photo": "../trippy_ornaments_all/assets/IMG_6529.jpg"
+  },
+  {
+    "name": "IMG_6581",
+    "title": "black pickup rear on city road with stickers and skyline",
+    "shader": "IMG_6581_manual.html",
+    "photo": "../trippy_ornaments_all/assets/IMG_6581.jpg"
+  },
+  {
+    "name": "IMG_8926",
+    "title": "dense abstract painting of cream ribbons and red blue orange shapes",
+    "shader": "IMG_8926_manual.html",
+    "photo": "../trippy_ornaments_all/assets/IMG_8926.jpg"
+  },
+  {
+    "name": "IMG_8953",
+    "title": "framed colorful Chau Tuan print above floral cloth in dark interior",
+    "shader": "IMG_8953_manual.html",
+    "photo": "../trippy_ornaments_all/assets/IMG_8953.jpg"
+  },
+  {
+    "name": "IMG_9015",
+    "title": "brown driftwood relief mounted on pale wall under fluorescent light",
+    "shader": "IMG_9015_manual.html",
+    "photo": "../trippy_ornaments_all/assets/IMG_9015.jpg"
+  },
+  {
+    "name": "IMG_9017",
+    "title": "aerial view of patched metal shacks and pale roofs",
+    "shader": "IMG_9017_manual.html",
+    "photo": "../trippy_ornaments_all/assets/IMG_9017.jpg"
+  },
+  {
+    "name": "IMG_9031",
+    "title": "turquoise wall with white decorative window grille",
+    "shader": "IMG_9031_manual.html",
+    "photo": "../trippy_ornaments_all/assets/IMG_9031.jpg"
+  },
+  {
+    "name": "IMG_9072",
+    "title": "gray stone mosaic house facade with arches and glass canopy",
+    "shader": "IMG_9072_manual.html",
+    "photo": "../trippy_ornaments_all/assets/IMG_9072.jpg"
+  },
+  {
+    "name": "IMG_9074",
+    "title": "wall packed with blue white ceramic shards and broken cups",
+    "shader": "IMG_9074_manual.html",
+    "photo": "../trippy_ornaments_all/assets/IMG_9074.jpg"
+  },
+  {
+    "name": "IMG_9077",
+    "title": "red rack with dark blue diamond net over white bundles",
+    "shader": "IMG_9077_manual.html",
+    "photo": "../trippy_ornaments_all/assets/IMG_9077.jpg"
+  },
+  {
+    "name": "IMG_9078",
+    "title": "second view of red rack and blue diamond netting",
+    "shader": "IMG_9078_manual.html",
+    "photo": "../trippy_ornaments_all/assets/IMG_9078.jpg"
+  }
+];
+    const list = document.getElementById("list");
+    const search = document.getElementById("search");
+    const nameEl = document.getElementById("name");
+    const descEl = document.getElementById("desc");
+    const photo = document.getElementById("photo");
+    const shader = document.getElementById("shader");
+    const openShader = document.getElementById("openShader");
+    const openPhoto = document.getElementById("openPhoto");
+
+    function select(scene) {
+      document.querySelectorAll(".item").forEach((item) => item.classList.toggle("active", item.dataset.name === scene.name));
+      nameEl.textContent = scene.name;
+      descEl.textContent = scene.title;
+      photo.src = scene.photo;
+      photo.alt = scene.name + " original";
+      shader.src = scene.shader;
+      openShader.href = scene.shader;
+      openPhoto.href = scene.photo;
+    }
+
+    list.addEventListener("click", (event) => {
+      const button = event.target.closest(".item");
+      if (!button) return;
+      const scene = scenes.find((item) => item.name === button.dataset.name);
+      if (scene) select(scene);
+    });
+
+    search.addEventListener("input", () => {
+      const q = search.value.toLowerCase();
+      document.querySelectorAll(".item").forEach((item) => {
+        const scene = scenes.find((entry) => entry.name === item.dataset.name);
+        item.style.display = !scene || scene.name.toLowerCase().includes(q) || scene.title.toLowerCase().includes(q) ? "grid" : "none";
+      });
+    });
+
+    select(scenes[0]);
+  </script>
+</body>
+</html>

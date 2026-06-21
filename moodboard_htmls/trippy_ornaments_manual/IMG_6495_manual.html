@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shader: IMG_6495 (Manual)</title>
+    <style>body { margin: 0; overflow: hidden; background-color: #000; } canvas { display: block; width: 100vw; height: 100vh; }</style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float; uniform vec2 iResolution; uniform float iTime;
+
+        float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+        float noise(vec2 p) {
+            vec2 i = floor(p); vec2 f = fract(p);
+            f = f * f * (3.0 - 2.0 * f);
+            return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x),
+                       mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+        }
+
+        mat2 rot(float a) { float s = sin(a), c = cos(a); return mat2(c, -s, s, c); }
+
+        float sdBox(vec2 p, vec2 b) {
+            vec2 d = abs(p) - b;
+            return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+        }
+        
+        float sdCircle(vec2 p, float r) { return length(p) - r; }
+        
+        float sdSegment(vec2 p, vec2 a, vec2 b) {
+            vec2 pa = p-a, ba = b-a;
+            float h = clamp(dot(pa,ba)/dot(ba,ba), 0.0, 1.0);
+            return length(pa - ba*h);
+        }
+
+        float smin(float a, float b, float k) {
+            float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+            return mix(b, a, h) - k * h * (1.0 - h);
+        }
+
+        void main() {
+            vec2 uv = gl_FragCoord.xy / iResolution.xy;
+            vec2 p = uv * 2.0 - 1.0;
+            p.x *= iResolution.x / iResolution.y;
+
+            vec3 col = vec3(0.0);
+
+            // --- BACKGROUND (Wall & Door) ---
+            if (p.y > 0.0) {
+                // Beige rolling metal door
+                col = vec3(0.8, 0.78, 0.72);
+                
+                // Horizontal slats
+                float slats = fract(p.y * 30.0);
+                col *= mix(0.7, 1.0, smoothstep(0.0, 0.2, slats));
+                col *= 0.9 + 0.1 * noise(p * 50.0); // dirt
+                
+                // Dark marble column (Center)
+                if (p.x > 0.0 && p.x < 0.4) {
+                    col = vec3(0.15, 0.15, 0.16); // Dark grey/black
+                    // Marble texture
+                    float mNoise = noise(p * 15.0 + noise(p * 5.0));
+                    col += vec3(0.1) * smoothstep(0.6, 0.9, mNoise); // white veins
+                    // Specular reflection
+                    col += vec3(0.1) * smoothstep(0.8, 1.0, sin(p.y*5.0 - p.x*10.0));
+                }
+            }
+
+            // --- FOREGROUND (Sidewalk & Step) ---
+            if (p.y <= 0.0) {
+                // Base grey
+                col = vec3(0.6, 0.62, 0.65);
+                
+                // Step / Curb (Upper part of floor)
+                if (p.y > -0.2) {
+                    col = vec3(0.3, 0.3, 0.32); // Darker marble step
+                    col *= 0.8 + 0.2 * noise(p * 40.0);
+                    // Edge highlight
+                    if (abs(p.y - -0.15) < 0.01 || abs(p.y - -0.05) < 0.01) col = vec3(0.5);
+                } else {
+                    // Paving stones (Grid)
+                    vec2 projP = p;
+                    projP.y += 0.2; // shift perspective center
+                    vec2 gridP = vec2(projP.x / abs(projP.y - 0.2), 1.0 / abs(projP.y - 0.2));
+                    gridP *= 0.5;
+                    
+                    float lineX = smoothstep(0.9, 1.0, sin(gridP.x * 20.0));
+                    float lineY = smoothstep(0.9, 1.0, sin(gridP.y * 20.0));
+                    
+                    col *= 0.9 + 0.1 * noise(p * 100.0); // stone texture
+                    col = mix(col, vec3(0.4), max(lineX, lineY) * 0.5); // grout lines
+                }
+            }
+
+            // --- THE COBBLER (Right) ---
+            vec2 manP = p - vec2(0.8, -0.1);
+            float dMan = 1000.0;
+            vec3 manCol = vec3(0.0);
+            
+            // Pants (Grey)
+            float dPants = smin(sdBox(manP - vec2(0.0, -0.3), vec2(0.1, 0.2)), 
+                                sdBox(manP - vec2(0.15, -0.35), vec2(0.08, 0.15)), 0.05);
+            if (dPants < 0.0) {
+                dMan = dPants;
+                manCol = vec3(0.4, 0.42, 0.45);
+                manCol *= 0.8 + 0.2 * noise(manP * 30.0);
+            }
+            
+            // Shirt (Dark Blue)
+            float dShirt = sdBox(manP, vec2(0.15, 0.2));
+            if (dShirt < 0.0) {
+                dMan = dShirt;
+                manCol = vec3(0.15, 0.2, 0.35); // Navy blue
+                // Pattern (tiny dots/dashes)
+                if (noise(manP * 200.0) > 0.7) manCol = vec3(0.4, 0.5, 0.6);
+            }
+            
+            // Arm holding phone
+            float dArm = sdSegment(manP, vec2(0.0, 0.1), vec2(0.3, -0.1));
+            if (dArm < 0.04) {
+                dMan = dArm;
+                manCol = vec3(0.15, 0.2, 0.35); // sleeve
+            }
+            // Hand
+            if (sdCircle(manP - vec2(0.35, -0.1), 0.03) < 0.0) {
+                dMan = -1.0;
+                manCol = vec3(0.7, 0.5, 0.4); // hand
+            }
+            
+            // Head (looking forward)
+            float dHead = sdCircle(manP - vec2(0.0, 0.38), 0.1);
+            if (dHead < 0.0) {
+                dMan = dHead;
+                manCol = vec3(0.7, 0.5, 0.4); // Skin
+                // Hair
+                if (manP.y > 0.43 || (manP.x < -0.02 && manP.y > 0.35)) manCol = vec3(0.1);
+            }
+            
+            // Shoe (Black)
+            if (sdBox(manP - vec2(0.0, -0.55), vec2(0.1, 0.04)) < 0.0 || 
+                sdBox(manP - vec2(0.3, -0.5), vec2(0.08, 0.03)) < 0.0) {
+                dMan = -1.0;
+                manCol = vec3(0.15);
+            }
+
+            if (dMan < 0.0) {
+                // Drop shadow on man
+                manCol *= 0.5 + 0.5 * smoothstep(-0.6, 0.0, manP.y);
+                col = mix(col, manCol, smoothstep(0.0, -0.005, dMan));
+            }
+
+            // --- THE CART (Center) ---
+            vec2 cartP = p - vec2(-0.1, -0.1);
+            float dCart = 1000.0;
+            vec3 cartCol = vec3(0.0);
+            
+            // Drop Shadow on floor
+            if (p.y < -0.4 && sdBox(p - vec2(0.1, -0.6), vec2(0.5, 0.15)) < 0.0) {
+                col *= 0.4; // dark shadow under cart
+            }
+
+            // 1. Frame (Pipes/Tubes)
+            float dFrame = sdSegment(cartP, vec2(-0.2, 0.0), vec2(-0.2, -0.6));
+            dFrame = min(dFrame, sdSegment(cartP, vec2(0.3, 0.0), vec2(0.3, -0.6)));
+            dFrame = min(dFrame, sdSegment(cartP, vec2(-0.2, -0.4), vec2(0.3, -0.4)));
+            if (dFrame < 0.015) {
+                dCart = dFrame;
+                cartCol = vec3(0.6); // Grey metal frame
+            }
+
+            // 2. Large Wheel (Left)
+            vec2 wheelP = cartP - vec2(-0.25, -0.4);
+            float dWheel = abs(sdCircle(wheelP, 0.25)) - 0.015;
+            if (dWheel < 0.0) {
+                dCart = dWheel;
+                cartCol = vec3(0.5); // Rim
+            }
+            // Spokes
+            if (sdCircle(wheelP, 0.23) < 0.0) {
+                float angle = atan(wheelP.y, wheelP.x);
+                if (abs(sin(angle * 12.0)) > 0.95) {
+                    dCart = -1.0;
+                    cartCol = vec3(0.4);
+                }
+            }
+            
+            // 3. Small Caster Wheel (Front Right)
+            vec2 casterP = cartP - vec2(0.3, -0.65);
+            if (abs(sdCircle(casterP, 0.08)) - 0.01 < 0.0) { dCart = -1.0; cartCol = vec3(0.3); } // tire
+            if (sdCircle(casterP, 0.05) < 0.0) { dCart = -1.0; cartCol = vec3(0.6); } // hub
+            if (sdSegment(cartP, vec2(0.3, -0.55), vec2(0.3, -0.65)) < 0.01) { dCart = -1.0; cartCol = vec3(0.5); } // fork
+
+            // 4. Main Metal Box (Center)
+            float dBox = sdBox(cartP, vec2(0.3, 0.15));
+            if (dBox < 0.0) {
+                dCart = dBox;
+                cartCol = vec3(0.4, 0.42, 0.4); // Dirty grey metal
+                cartCol *= 0.8 + 0.2 * noise(cartP * 30.0);
+                
+                // White circular stickers
+                vec2 bp = cartP * 10.0;
+                float stickerNoise = noise(floor(bp));
+                if (stickerNoise > 0.6 && sdCircle(fract(bp)-0.5, 0.3) < 0.0) {
+                    cartCol = vec3(0.9, 0.9, 0.85); // dirty white sticker
+                    cartCol *= 0.8 + 0.2 * noise(p * 100.0);
+                }
+                
+                // Rust spots
+                if (noise(p * 80.0) > 0.8) cartCol = mix(cartCol, vec3(0.4, 0.2, 0.1), 0.5);
+            }
+            
+            // 5. Open Lid (Sign)
+            vec2 lidP = p - vec2(-0.25, 0.4);
+            lidP *= rot(0.2); // angled back
+            float dLid = sdBox(lidP, vec2(0.25, 0.2));
+            if (dLid < 0.0) {
+                dCart = dLid;
+                cartCol = vec3(0.85); // White sign
+                
+                // Metal frame around lid
+                if (abs(dLid) < 0.01) cartCol = vec3(0.4);
+                
+                // Text lines
+                if (abs(lidP.x) < 0.2) {
+                    if (lidP.y > 0.05 && lidP.y < 0.1) {
+                        float txt = noise(lidP * vec2(100.0, 10.0));
+                        if (txt > 0.5) cartCol = vec3(0.1);
+                    }
+                    if (lidP.y > -0.05 && lidP.y < 0.0) {
+                        float txt = noise(lidP * vec2(100.0, 10.0));
+                        if (txt > 0.5) cartCol = vec3(0.1);
+                    }
+                    if (lidP.y > -0.15 && lidP.y < -0.1) {
+                        float txt = noise(lidP * vec2(80.0, 10.0));
+                        if (txt > 0.5) cartCol = vec3(0.1);
+                    }
+                }
+            }
+
+            // 6. Hanging items (Left side)
+            // Black shoe sole
+            vec2 soleP = p - vec2(-0.4, 0.0);
+            if (sdBox(soleP, vec2(0.04, 0.15)) < 0.0) {
+                dCart = -1.0;
+                cartCol = vec3(0.15, 0.15, 0.18); // dark plastic/rubber
+                // Highlight
+                if (soleP.x > -0.01 && soleP.x < 0.01) cartCol += vec3(0.1);
+            }
+            // Straps/laces
+            if (abs(p.x - -0.45) < 0.02 && p.y < 0.15 && p.y > -0.1) {
+                dCart = -1.0;
+                cartCol = vec3(0.1, 0.2, 0.3); // blueish laces
+                cartCol *= 0.5 + 0.5 * sin(p.y * 100.0);
+            }
+
+            // 7. Motor / Tools (Below box)
+            vec2 motorP = cartP - vec2(0.1, -0.25);
+            if (sdBox(motorP, vec2(0.15, 0.06)) < 0.0) {
+                dCart = -1.0;
+                cartCol = vec3(0.3); // metal cylinder body
+                if (abs(motorP.x) > 0.12) cartCol = vec3(0.1); // end caps
+            }
+
+            // Composite Cart
+            if (dCart < 0.0) {
+                // Cart shadows
+                cartCol *= 0.5 + 0.5 * smoothstep(-0.8, 0.2, cartP.y);
+                col = mix(col, cartCol, smoothstep(0.0, -0.005, dCart));
+            }
+
+            // --- GLOBAL TRIPPY OVERLAY ---
+            vec2 trippyP = p * 1.5 + vec2(sin(iTime*0.3), cos(iTime*0.2)) * 0.1;
+            col += 0.02 * vec3(
+                sin(trippyP.x * 6.0 + iTime * 2.0),
+                sin(trippyP.y * 5.0 + iTime * 2.5),
+                sin((trippyP.x - trippyP.y) * 4.0 + iTime * 3.0)
+            );
+
+            // Vignette
+            col *= smoothstep(1.5, 0.2, length(p));
+
+            gl_FragColor = vec4(col, 1.0);
+        }
+    </script>
+    <script>
+        function main() {
+            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
+            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
+            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            function render(t) {
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        } window.onload = main;
+    </script>
+</body>
+</html>

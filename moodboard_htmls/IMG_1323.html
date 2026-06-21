@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shader: IMG_1323</title>
+    <style>body {{ margin: 0; overflow: hidden; background-color: #000; }} canvas {{ display: block; width: 100vw; height: 100vh; }}</style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float; uniform vec2 iResolution; uniform float iTime;
+        
+void main() {
+    vec2 uv = gl_FragCoord.xy / iResolution.xy;
+    vec2 p = uv * 2.0 - 1.0;
+    p.x *= iResolution.x / iResolution.y;
+
+    vec3 col = vec3(0.05, 0.05, 0.08); 
+    
+    float tilt = p.x * 0.1; 
+    vec2 tp = vec2(p.x, p.y + tilt);
+    float signBoxTilted = length(max(abs(tp) - vec2(0.7, 0.4), 0.0)) - 0.02;
+
+    if (signBoxTilted < 0.0) {
+        col = mix(vec3(0.9, 0.8, 0.1), vec3(1.0, 0.9, 0.3), tp.y + 0.4); 
+        
+        #define segment(p, a, b) length(p - a - (b - a) * clamp(dot(p - a, b - a) / dot(b - a, b - a), 0.0, 1.0))
+        
+        // Top text "A LỘC" (Red)
+        vec2 rText = tp - vec2(-0.4, 0.2);
+        float dR = 1.0;
+        // A
+        dR = min(dR, segment(rText, vec2(-0.1, -0.08), vec2(-0.05, 0.08)));
+        dR = min(dR, segment(rText, vec2(-0.05, 0.08), vec2(0.0, -0.08)));
+        dR = min(dR, segment(rText, vec2(-0.07, 0.0), vec2(-0.03, 0.0)));
+        // L
+        dR = min(dR, segment(rText, vec2(0.1, 0.08), vec2(0.1, -0.08)));
+        dR = min(dR, segment(rText, vec2(0.1, -0.08), vec2(0.18, -0.08)));
+        // O
+        dR = min(dR, abs(length(rText - vec2(0.3, 0.0)) - 0.06));
+        // C
+        float cDist = length(rText - vec2(0.5, 0.0));
+        if (cDist < 0.06 && rText.x < 0.52) dR = min(dR, abs(cDist - 0.06));
+        
+        if (dR < 0.015) {
+            col = vec3(0.9, 0.1, 0.1);
+            // Glowing core
+            if (dR < 0.005) col = vec3(1.0, 0.5, 0.5);
+        }
+
+        // Bottom text "CHÁO LÒNG" (Blue)
+        vec2 bText = tp - vec2(-0.4, -0.1);
+        float dB = 1.0;
+        // C
+        float c2Dist = length(bText - vec2(-0.1, 0.0));
+        if (c2Dist < 0.06 && bText.x < -0.08) dB = min(dB, abs(c2Dist - 0.06));
+        // H
+        dB = min(dB, segment(bText, vec2(0.05, 0.08), vec2(0.05, -0.08)));
+        dB = min(dB, segment(bText, vec2(0.15, 0.08), vec2(0.15, -0.08)));
+        dB = min(dB, segment(bText, vec2(0.05, 0.0), vec2(0.15, 0.0)));
+        // A
+        dB = min(dB, segment(bText, vec2(0.2, -0.08), vec2(0.25, 0.08)));
+        dB = min(dB, segment(bText, vec2(0.25, 0.08), vec2(0.3, -0.08)));
+        // O
+        dB = min(dB, abs(length(bText - vec2(0.45, 0.0)) - 0.06));
+
+        if (dB < 0.015) {
+            col = vec3(0.1, 0.2, 0.8);
+            if (dB < 0.005) col = vec3(0.4, 0.6, 1.0);
+        }
+        
+        // Border of sign
+        if (abs(signBoxTilted) < 0.01) col = vec3(0.8, 0.2, 0.2);
+    }
+    
+    // Background Street Elements
+    if (signBoxTilted > 0.0) {
+        // Detailed Tree Bark
+        if (p.x < -0.75) {
+            col = vec3(0.15, 0.1, 0.05);
+            float bark = sin(p.y * 60.0 + sin(p.x * 30.0)*15.0);
+            col *= 0.7 + 0.3 * bark;
+        }
+        
+        // Neon Sign Reflections in background
+        float neonGlow = exp(-length(p - vec2(0.5, -0.7)) * 2.0);
+        col += vec3(0.0, 0.5, 0.2) * neonGlow * (sin(iTime * 10.0) * 0.2 + 0.8);
+        
+        float neonGlow2 = exp(-length(p - vec2(-0.2, -0.8)) * 3.0);
+        col += vec3(0.8, 0.2, 0.2) * neonGlow2;
+    }
+
+    gl_FragColor = vec4(col, 1.0);
+}
+
+
+    </script>
+    <script>
+        function main() {
+            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
+            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            
+            if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+                console.error("Link error: " + gl.getProgramInfoLog(prog));
+                console.error("FS Log: " + gl.getShaderInfoLog(fs));
+            }
+
+            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
+            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            function render(t) {
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        } window.onload = main;
+    </script>
+</body>
+</html>

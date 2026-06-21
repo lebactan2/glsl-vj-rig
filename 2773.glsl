@@ -1,0 +1,114 @@
+void main() {
+    vec2 uv = gl_FragCoord.xy / iResolution.xy;
+    vec2 p = uv * 2.0 - 1.0;
+    p.x *= iResolution.x / iResolution.y;
+    
+    vec3 col = vec3(0.0);
+    
+    // Red tiled wall base
+    col = vec3(0.5, 0.1, 0.15); 
+    vec2 wallGrid = vec2(p.x * 5.0, p.y * 10.0);
+    if (fract(wallGrid.x) < 0.03 || fract(wallGrid.y) < 0.05) {
+        col = vec3(0.8); // Mortar
+    }
+    
+    // Animated wall texture
+    float wallNoise = fract(sin(dot(p + iTime*0.05, vec2(12.9898, 78.233))) * 43758.5453);
+    col -= wallNoise * 0.05;
+    
+    // Awning below
+    if (p.y < -0.4) {
+        // Perspective slant
+        float awX = p.x + p.y * 0.5; 
+        
+        // Striped pattern shifting
+        float stripe = fract(awX * 15.0 - iTime);
+        if (stripe < 0.3) col = vec3(0.8, 0.7, 0.2); // Yellow
+        else if (stripe < 0.6) col = vec3(0.7, 0.2, 0.2); // Red
+        else if (stripe < 0.8) col = vec3(0.3, 0.6, 0.3); // Green
+        else col = vec3(0.8, 0.7, 0.2); 
+        
+        // Shadows on awning
+        col *= clamp((p.y + 1.0) * 1.5, 0.2, 1.0);
+    }
+    
+    // Large Yellow Circular Symbol
+    vec2 center = vec2(-0.2, 0.1); // Slightly off center
+    vec2 symP = p - center;
+    float r = length(symP);
+    float angle = atan(symP.y, symP.x);
+    
+    if (r < 0.45) {
+        col = vec3(0.85, 0.7, 0.3); // Yellow painted circle
+        
+        // Center yin-yang (modified in photo, black/white semi-circle)
+        if (r < 0.1) {
+            col = vec3(0.9); // White
+            if (symP.x > 0.0) col = vec3(0.1); // Black
+        }
+        
+        // Trigram-like segments (Red bars)
+        if (r > 0.12 && r < 0.25) {
+            float seg = fract(angle / 6.28318 * 8.0);
+            if (seg > 0.1 && seg < 0.9) {
+                float ringDist = (r - 0.12) / 0.13;
+                if (fract(ringDist * 4.0) < 0.6) col = vec3(0.6, 0.2, 0.2); 
+            }
+        }
+        
+        // Outer circular nodes (Black/White/Grey)
+        if (r > 0.28 && r < 0.4) {
+            float aId = floor(angle / 6.28318 * 8.0 + 0.5);
+            vec2 dotPos = vec2(cos(aId * 6.28318 / 8.0), sin(aId * 6.28318 / 8.0)) * 0.35;
+            float d2 = length(symP - dotPos);
+            
+            // Pulsing dots
+            float dotScale = 1.0 + 0.2 * sin(iTime * 3.0 + aId);
+            
+            if (d2 < 0.05 * dotScale) {
+                if (mod(aId, 2.0) < 1.0) col = vec3(0.1);
+                else col = vec3(0.8);
+            }
+            // Connecting line
+            if (r > 0.33 && r < 0.37 && fract(angle * 4.0) < 0.1) col = vec3(0.1);
+        }
+        
+        // Weathering/Shadow on the symbol
+        if (r > 0.43) col *= 0.6;
+        col *= 0.8 + 0.2 * sin(r * 30.0 + iTime); // Pulse radiating outward
+    }
+    
+    // Rustling Leaves Overlay
+    // We create multiple layers of noise for depth
+    float leafDensity = 0.0;
+    
+    // Wind animation
+    vec2 wind = vec2(sin(iTime*0.5)*0.1, cos(iTime*0.3)*0.05);
+    vec2 lP = p + wind;
+    
+    leafDensity += sin(lP.x * 20.0 + sin(lP.y * 15.0 + iTime)) * 0.5 + 0.5;
+    leafDensity += cos(lP.x * 35.0 - lP.y * 40.0 - iTime*1.5) * 0.5 + 0.5;
+    
+    // Leaves mostly cover top and right
+    float leafMask = smoothstep(-0.2, 1.0, p.y + p.x);
+    leafDensity *= leafMask;
+    
+    if (leafDensity > 1.0) {
+        vec3 leafCol = vec3(0.2, 0.4, 0.2); // Dark green
+        if (fract(lP.x * 12.0) < 0.5) leafCol = vec3(0.3, 0.5, 0.25); // Light green
+        
+        vec2 grid = fract(lP * 15.0);
+        if (length(grid - vec2(0.5)) < 0.4) {
+            col = leafCol;
+            // Leaf highlights
+            if (grid.x > 0.5 && grid.y > 0.5) col += vec3(0.1);
+        }
+    }
+    
+    // Cast moving shadows from leaves onto wall
+    if (leafDensity > 0.5 && leafDensity <= 1.0) {
+        col *= 0.7; // Shadow
+    }
+
+    gl_FragColor = vec4(col, 1.0);
+}

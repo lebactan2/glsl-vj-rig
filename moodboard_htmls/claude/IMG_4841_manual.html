@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shader: IMG_4841</title>
+    <style>body { margin: 0; overflow: hidden; background-color: #000; } canvas { display: block; width: 100vw; height: 100vh; }</style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float; uniform vec2 iResolution; uniform float iTime;
+
+        float hash(vec2 p) {
+            p = fract(p * vec2(127.1, 311.7));
+            p += dot(p, p + 17.5);
+            return fract(p.x * p.y);
+        }
+        float hash1(float n) { return fract(sin(n) * 43758.5453); }
+
+        float noise(vec2 p) {
+            vec2 i = floor(p); vec2 f = fract(p);
+            vec2 u = f * f * (3.0 - 2.0 * f);
+            return mix(mix(hash(i), hash(i+vec2(1,0)), u.x),
+                       mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), u.x), u.y);
+        }
+
+        float fbm(vec2 p) {
+            float v = 0.0; float a = 0.5;
+            for (int i = 0; i < 5; i++) { v += a * noise(p); p = p * 2.1 + vec2(1.7, 9.2); a *= 0.5; }
+            return v;
+        }
+
+        vec2 domainWarp(vec2 p, float t) {
+            float s = 0.6;
+            return p + s * vec2(fbm(p + t*0.12), fbm(p + vec2(3.7, 1.9) + t*0.1));
+        }
+
+        vec3 hsv2rgb(vec3 c) {
+            vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
+            vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+            return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+        }
+
+        float sdBox(vec2 p, vec2 b) {
+            vec2 d = abs(p) - b;
+            return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+        }
+        float sdCircle(vec2 p, float r) { return length(p) - r; }
+        float sdSegment(vec2 p, vec2 a, vec2 b) {
+            vec2 pa = p-a, ba = b-a;
+            float h = clamp(dot(pa,ba)/dot(ba,ba), 0.0, 1.0);
+            return length(pa - ba*h);
+        }
+
+        float marblePattern(vec2 p) {
+            float n = fbm(p * 3.0);
+            return sin(p.x * 8.0 + n * 4.0) * 0.5 + 0.5;
+        }
+
+        // Steam puff with lifetime cycling
+        float steamPuff(vec2 uv, float xCenter, float baseY, float t, float phase) {
+            float age = fract(t * 0.5 + phase);
+            float yOffset = age * 0.35;
+            float fade = smoothstep(0.0, 0.12, age) * smoothstep(1.0, 0.5, age);
+            // Billowing horizontally
+            float xWave = xCenter + sin(uv.y*18.0 + t*2.2 + phase*3.0)*0.018*age
+                        + cos(uv.y*10.0 + t*1.5 + phase*2.0)*0.012*age;
+            // Grow wider as it rises
+            float spread = 0.004 + age * 0.012;
+            float dist = length(uv - vec2(xWave, baseY + yOffset));
+            float puff = exp(-dist*dist / (spread*spread)) * fade * 0.7;
+            return puff;
+        }
+
+        // Horizontal bar for text
+        float textBar(vec2 uv, float x, float y, float w, float h) {
+            return 1.0 - smoothstep(0.0, 0.003, sdBox(uv - vec2(x, y), vec2(w, h)));
+        }
+
+        void main() {
+            vec2 uv = gl_FragCoord.xy / iResolution.xy;
+            vec2 p = uv * 2.0 - 1.0;
+            p.x *= iResolution.x / iResolution.y;
+            float t = iTime;
+
+            // Day-night cycle: period ~20s
+            float dayPhase = sin(t * 0.314) * 0.5 + 0.5; // 0=night, 1=day
+            float dayBrightness = 0.65 + dayPhase * 0.35;
+
+            // Chromatic aberration
+            vec2 caOff = (uv - 0.5) * 0.004;
+            vec2 uvR = uv + caOff;
+            vec2 uvBl = uv - caOff;
+
+            float breath = sin(t * 0.45) * 0.5 + 0.5;
+
+            // --- IRIDESCENT MARBLE COLUMNS ---
+            float colWidth = 0.18;
+            float inLeft = step(uv.x, colWidth);
+            float inRight = step(1.0 - colWidth, uv.x);
+            float inColumn = max(inLeft, inRight);
+
+            float marble = marblePattern(uv);
+            // Iridescent sheen wave scrolling along marble height
+            float sheenWave = sin(uv.y * 6.0 - t * 0.3) * 0.5 + 0.5;
+            vec3 sheenCol = hsv2rgb(vec3(sheenWave * 0.2 + 0.08, 0.25, 0.15));
+            vec3 marbleCol = vec3(0.45, 0.42, 0.40) + marble * 0.08;
+            marbleCol += fbm(uv * 5.0 + 0.5) * 0.06;
+            marbleCol += sheenCol;
+            marbleCol *= dayBrightness;
+
+            // Shadow lines on columns
+            float colShadow = sin(uv.x * 60.0) * 0.02;
+            marbleCol += colShadow;
+
+            // --- SIGN AREA ---
+            float signTop = 0.88;
+            float signBot = 0.78;
+            float inSign = step(signBot, uv.y) * step(uv.y, signTop)
+                         * step(colWidth, uv.x) * step(uv.x, 1.0 - colWidth);
+
+            // Sign flicker: HF sin noise, fast flicker every ~8s for 0.1s
+            float flickBase = sin(t * 0.8) * 0.5 + 0.5; // ~8s period
+            float flickTrigger = step(0.95, flickBase);
+            float flickNoise = fract(sin(t*87.3 + 0.3)*4000.0);
+            float signFlicker = mix(1.0, mix(0.4, 1.0, step(0.4, flickNoise)), flickTrigger);
+            float signGlow = (0.85 + 0.12*sin(t*1.4)) * signFlicker;
+            vec3 signBg = vec3(signGlow);
+
+            // PHO MINH text - 8 char groups
+            float signMask = 0.0;
+            vec2 signUV = vec2((uv.x - colWidth) / (1.0 - 2.0*colWidth),
+                               (uv.y - signBot) / (signTop - signBot));
+            float charW = 0.048; float charH = 0.22; float charGap = 0.115; float textStart = 0.1;
+            for (int ci = 0; ci < 8; ci++) {
+                float cx = textStart + float(ci) * charGap;
+                float cy = 0.5;
+                signMask = max(signMask, textBar(signUV, cx, cy+0.14, charW, 0.045));
+                signMask = max(signMask, textBar(signUV, cx, cy, charW, 0.045));
+                signMask = max(signMask, textBar(signUV, cx, cy-0.14, charW, 0.045));
+                signMask = max(signMask, textBar(signUV, cx-charW+0.01, cy, 0.01, charH*0.5));
+                if (ci == 0 || ci == 1 || ci == 4 || ci == 5) {
+                    signMask = max(signMask, textBar(signUV, cx+charW-0.01, cy, 0.01, charH*0.5));
+                }
+            }
+            float spaceGap = step(0.42, signUV.x)*step(signUV.x, 0.52);
+            signMask *= (1.0 - spaceGap);
+            vec3 textCol = vec3(0.05, 0.04, 0.04);
+            vec3 signColor = mix(signBg, textCol, signMask);
+            signColor *= dayBrightness;
+
+            // Sign neon buzz glow on text
+            float textGlowAmt = signMask * signFlicker * 0.4;
+            signColor += vec3(0.98, 0.85, 0.6) * textGlowAmt;
+
+            // --- INTERIOR PORTAL ---
+            float portalLeft = colWidth + 0.02;
+            float portalRight = 1.0 - colWidth - 0.02;
+            float portalTop = signBot;
+            float inPortal = step(portalLeft, uv.x)*step(uv.x, portalRight)
+                           * step(0.0, uv.y)*step(uv.y, portalTop);
+
+            // Interior: mint-green, breathing + warm shift every 3s
+            float warmCycle = sin(t * 1.047) * 0.5 + 0.5; // ~3s period (2pi/6 ~ 1s period, so 2pi/2.094 ~ 3s)
+            float interiorPulse = 0.88 + 0.12*sin(t*0.6);
+            float warmShift = warmCycle * 0.06;
+            vec3 interiorWall = vec3(0.72 + warmShift, 0.88 - warmShift*0.3, 0.78 - warmShift*0.5);
+            interiorWall *= interiorPulse * dayBrightness;
+
+            // Tile floor
+            vec2 tileUV = uv * vec2(12.0, 8.0);
+            float tileX = mod(tileUV.x, 1.0); float tileY = mod(tileUV.y, 1.0);
+            float tileGrid = max(1.0 - smoothstep(0.0, 0.08, tileX) + smoothstep(0.92, 1.0, tileX),
+                                 1.0 - smoothstep(0.0, 0.08, tileY) + smoothstep(0.92, 1.0, tileY));
+            vec3 tileColr = mix(vec3(0.95, 0.94, 0.92), vec3(0.82, 0.80, 0.78), tileGrid*0.3);
+            float floorLine = step(uv.y, 0.28);
+            vec3 interior = mix(interiorWall, tileColr, floorLine*0.8);
+
+            // --- MULTIPLE DINER SILHOUETTES (animated eating motion / rocking) ---
+            float dinerMask = 0.0;
+            // 5 seated diners
+            for (int di = 0; di < 5; di++) {
+                float df = float(di);
+                float dxBase = 0.28 + df * 0.12;
+                float dyBase = 0.28 + hash1(df*1.3)*0.04;
+                // Slight rocking animation (eating motion)
+                float rock = sin(t*(0.8+df*0.15) + df*1.7) * 0.006;
+                float dw = 0.038; float dh = 0.06;
+                // Body
+                float bodyDist = sdBox(uv - vec2(dxBase, dyBase + rock), vec2(dw, dh));
+                dinerMask = max(dinerMask, 1.0 - smoothstep(0.0, 0.01, bodyDist));
+                // Head
+                float headDist = sdCircle(uv - vec2(dxBase + rock*0.3, dyBase + dh + 0.02), 0.018);
+                dinerMask = max(dinerMask, 1.0 - smoothstep(0.0, 0.01, headDist));
+            }
+            // Table surfaces
+            dinerMask = max(dinerMask, 1.0 - smoothstep(0.0, 0.01, sdBox(uv - vec2(0.34, 0.22), vec2(0.065, 0.012))));
+            dinerMask = max(dinerMask, 1.0 - smoothstep(0.0, 0.01, sdBox(uv - vec2(0.58, 0.21), vec2(0.065, 0.012))));
+            // Food bowls on tables (small white circles)
+            dinerMask = max(dinerMask, 1.0 - smoothstep(0.0, 0.008, sdCircle(uv - vec2(0.32, 0.235), 0.015)));
+            dinerMask = max(dinerMask, 1.0 - smoothstep(0.0, 0.008, sdCircle(uv - vec2(0.56, 0.225), 0.015)));
+
+            // Walking server figure (1-2 walking)
+            float walker = 0.0;
+            float walkX = 0.72 + sin(t*0.6)*0.06;
+            walker = max(walker, 1.0 - smoothstep(0.0, 0.012, sdBox(uv - vec2(walkX, 0.4), vec2(0.016, 0.07))));
+            walker = max(walker, 1.0 - smoothstep(0.0, 0.012, sdCircle(uv - vec2(walkX, 0.5), 0.02)));
+            // Leg animation
+            float legSwing = sin(t*2.2)*0.02;
+            walker = max(walker, 1.0 - smoothstep(0.0, 0.008, sdSegment(uv, vec2(walkX, 0.34), vec2(walkX+legSwing, 0.26))));
+            walker = max(walker, 1.0 - smoothstep(0.0, 0.008, sdSegment(uv, vec2(walkX, 0.34), vec2(walkX-legSwing, 0.26))));
+            dinerMask = max(dinerMask, walker);
+
+            vec3 interiorFinal = mix(interior, vec3(0.08, 0.07, 0.06), dinerMask);
+
+            // --- 16 STEAM PUFFS (from bowl positions) ---
+            float steam = 0.0;
+            for (int si = 0; si < 16; si++) {
+                float sf = float(si);
+                float sxBase = 0.26 + sf * 0.033;
+                float syBase = 0.24 + hash1(sf*1.5)*0.06;
+                float phase = hash1(sf*2.9);
+                steam += steamPuff(uv, sxBase, syBase, t, phase);
+            }
+            steam = clamp(steam, 0.0, 1.0);
+            interiorFinal += vec3(0.95, 0.98, 0.96) * steam * 0.55;
+
+            // Green cart
+            float cartMask = 1.0 - smoothstep(0.0, 0.01, sdBox(uv - vec2(portalLeft+0.05, 0.35), vec2(0.04, 0.12)));
+            interiorFinal = mix(interiorFinal, vec3(0.12, 0.28, 0.18), cartMask*inPortal);
+
+            // --- DOMAIN-WARPED BACKGROUND for marble (breathing warmth) ---
+            vec2 bgWarp = domainWarp(uv * 1.5, t * 0.05);
+            vec3 bgTint = mix(vec3(0.02, 0.025, 0.02), vec3(0.028, 0.02, 0.015), breath);
+            bgTint += fbm(bgWarp * 2.0) * 0.015;
+
+            // Assemble scene
+            vec3 col = marbleCol + bgTint * (1.0 - inColumn);
+            col = mix(col, signColor, inSign);
+            col = mix(col, interiorFinal, inPortal);
+
+            // Portal edge highlight
+            float portalEdge = 1.0 - smoothstep(0.0, 0.012, min(
+                min(abs(uv.x - portalLeft), abs(uv.x - portalRight)),
+                abs(uv.y - portalTop)));
+            col += vec3(0.85, 0.90, 0.85) * portalEdge * inPortal * 0.4;
+
+            // Sign glow spill
+            float signSpill = exp(-(uv.y - signBot)*8.0) * step(signBot-0.1, uv.y) * step(uv.y, signBot);
+            col += vec3(0.9, 0.88, 0.85) * signSpill * 0.35 * signFlicker;
+
+            // --- PARTICLE SYSTEM: 18 dust motes / steam particles ---
+            for (int pi = 0; pi < 18; pi++) {
+                float pf = float(pi);
+                float px = fract(hash1(pf*1.3) + t*0.02*(hash1(pf*2.1)-0.4));
+                float py = fract(0.3 + hash1(pf*2.7) + t*0.025*(hash1(pf*3.4)+0.2));
+                float pb = 0.3 + 0.7*sin(t*(0.6+pf*0.08) + pf*1.2);
+                float pdist = length(uv - vec2(px, py));
+                col += vec3(0.9, 0.95, 0.92) * exp(-pdist*320.0) * pb * 0.06 * inPortal;
+            }
+
+            // Warm vignette amber at bottom, cool at top
+            vec2 vigUV = uv - 0.5;
+            float vigR = 1.0 - smoothstep(0.35, 1.1, length(vigUV) * 1.5);
+            vec3 vigTintBot = vec3(0.1, 0.04, 0.0) * (1.0 - uv.y);
+            vec3 vigTintTop = vec3(0.0, 0.02, 0.06) * uv.y;
+            col += vigTintBot * 0.3 * (1.0 - vigR);
+            col += vigTintTop * 0.2 * (1.0 - vigR);
+            col *= 0.85 + 0.15 * vigR;
+
+            // Chromatic aberration
+            float edgeDist = length(uv - 0.5);
+            float caStr = smoothstep(0.3, 0.8, edgeDist);
+            col.r += noise(uvR * 15.0) * 0.015 * caStr;
+            col.b += noise(uvBl * 15.0) * 0.015 * caStr;
+
+            // Film grain
+            float grain = noise(uv * 800.0 + t * 1.7) * 0.025;
+            col += grain - 0.0125;
+
+            col = pow(clamp(col, 0.0, 1.0), vec3(0.85));
+            gl_FragColor = vec4(col, 1.0);
+        }
+    </script>
+    <script>
+        function main() {
+            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
+            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
+            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            function render(t) {
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        } window.onload = main;
+    </script>
+</body>
+</html>

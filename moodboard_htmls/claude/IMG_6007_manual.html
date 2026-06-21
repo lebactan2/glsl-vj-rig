@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shader: IMG_6007 Nha Hang 241</title>
+    <style>body { margin: 0; overflow: hidden; background-color: #000; } canvas { display: block; width: 100vw; height: 100vh; }</style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float;
+        uniform vec2 iResolution;
+        uniform float iTime;
+
+        // TIMESCALES:
+        // t * 0.01  ultra-slow sky darkening
+        // t * 0.08  medium building rain
+        // t * 0.5   neon pulse envelope
+        // t * 8.0   fast neon buzz
+
+        // =================== UTILITIES ===================
+        float hash(vec2 p) {
+            p = fract(p * vec2(127.1, 311.7));
+            p += dot(p, p + 19.19);
+            return fract(p.x * p.y);
+        }
+        float hash1(float x) { return fract(sin(x * 127.391) * 43758.5453); }
+        vec2 hash2(vec2 p) { return vec2(hash(p), hash(p + vec2(31.7, 91.3))); }
+
+        float noise(vec2 p) {
+            vec2 i = floor(p); vec2 f = fract(p);
+            vec2 u = f * f * (3.0 - 2.0 * f);
+            return mix(mix(hash(i), hash(i+vec2(1,0)), u.x),
+                       mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), u.x), u.y);
+        }
+        float fbm(vec2 p) {
+            float v = 0.0; float a = 0.5;
+            for(int i = 0; i < 6; i++) {
+                v += a * noise(p);
+                p = p * 2.3 + vec2(1.7, 9.2);
+                a *= 0.5;
+            }
+            return v;
+        }
+        vec3 hsv2rgb(vec3 c) {
+            vec3 p = abs(fract(c.xxx + vec3(1.0, 2.0/3.0, 1.0/3.0)) * 6.0 - 3.0);
+            return c.z * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), c.y);
+        }
+        vec2 warp(vec2 p, float t) {
+            return p + 0.4 * vec2(fbm(p * 2.0 + t * 0.1), fbm(p * 2.0 + 3.7 + t * 0.09));
+        }
+        float sdBox(vec2 p, vec2 b) {
+            vec2 d = abs(p) - b;
+            return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+        }
+        float sdLine(vec2 p, vec2 a, vec2 b) {
+            vec2 pa = p-a, ba = b-a;
+            return length(pa - ba * clamp(dot(pa,ba)/dot(ba,ba), 0.0, 1.0));
+        }
+        float sdCircle(vec2 p, float r) { return length(p) - r; }
+
+        // =================== NEON FLICKER (red "241") ===================
+        float neon241(float t) {
+            // Multi-frequency buzz
+            float buzz = sin(t * 8.0 * 6.2831) * 0.04
+                       + sin(t * 19.7) * 0.03
+                       + sin(t * 53.1) * 0.02;
+            float brightness = 0.92 + buzz;
+
+            // Occasional full-off blackout every ~8s for 0.3s
+            float tmod8 = mod(t, 8.3);
+            float blackout = smoothstep(7.7, 7.75, tmod8) * (1.0 - smoothstep(7.75, 8.05, tmod8));
+            brightness *= (1.0 - blackout);
+
+            // Rapid static hit every ~3s
+            float tmod3 = mod(t, 3.1);
+            float staticHit = smoothstep(2.85, 2.90, tmod3) * (1.0 - smoothstep(2.90, 3.00, tmod3));
+            brightness *= 1.0 - staticHit * 0.7;
+
+            return clamp(brightness, 0.0, 1.05);
+        }
+
+        // Sign hum micro-vibration offset
+        vec2 signHum(float t) {
+            return vec2(
+                sin(t * 72.0) * 0.0006 + sin(t * 137.0) * 0.0003,
+                sin(t * 88.0) * 0.0004
+            );
+        }
+
+        // =================== "241" NUMERAL SHAPES ===================
+        float digit241(vec2 p, float t, float aspect) {
+            float neon = neon241(t);
+            vec2 hum = signHum(t);
+            vec2 ph = p + hum;
+
+            // "2" — left
+            vec2 p2 = ph - vec2(-0.30 * aspect, 0.62);
+            float d2 = sdBox(p2, vec2(0.075 * aspect, 0.095)); // bounding
+            // Top bar
+            float t2a = sdLine(p2, vec2(-0.055*aspect, 0.075), vec2(0.055*aspect, 0.075));
+            // Mid bar
+            float t2b = sdLine(p2, vec2(-0.055*aspect, 0.0), vec2(0.055*aspect, 0.0));
+            // Bottom bar
+            float t2c = sdLine(p2, vec2(-0.055*aspect, -0.075), vec2(0.055*aspect, -0.075));
+            // Top-right strut
+            float t2d = sdLine(p2, vec2(0.055*aspect, 0.075), vec2(0.055*aspect, 0.0));
+            // Bottom-left strut
+            float t2e = sdLine(p2, vec2(-0.055*aspect, 0.0), vec2(-0.055*aspect, -0.075));
+            float glyph2 = min(min(min(t2a, t2b), min(t2c, t2d)), t2e);
+
+            // "4" — center
+            vec2 p4 = ph - vec2(0.0, 0.62);
+            float t4a = sdLine(p4, vec2(-0.055*aspect, 0.075), vec2(-0.055*aspect, 0.0));
+            float t4b = sdLine(p4, vec2(-0.055*aspect, 0.0), vec2(0.055*aspect, 0.0));
+            float t4c = sdLine(p4, vec2(0.055*aspect, 0.095), vec2(0.055*aspect, -0.095));
+            float glyph4 = min(min(t4a, t4b), t4c);
+
+            // "1" — right
+            vec2 p1 = ph - vec2(0.30 * aspect, 0.62);
+            float t1a = sdLine(p1, vec2(0.0, 0.095), vec2(0.0, -0.095));
+            float t1b = sdLine(p1, vec2(-0.03*aspect, -0.095), vec2(0.03*aspect, -0.095));
+            float glyph1 = min(t1a, t1b);
+
+            float allGlyphs = min(min(glyph2, glyph4), glyph1);
+            return allGlyphs;
+        }
+
+        // =================== LENS FLARE on "241" ===================
+        vec3 lensFlare(vec2 p, float t, float aspect) {
+            float neon = neon241(t);
+            vec3 col = vec3(0.0);
+            vec2 flareCtr = vec2(0.0, 0.62);
+
+            // Starburst spikes
+            for(int si = 0; si < 8; si++) {
+                float angle = float(si) * 3.14159 / 4.0;
+                vec2 spikeDir = vec2(cos(angle), sin(angle));
+                float spikeLen = 0.35;
+                float along = dot(p - flareCtr, spikeDir);
+                float perp  = length(p - flareCtr - spikeDir * clamp(along, 0.0, spikeLen));
+                float spikeMask = exp(-perp * 18.0) * smoothstep(spikeLen, 0.0, along) * step(0.0, along);
+                col += vec3(0.95, 0.15, 0.08) * spikeMask * neon * 0.3;
+            }
+
+            // Central glow
+            float cDist = length(p - flareCtr);
+            col += vec3(1.0, 0.3, 0.1) * exp(-cDist * 8.0) * neon * 0.25;
+
+            return col;
+        }
+
+        // =================== GREEN HOUSE ICONS ===================
+        vec3 houseIcons(vec2 p, float t, float aspect) {
+            vec3 col = vec3(0.0);
+            float ts = t * 0.05;
+
+            for(int hi = 0; hi < 2; hi++) {
+                float fhi = float(hi);
+                float hx = -0.30 * aspect + fhi * 0.60 * aspect;
+                vec2 hp = p - vec2(hx, 0.80);
+
+                // Roof triangle
+                float roofA = sdLine(hp, vec2(-0.08*aspect, 0.0), vec2(0.0, 0.09));
+                float roofB = sdLine(hp, vec2(0.0, 0.09), vec2(0.08*aspect, 0.0));
+                float roofBase = sdLine(hp, vec2(-0.08*aspect, 0.0), vec2(0.08*aspect, 0.0));
+                float roof = min(min(roofA, roofB), roofBase);
+                float roofMask = smoothstep(0.007, 0.001, roof);
+
+                // Tile color animation: slow hue shift
+                float tileHue = 0.33 + sin(ts + fhi * 1.3) * 0.04;
+                vec3 roofCol = hsv2rgb(vec3(tileHue, 0.75, 0.80));
+                col += roofCol * roofMask;
+                col += roofCol * exp(-roof * 20.0) * 0.25;
+
+                // House body box
+                float houseBox = sdBox(hp - vec2(0.0, -0.055), vec2(0.065*aspect, 0.055));
+                float houseMask = smoothstep(0.006, -0.003, houseBox);
+                vec3 houseWallCol = hsv2rgb(vec3(0.33 + sin(ts * 0.7 + fhi) * 0.03, 0.65, 0.72));
+                col += houseWallCol * houseMask;
+
+                // Chimney
+                float chimneyBox = sdBox(hp - vec2(0.03*aspect, 0.07), vec2(0.012*aspect, 0.025));
+                col += hsv2rgb(vec3(0.33, 0.5, 0.6)) * smoothstep(0.004, -0.002, chimneyBox);
+
+                // Smoke from chimney
+                for(int smi = 0; smi < 3; smi++) {
+                    float fsmi = float(smi);
+                    float sr = mod(t * 0.1 + fhi * 0.5 + fsmi * 0.33, 1.0);
+                    vec2 smokeP = hp - vec2(0.03*aspect + sin(sr * 6.28 + fhi) * 0.015, 0.10 + sr * 0.06);
+                    float smokeDist = length(smokeP) - (0.008 + sr * 0.01);
+                    col += vec3(0.65, 0.68, 0.70) * exp(-smokeDist * 25.0) * (1.0 - sr) * 0.4;
+                }
+
+                // "NHA HANG" text-like glows below each house
+                for(int nci = 0; nci < 4; nci++) {
+                    float fnci = float(nci);
+                    vec2 textP = hp - vec2(-0.045*aspect + fnci * 0.030*aspect, -0.115);
+                    float textBox = sdBox(textP, vec2(0.010*aspect, 0.020));
+                    col += vec3(0.85, 0.82, 0.78) * smoothstep(0.004, -0.002, textBox) * 0.7;
+                }
+            }
+            return col;
+        }
+
+        // =================== SIDE SHOP SIGNS ===================
+        vec3 sideShops(vec2 p, float t, float aspect) {
+            vec3 col = vec3(0.0);
+            // Left side: 3 sign strips
+            for(int li = 0; li < 3; li++) {
+                float fli = float(li);
+                vec2 signP = p - vec2(-0.82*aspect, 0.65 + fli * 0.10);
+                float signBox = sdBox(signP, vec2(0.06*aspect, 0.035));
+                float cycle = mod(t * 0.08 + fli * 1.3, 1.0);
+                vec3 sCol = hsv2rgb(vec3(cycle, 0.8, 0.9));
+                col += sCol * smoothstep(0.005, -0.003, signBox) * 0.7;
+                col += sCol * exp(-signBox * 12.0) * 0.15;
+            }
+            // Right side: 3 sign strips
+            for(int ri = 0; ri < 3; ri++) {
+                float fri = float(ri);
+                vec2 signP = p - vec2(0.82*aspect, 0.65 + fri * 0.10);
+                float signBox = sdBox(signP, vec2(0.06*aspect, 0.035));
+                float cycle = mod(t * 0.06 + fri * 1.7 + 0.5, 1.0);
+                vec3 sCol = hsv2rgb(vec3(cycle, 0.75, 0.88));
+                col += sCol * smoothstep(0.005, -0.003, signBox) * 0.7;
+                col += sCol * exp(-signBox * 12.0) * 0.15;
+            }
+            return col;
+        }
+
+        // =================== RAIN ON BUILDING ===================
+        vec3 buildingRain(vec2 p, float t, float aspect) {
+            vec3 col = vec3(0.0);
+            for(int ri = 0; ri < 14; ri++) {
+                float fri = float(ri);
+                float rx = -0.75*aspect + hash1(fri * 3.7) * 1.5 * aspect;
+                float rspd = 0.25 + hash1(fri * 5.1) * 0.15;
+                float ry = mod(p.y - t * rspd + hash1(fri * 2.3), 1.9) - 0.95;
+                float rLen = 0.035 + hash1(fri * 7.3) * 0.05;
+                float rd = sdLine(p, vec2(rx, ry), vec2(rx - 0.002, ry - rLen));
+                col += vec3(0.70, 0.72, 0.78) * exp(-rd * 48.0) * 0.15;
+            }
+            return col;
+        }
+
+        // =================== PUDDLE (241 REFLECTION) ===================
+        vec3 puddleRefl(vec2 p, float t, float aspect) {
+            // Street puddle below center
+            vec2 pCtr = vec2(0.0, 0.24);
+            vec2 pUV = (p - pCtr) / vec2(0.35*aspect, 0.04);
+            float pShape = sdBox(pUV, vec2(1.0));
+            if(pShape > 0.0) return vec3(0.0);
+
+            float ripple = sin(length(pUV) * 20.0 - t * 3.2) * 0.010
+                         + sin(pUV.x * 12.0 + t * 2.1) * 0.007;
+            vec2 rUV = p + vec2(ripple * 0.3, ripple);
+
+            // Reflect 241 sign region
+            float reflY = 2.0 * pCtr.y - rUV.y;
+            vec2 reflP = vec2(rUV.x, reflY);
+            float neon = neon241(t);
+            float digit241Dist = length(reflP - vec2(0.0, 0.62)) - 0.1;
+            vec3 refl = vec3(0.85, 0.12, 0.06) * exp(-digit241Dist * 6.0) * neon;
+            refl += vec3(0.28, 0.06, 0.02) * exp(-digit241Dist * 3.0) * neon;
+
+            // Pavement base
+            vec3 pavCol = vec3(0.20, 0.19, 0.18) + refl;
+            float mask = smoothstep(0.06, -0.02, pShape);
+            return pavCol * mask * 0.80;
+        }
+
+        // =================== STARS ===================
+        vec3 stars(vec2 p, float t) {
+            vec3 col = vec3(0.0);
+            float ts = t * 0.01;
+            // Gradually appearing stars (sky darkens)
+            float starVis = smoothstep(0.3, 0.8, ts);
+            for(int si = 0; si < 20; si++) {
+                float fsi = float(si);
+                vec2 starPos = hash2(vec2(fsi * 3.1, fsi * 7.7)) * 2.0 - 1.0;
+                starPos.y = starPos.y * 0.4 + 0.7; // top portion
+                float twinkle = 0.6 + 0.4 * sin(t * (0.8 + hash1(fsi) * 0.5) + fsi * 2.1);
+                float d = length(p - starPos);
+                col += vec3(0.85, 0.88, 0.95) * exp(-d * 180.0) * twinkle * starVis;
+            }
+            return col;
+        }
+
+        // =================== PARTICLES ===================
+        vec3 particles(vec2 p, float t) {
+            vec3 col = vec3(0.0);
+            for(int i = 0; i < 16; i++) {
+                float fi = float(i);
+                vec2 pos = hash2(vec2(fi * 7.31, fi * 11.73)) * 2.0 - 1.0;
+                pos.y = mod(pos.y - t * (0.05 + hash1(fi) * 0.07), 2.0) - 1.0;
+                float d = length(p - pos);
+                float flicker = 0.5 + 0.5 * sin(t * 2.0 + fi * 2.71);
+                vec3 pc = hsv2rgb(vec3(0.02 + fi * 0.04, 0.7, 0.9));
+                col += pc * exp(-d * 88.0) * flicker * 0.28;
+            }
+            return col;
+        }
+
+        // =================== MAIN ===================
+        void main() {
+            vec2 uv = gl_FragCoord.xy / iResolution.xy;
+            float aspect = iResolution.x / iResolution.y;
+            vec2 p = uv * 2.0 - 1.0;
+            p.x *= aspect;
+
+            float t = iTime;
+            float neon = neon241(t);
+            vec3 col = vec3(0.0);
+
+            // ---- SKY (darkening toward night) ----
+            float skyDark = clamp(t * 0.008, 0.0, 0.55);
+            vec3 skyDay = mix(vec3(0.55, 0.65, 0.82), vec3(0.38, 0.45, 0.65), uv.y);
+            vec3 skyNight = mix(vec3(0.06, 0.06, 0.12), vec3(0.03, 0.03, 0.08), uv.y);
+            vec3 skyCol = mix(skyDay, skyNight, skyDark);
+            float skyMask = smoothstep(0.72, 0.78, uv.y);
+            col = mix(col, skyCol, skyMask);
+            col += stars(p, t) * skyMask;
+
+            // ---- BUILDING FACADE ----
+            {
+                float wallMask = smoothstep(0.28, 0.32, uv.y) * smoothstep(0.92, 0.88, uv.y);
+                float stain = fbm(warp(p * 2.5, t * 0.005)) * 0.05;
+                vec3 wallCol = vec3(0.87, 0.86, 0.83) - stain;
+                col = mix(col, wallCol, wallMask * 0.92);
+            }
+
+            // ---- RAIN ON BUILDING ----
+            col += buildingRain(p, t, aspect) * smoothstep(0.30, 0.35, uv.y);
+
+            // ---- HOUSE ICONS (NHA HANG) ----
+            col += houseIcons(p, t, aspect);
+
+            // ---- "241" NEON SIGN ----
+            {
+                float d241 = digit241(p, t, aspect);
+                vec3 neonRed = vec3(0.95, 0.12, 0.06) * neon;
+                // Outline
+                col += neonRed * smoothstep(0.012, 0.004, d241);
+                // Glow layers
+                col += neonRed * exp(-d241 * 18.0) * 0.45;
+                col += neonRed * exp(-d241 * 7.0) * 0.18;
+                col += vec3(0.5, 0.02, 0.01) * exp(-d241 * 3.0) * neon * 0.08;
+            }
+
+            // ---- LENS FLARE ----
+            col += lensFlare(p, t, aspect);
+
+            // ---- SIDE SHOPS ----
+            col += sideShops(p, t, aspect);
+
+            // ---- GROUND / PUDDLE ----
+            float groundMask = smoothstep(0.29, 0.25, uv.y);
+            vec3 groundCol = vec3(0.21, 0.20, 0.19);
+            groundCol += fbm(warp(p * 5.0, t * 0.005)) * 0.06;
+            col = mix(col, groundCol, groundMask * 0.9);
+            col += puddleRefl(p, t, aspect);
+
+            // ---- PARTICLES ----
+            col += particles(p, t) * 0.4;
+
+            // ---- RED NEON AMBIENT GLOW ----
+            float redGlow = exp(-length(p - vec2(0.0, 0.62)) * 3.5) * neon;
+            col += vec3(0.35, 0.02, 0.01) * redGlow * 0.12;
+
+            // ---- FILM GRAIN ----
+            float grain = (hash(uv * 900.0 + t) - 0.5) * 0.040;
+            col += grain;
+
+            // ---- CHROMATIC ABERRATION (red channel dominant) ----
+            vec2 caDir = normalize(p + 0.001);
+            float caAmt = 0.008;
+            // Red bleeds outward strongly
+            col.r += (hash((uv + caDir * caAmt * 2.0) * 850.0 + t) - 0.5) * 0.014;
+            col.b += (hash((uv - caDir * caAmt * 1.0) * 940.0 + t) - 0.5) * 0.006;
+            float edgeCA = pow(clamp(length(p) / (length(vec2(aspect, 1.0)) * 0.6), 0.0, 1.0), 1.5);
+            col.r = col.r + edgeCA * 0.025 * neon;
+            col.g = col.g - edgeCA * 0.010;
+            col.b = col.b - edgeCA * 0.015;
+
+            // ---- TONE MAP ----
+            col = pow(clamp(col, 0.0, 1.0), vec3(0.85));
+            gl_FragColor = vec4(col, 1.0);
+        }
+    </script>
+    <script>
+        function main() {
+            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
+            if (!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) { console.error("FS error:", gl.getShaderInfoLog(fs)); }
+            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
+            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            function render(t) {
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        } window.onload = main;
+    </script>
+</body>
+</html>

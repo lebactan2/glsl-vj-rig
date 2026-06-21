@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shader: White Branches on Glass Grid Window</title>
+    <style>body { margin: 0; overflow: hidden; background-color: #000; } canvas { display: block; width: 100vw; height: 100vh; }</style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float;
+        uniform vec2 iResolution;
+        uniform float iTime;
+
+        // ── Utilities ──────────────────────────────────────────────────────────
+        vec3 hsv2rgb(vec3 c) {
+            vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
+            vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+            return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+        }
+
+        float hash(vec2 p) {
+            p = fract(p * vec2(127.1, 311.7));
+            p += dot(p, p + 45.32);
+            return fract(p.x * p.y);
+        }
+        float hash1(float p) { return fract(sin(p * 127.1 + 311.7) * 43758.5453); }
+        float hash2f(vec2 p) { return hash(p * vec2(47.3, 91.7)); }
+
+        float noise(vec2 p) {
+            vec2 i = floor(p), f = fract(p);
+            vec2 u = f * f * (3.0 - 2.0 * f);
+            return mix(mix(hash(i), hash(i + vec2(1,0)), u.x),
+                       mix(hash(i + vec2(0,1)), hash(i + vec2(1,1)), u.x), u.y);
+        }
+
+        float fbm(vec2 p) {
+            float v = 0.0, a = 0.5;
+            for(int i = 0; i < 5; i++) { v += a * noise(p); p *= 2.1; a *= 0.5; }
+            return v;
+        }
+
+        // ── SDFs ───────────────────────────────────────────────────────────────
+        float sdCircle(vec2 p, float r)  { return length(p) - r; }
+
+        float sdBox(vec2 p, vec2 b) {
+            vec2 d = abs(p) - b;
+            return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+        }
+
+        float sdCapsule(vec2 p, vec2 a, vec2 b, float r) {
+            vec2 pa = p - a, ba = b - a;
+            float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+            return length(pa - ba * h) - r;
+        }
+
+        // ── Frost crystal arm (recursive-ish using loop) ────────────────────────
+        float frostArm(vec2 p, vec2 dir, float len, float width) {
+            float d = 9999.0;
+            // Main arm
+            d = min(d, sdCapsule(p, vec2(0.0), dir * len, width));
+            // 2 sub-branches at 60 deg
+            float subLen = len * 0.45;
+            float subW   = width * 0.7;
+            vec2 side1   = vec2(dir.x * 0.5 - dir.y * 0.866, dir.x * 0.866 + dir.y * 0.5);
+            vec2 side2   = vec2(dir.x * 0.5 + dir.y * 0.866, -dir.x * 0.866 + dir.y * 0.5);
+            vec2 mid     = dir * len * 0.5;
+            d = min(d, sdCapsule(p - mid, vec2(0.0), side1 * subLen, subW));
+            d = min(d, sdCapsule(p - mid, vec2(0.0), side2 * subLen, subW));
+            vec2 mid2 = dir * len * 0.25;
+            d = min(d, sdCapsule(p - mid2, vec2(0.0), side1 * subLen * 0.6, subW * 0.7));
+            d = min(d, sdCapsule(p - mid2, vec2(0.0), side2 * subLen * 0.6, subW * 0.7));
+            return d;
+        }
+
+        // ── Snowflake (6-arm frost crystal) ────────────────────────────────────
+        float snowflake(vec2 p, float size, float width) {
+            float d = 9999.0;
+            for(int k = 0; k < 6; k++) {
+                float a = float(k) * 6.2832 / 6.0;
+                vec2 dir = vec2(cos(a), sin(a));
+                d = min(d, frostArm(p, dir, size, width));
+            }
+            return d;
+        }
+
+        // ── Branch function (using capsule chains) ──────────────────────────────
+        float branchSDF(vec2 p, float windSway, float microVib) {
+            float d = 9999.0;
+            // Apply wind sway to entire branch system
+            vec2 sp = p;
+            sp.x += windSway;
+            sp.x += microVib * 0.003;
+
+            // Main trunk
+            d = min(d, sdCapsule(sp, vec2(0.0, -0.50), vec2(0.02, 0.10), 0.013));
+            d = min(d, sdCapsule(sp, vec2(0.02, 0.10), vec2(-0.05, 0.28), 0.011));
+            d = min(d, sdCapsule(sp, vec2(-0.05, 0.28), vec2(0.0, 0.42), 0.009));
+
+            // Left major branch
+            d = min(d, sdCapsule(sp, vec2(-0.05, 0.28), vec2(-0.22, 0.20), 0.008));
+            d = min(d, sdCapsule(sp, vec2(-0.22, 0.20), vec2(-0.35, 0.30), 0.006));
+            d = min(d, sdCapsule(sp, vec2(-0.22, 0.20), vec2(-0.30, 0.10), 0.005));
+            // Thin twigs (micro-vib more pronounced)
+            d = min(d, sdCapsule(sp + vec2(microVib * 0.008, 0.0), vec2(-0.35, 0.30), vec2(-0.42, 0.36), 0.003));
+            d = min(d, sdCapsule(sp + vec2(microVib * 0.010, 0.0), vec2(-0.35, 0.30), vec2(-0.40, 0.22), 0.003));
+            d = min(d, sdCapsule(sp + vec2(microVib * 0.006, 0.0), vec2(-0.30, 0.10), vec2(-0.36, 0.04), 0.003));
+
+            // Right major branch
+            d = min(d, sdCapsule(sp, vec2(0.0, 0.42), vec2(0.18, 0.35), 0.008));
+            d = min(d, sdCapsule(sp, vec2(0.18, 0.35), vec2(0.32, 0.42), 0.006));
+            d = min(d, sdCapsule(sp, vec2(0.18, 0.35), vec2(0.28, 0.22), 0.005));
+            d = min(d, sdCapsule(sp + vec2(microVib * 0.009, 0.0), vec2(0.32, 0.42), vec2(0.40, 0.48), 0.003));
+            d = min(d, sdCapsule(sp + vec2(microVib * 0.007, 0.0), vec2(0.32, 0.42), vec2(0.38, 0.34), 0.003));
+
+            // Upper twigs
+            d = min(d, sdCapsule(sp + vec2(microVib * 0.012, 0.0), vec2(0.0, 0.42), vec2(-0.08, 0.50), 0.004));
+            d = min(d, sdCapsule(sp + vec2(microVib * 0.008, 0.0), vec2(0.0, 0.42), vec2(0.06, 0.52), 0.004));
+
+            return d;
+        }
+
+        // ── Main ───────────────────────────────────────────────────────────────
+        void main() {
+            vec2 uv   = gl_FragCoord.xy / iResolution.xy;
+            float aspect = iResolution.x / iResolution.y;
+            vec2 p    = (uv - 0.5) * vec2(aspect, 1.0);
+
+            // 4 animation speeds
+            float tUltra = iTime * 0.022;
+            float tSlow  = iTime * 0.10;
+            float tMed   = iTime * 0.48;
+            float tFast  = iTime * 3.0;
+
+            // ── Domain warp background ──────────────────────────────────────────
+            vec2 wp   = p * 2.0;
+            vec2 warp = vec2(fbm(wp + tUltra), fbm(wp + 3.7 + tUltra * 0.9));
+            vec2 wp2  = p + 0.5 * warp;
+
+            // ── 4×4 metal grid window ──────────────────────────────────────────
+            // Grid: 4 columns × 4 rows of panes
+            int   COLS = 4, ROWS = 4;
+            float cellW = 0.9 / float(COLS);
+            float cellH = 0.9 / float(ROWS);
+            float barW  = 0.022;
+
+            // Pane UV (0..1 per cell) and cell index
+            vec2  uvCell = (p + vec2(0.45, 0.45)) / vec2(cellW, cellH);
+            vec2  cellIdx = floor(uvCell);
+            vec2  cellUV  = fract(uvCell);
+            // Metal bars
+            float barX = smoothstep(barW / cellW, 0.0, min(cellUV.x, 1.0 - cellUV.x));
+            float barY = smoothstep(barW / cellH, 0.0, min(cellUV.y, 1.0 - cellUV.y));
+            float barMask = max(barX, barY);
+
+            // Per-pane temperature: warm amber vs icy blue cycling at different phases
+            float cellHash = hash(cellIdx);
+            float cellPhase = cellHash * 6.28 + tSlow * (0.3 + cellHash * 0.5);
+            float warmCool = 0.5 + 0.5 * sin(cellPhase);
+            vec3 warmPaneCol = vec3(0.78, 0.65, 0.42);  // amber
+            vec3 coolPaneCol = vec3(0.62, 0.74, 0.88);  // icy blue
+            vec3 paneCol = mix(coolPaneCol, warmPaneCol, warmCool);
+
+            // Frosted glass noise
+            float glassNoise = fbm(wp2 * 4.0 + tUltra * 0.5);
+            paneCol += glassNoise * 0.05;
+
+            // Backlighting pulse
+            float backPulse = 0.85 + 0.15 * sin(tSlow * 0.7 + cellHash * 3.1);
+            paneCol *= backPulse;
+
+            vec3 col = paneCol;
+
+            // Metal bar color (dark gray)
+            vec3 barCol = vec3(0.12, 0.11, 0.10) + noise(p * 8.0) * 0.03;
+            col = mix(col, barCol, barMask);
+
+            // Snow accumulation on top edges of bars (white dots on horizontal bars)
+            if(barY > 0.5) {
+                float snowDots = hash(floor(p * 120.0));
+                float snowY = smoothstep(0.0, barW * 0.4, min(cellUV.y, 1.0 - cellUV.y));
+                if(snowDots > 0.55 && snowY < 0.5) {
+                    col = mix(col, vec3(0.96, 0.97, 0.99), 0.7 * smoothstep(0.55, 0.85, snowDots));
+                }
+            }
+
+            // Condensation droplets running down some panes
+            {
+                float dropX = fract(p.x * 18.0 + cellIdx.x);
+                float dropY = fract(p.y * 6.0 + tSlow * (0.5 + hash1(cellIdx.x * 3.1 + cellIdx.y * 7.7) * 0.8));
+                float dropHash = hash(vec2(floor(p.x * 18.0), cellIdx.x * 3.0 + cellIdx.y));
+                if(dropHash > 0.72) {
+                    float dropD = length(vec2(fract(p.x * 18.0) - 0.5, dropY - 0.5) * vec2(2.0, 1.0));
+                    float dropMask = smoothstep(0.15, 0.0, dropD) * (1.0 - barMask);
+                    col += vec3(0.9, 0.92, 0.96) * dropMask * 0.3;
+                }
+            }
+
+            // Ice crack lines (appear and fade, hash-based)
+            {
+                float crackT  = fract(tSlow * 0.12 + hash(cellIdx) * 1.7);
+                float crackFade = smoothstep(0.0, 0.1, crackT) * smoothstep(0.9, 0.5, crackT);
+                if(crackFade > 0.01) {
+                    vec2 cp   = cellUV - 0.5;
+                    float dir = hash2f(cellIdx + 0.3) * 6.28;
+                    float crackD = abs(cp.x * sin(dir) - cp.y * cos(dir)) - 0.003;
+                    crackD += noise(cp * 30.0) * 0.008;
+                    float cMask = smoothstep(0.004, -0.004, crackD) * crackFade * (1.0 - barMask);
+                    col = mix(col, col * 0.5 + vec3(0.1, 0.15, 0.22) * 0.5, cMask * 0.6);
+                }
+            }
+
+            // ── Wind sway and micro-vibration ───────────────────────────────────
+            float windSway  = sin(tSlow * 0.8) * 0.018 + sin(tSlow * 1.3) * 0.008;
+            float microVib  = sin(tFast * 0.9 + p.y * 3.0) * 0.5;  // fast twig shiver
+
+            // ── Branch silhouette ──────────────────────────────────────────────
+            float branch = branchSDF(p, windSway, microVib);
+            float branchMask = smoothstep(0.006, -0.006, branch);
+
+            // Branch color: white with slight blue-gray tint (pressed against glass)
+            float branchNoise = fbm(p * 12.0 + tUltra);
+            vec3 branchCol = vec3(0.90, 0.93, 0.96) + branchNoise * 0.04;
+            col = mix(col, branchCol, branchMask * (1.0 - barMask));
+
+            // Snow on top of branches
+            float snowOnBranch = smoothstep(0.005, -0.005, branch - 0.002);
+            if(snowOnBranch > 0.01) {
+                float snowAmt = smoothstep(0.0, 0.006, -(p.y - 0.0));
+                col = mix(col, vec3(0.97, 0.98, 1.00), snowOnBranch * 0.5 * (1.0 - barMask));
+            }
+
+            // Ghost reflection of branch (faint, slightly offset)
+            vec2 ghostP = vec2(-p.x, p.y) + vec2(0.04, -0.02);
+            float ghostBranch = branchSDF(ghostP, -windSway * 0.6, microVib * 0.5);
+            float ghostMask = smoothstep(0.006, -0.006, ghostBranch);
+            col += vec3(0.85, 0.88, 0.94) * ghostMask * 0.08 * (1.0 - barMask) * (1.0 - branchMask);
+
+            // ── Frost crystals growing at branch tips and pane edges ────────────
+            // 6 frost crystal locations
+            vec2 frostLocs[6];
+            frostLocs[0] = vec2(-0.35 + windSway, 0.31);
+            frostLocs[1] = vec2(-0.40 + windSway, 0.37);
+            frostLocs[2] = vec2( 0.40 + windSway, 0.49);
+            frostLocs[3] = vec2( 0.38 + windSway, 0.35);
+            frostLocs[4] = vec2(-0.36 + windSway, 0.05);
+            frostLocs[5] = vec2( 0.28 + windSway, 0.23);
+
+            for(int fi = 0; fi < 6; fi++) {
+                float ff = float(fi);
+                vec2 fc = frostLocs[fi];
+                // Crystallize and melt cycle (different phase per crystal)
+                float crystalT = fract(tSlow * 0.15 + hash1(ff * 3.7));
+                float crystalGrow = smoothstep(0.0, 0.5, crystalT);
+                float crystalMelt = smoothstep(0.8, 1.0, crystalT);
+                float crystalLife = crystalGrow * (1.0 - crystalMelt);
+                if(crystalLife > 0.01) {
+                    float snowSize = (0.025 + hash1(ff * 2.3) * 0.02) * crystalLife;
+                    float snowW    = 0.002 * crystalLife;
+                    float sflakD  = snowflake(p - fc, snowSize, snowW);
+                    float sfMask  = smoothstep(0.003, -0.003, sflakD) * (1.0 - barMask);
+                    vec3 frostCol = mix(vec3(0.85, 0.92, 0.98), vec3(0.65, 0.80, 0.98), crystalMelt);
+                    col = mix(col, frostCol, sfMask * crystalLife);
+                    col += frostCol * exp(-abs(sflakD) * 60.0) * crystalLife * 0.45;
+                }
+            }
+
+            // ── Chromatic aberration (cold blue tint) ──────────────────────────
+            vec2 toCenter = uv - 0.5;
+            float caAmt = length(toCenter) * 0.013 + 0.003;
+            vec2 pR = (uv + vec2(caAmt, 0.0) - 0.5) * vec2(aspect, 1.0);
+            vec2 pB = (uv - vec2(caAmt, 0.0) - 0.5) * vec2(aspect, 1.0);
+            col.r += fbm(pR * 2.0 + warp * 0.5 + tUltra) * 0.010;
+            col.b += fbm(pB * 2.0 + warp * 0.5 + tUltra) * 0.020;  // extra blue for cold
+
+            // ── Film grain ─────────────────────────────────────────────────────
+            col += (hash(uv * 900.0 + iTime) - 0.5) * 0.03;
+
+            col = pow(clamp(col, 0.0, 1.0), vec3(0.85));
+            gl_FragColor = vec4(col, 1.0);
+        }
+    </script>
+    <script>
+        function main() {
+            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
+            if(!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) console.error(gl.getShaderInfoLog(fs));
+            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
+            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            function render(t) {
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        } window.onload = main;
+    </script>
+</body>
+</html>

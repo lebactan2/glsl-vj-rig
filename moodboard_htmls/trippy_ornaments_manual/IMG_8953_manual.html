@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shader: IMG_8953 (Manual)</title>
+    <style>body { margin: 0; overflow: hidden; background-color: #000; } canvas { display: block; width: 100vw; height: 100vh; }</style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float; uniform vec2 iResolution; uniform float iTime;
+
+        float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+        float noise(vec2 p) {
+            vec2 i = floor(p); vec2 f = fract(p);
+            f = f * f * (3.0 - 2.0 * f);
+            return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x),
+                       mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+        }
+
+        mat2 rot(float a) { float s = sin(a), c = cos(a); return mat2(c, -s, s, c); }
+
+        float sdBox(vec2 p, vec2 b) {
+            vec2 d = abs(p) - b;
+            return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+        }
+        
+        float sdCircle(vec2 p, float r) { return length(p) - r; }
+
+        void main() {
+            vec2 uv = gl_FragCoord.xy / iResolution.xy;
+            vec2 p = uv * 2.0 - 1.0;
+            p.x *= iResolution.x / iResolution.y;
+
+            vec3 col = vec3(0.0);
+
+            // --- BACKGROUND ENVIRONMENT ---
+            
+            // 1. Thatched Roof (Top)
+            if (p.y > 0.0) {
+                // Dark brown base
+                col = vec3(0.15, 0.1, 0.05);
+                
+                // Woven texture (diagonal lines)
+                float weave = sin(p.x * 100.0 + p.y * 50.0) * sin(p.x * 80.0 - p.y * 120.0);
+                col *= 0.8 + 0.3 * weave;
+                
+                // Vertical bamboo beams
+                float beams = fract(p.x * 5.0);
+                if (beams < 0.1) col = vec3(0.05); // dark beam
+                
+                // Lighting gradient
+                col *= mix(0.2, 1.0, smoothstep(1.0, 0.0, p.y));
+            }
+            // 2. Floral Fabric (Bottom)
+            else {
+                col = vec3(0.6, 0.8, 0.9); // Light blue background
+                col *= 0.8 + 0.2 * noise(p * 20.0);
+                
+                // Abstract pink roses and green leaves
+                float fNoise = noise(p * 15.0 + vec2(iTime*0.05));
+                if (fNoise > 0.6) {
+                    if (hash(floor(p * 5.0)) > 0.5) col = vec3(0.9, 0.3, 0.5); // Pink
+                    else col = vec3(0.2, 0.6, 0.2); // Green
+                    // Flower shading
+                    col *= 0.6 + 0.4 * fract(fNoise * 10.0);
+                }
+                
+                // Shadow from frame
+                if (p.y > -0.7) col *= mix(0.3, 1.0, smoothstep(-0.6, -0.7, p.y));
+            }
+
+            // 3. Top Left Frame Corner
+            vec2 tlP = p - vec2(-0.8, 0.7);
+            if (sdBox(tlP, vec2(0.4, 0.4)) < 0.0) {
+                // Wood frame
+                if (sdBox(tlP, vec2(0.4, 0.4)) > -0.05) col = vec3(0.6, 0.4, 0.2);
+                else {
+                    // Inside
+                    col = vec3(0.9, 0.8, 0.6); // cream bg
+                    if (length(tlP - vec2(0.1, -0.1)) < 0.2) col = vec3(0.1); // black bird
+                    if (length(tlP - vec2(-0.1, -0.2)) < 0.15) col = vec3(0.8, 0.2, 0.2); // red flower
+                }
+            }
+
+            // --- MAIN TRANH KINH (GLASS PAINTING) ---
+            vec2 frameP = p - vec2(0.0, -0.05);
+            float dOuterFrame = sdBox(frameP, vec2(0.65, 0.55));
+            float dInnerFrame = sdBox(frameP, vec2(0.58, 0.48));
+            
+            // Drop Shadow
+            if (dOuterFrame > 0.0 && dOuterFrame < 0.05 && frameP.x > 0.0 && frameP.y < 0.0) {
+                col *= 0.5;
+            }
+
+            if (dOuterFrame < 0.0) {
+                if (dInnerFrame > 0.0) {
+                    // Light Blue Wooden Frame
+                    col = vec3(0.3, 0.6, 0.8);
+                    // Weathering / Paint chipping
+                    float chippy = noise(frameP * vec2(100.0, 20.0));
+                    if (chippy > 0.6) col = mix(col, vec3(0.5, 0.4, 0.3), 0.5); // exposed wood
+                    
+                    // Frame bevel/lighting
+                    if (abs(frameP.y) > 0.48) col *= (frameP.y > 0.0) ? 1.1 : 0.7;
+                    if (abs(frameP.x) > 0.58) col *= (frameP.x > 0.0) ? 0.8 : 1.0;
+                } else {
+                    // --- INSIDE THE PAINTING ---
+                    
+                    // Base Yellow Background
+                    col = vec3(0.95, 0.85, 0.1);
+                    
+                    // Top Text Banner "CHAU TUAN"
+                    if (frameP.y > 0.25) {
+                        col = vec3(0.2, 0.4, 0.8); // Blue bg
+                        
+                        // Red dotted border around banner
+                        if (abs(frameP.y - 0.26) < 0.015 || abs(frameP.y - 0.46) < 0.015 || abs(frameP.x) > 0.55) {
+                            float dots = fract(frameP.x * 40.0 + frameP.y * 40.0);
+                            col = (dots > 0.4) ? vec3(0.8, 0.1, 0.1) : vec3(0.9, 0.8, 0.1);
+                        }
+                        
+                        // Yellow Text (Abstracted blocks)
+                        if (frameP.y > 0.28 && frameP.y < 0.42 && abs(frameP.x) < 0.5) {
+                            float txtGrid = fract(frameP.x * 4.0);
+                            if (txtGrid > 0.1 && txtGrid < 0.8) {
+                                float shape = noise(frameP * vec2(40.0, 10.0));
+                                if (shape > 0.3) {
+                                    col = vec3(0.95, 0.85, 0.2); // Yellow
+                                    // Black outline
+                                    if (shape > 0.3 && shape < 0.35) col = vec3(0.1);
+                                }
+                            }
+                        }
+                    } 
+                    // Main Scene Below Banner
+                    else {
+                        // Purple canopy at the top
+                        if (frameP.y > 0.15) {
+                            float canopy = sin(frameP.x * 30.0);
+                            if (frameP.y > 0.15 + canopy * 0.05) {
+                                col = vec3(0.4, 0.1, 0.5); // Purple
+                                // Yellow dots on canopy
+                                if (fract(frameP.x * 20.0) < 0.2 && fract(frameP.y * 20.0) < 0.2) col = vec3(0.9, 0.9, 0.1);
+                            }
+                        }
+                        
+                        // Floor (Black/Green/White pebbles/tiles)
+                        if (frameP.y < -0.3) {
+                            col = vec3(0.1, 0.4, 0.2); // Green base
+                            float pebbles = noise(frameP * 150.0);
+                            if (pebbles > 0.6) col = vec3(0.9); // white dots
+                            if (pebbles < 0.3) col = vec3(0.1); // black dots
+                            
+                            // Stepping stone/stage edge
+                            if (frameP.y > -0.35 && frameP.y < -0.3) col = vec3(0.8, 0.3, 0.2); // red line
+                        }
+                        
+                        // Central Pillar
+                        if (abs(frameP.x - 0.05) < 0.04 && frameP.y > -0.3 && frameP.y < 0.2) {
+                            col = vec3(0.5, 0.2, 0.1); // Brown
+                            // shading
+                            col *= 0.5 + 0.5 * smoothstep(-0.04, 0.04, frameP.x - 0.05);
+                        }
+                        
+                        // THE FIGURES (Abstract colored blobs with black outlines)
+                        
+                        // Function to draw a figure
+                        #define FIGURE(fx, fy, w, h, c) \
+                            if (sdBox(frameP - vec2(fx, fy), vec2(w, h)) < 0.0) { \
+                                col = c; \
+                                if (sdBox(frameP - vec2(fx, fy), vec2(w, h)) > -0.01) col = vec3(0.1); /* outline */ \
+                                if (sdCircle(frameP - vec2(fx, fy+h*0.8), 0.04) < 0.0) col = vec3(0.9, 0.7, 0.6); /* face */ \
+                            }
+                        
+                        // Left Group
+                        FIGURE(-0.4, -0.1, 0.07, 0.18, vec3(0.2, 0.4, 0.8)); // Blue figure
+                        FIGURE(-0.25, -0.1, 0.06, 0.17, vec3(0.4, 0.2, 0.6)); // Purple figure
+                        FIGURE(-0.1, -0.12, 0.06, 0.18, vec3(0.9, 0.4, 0.1)); // Orange/Red figure
+                        
+                        // Right Group
+                        FIGURE(0.2, -0.1, 0.06, 0.17, vec3(0.2, 0.4, 0.8)); // Blue figure
+                        FIGURE(0.35, -0.1, 0.07, 0.18, vec3(0.9, 0.3, 0.1)); // Orange/Red figure
+                        FIGURE(0.5, -0.15, 0.06, 0.15, vec3(0.9, 0.4, 0.6)); // Pink figure
+                        
+                        // Guitar / Đàn Nguyệt on pink figure
+                        if (sdCircle(frameP - vec2(0.45, -0.15), 0.04) < 0.0) col = vec3(0.8, 0.7, 0.2); // yellow instrument
+                    }
+                    
+                    // Glass Reflection Overlay
+                    float reflection = smoothstep(0.4, 0.5, sin(frameP.x * 5.0 + frameP.y * 5.0));
+                    col += vec3(0.2) * reflection; // Add white glare
+                }
+            }
+
+            // --- GLOBAL TRIPPY OVERLAY ---
+            vec2 trippyP = p * 1.5 + vec2(sin(iTime*0.3), cos(iTime*0.4)) * 0.1;
+            col += 0.03 * vec3(
+                sin(trippyP.x * 6.0 + iTime * 2.0),
+                sin(trippyP.y * 5.0 + iTime * 2.5),
+                sin((trippyP.x - trippyP.y) * 4.0 + iTime * 3.0)
+            );
+
+            // Vignette
+            col *= smoothstep(1.5, 0.2, length(p));
+
+            gl_FragColor = vec4(col, 1.0);
+        }
+    </script>
+    <script>
+        function main() {
+            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
+            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
+            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            function render(t) {
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        } window.onload = main;
+    </script>
+</body>
+</html>

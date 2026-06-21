@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shader: IMG_5506</title>
+    <style>body {{ margin: 0; overflow: hidden; background-color: #000; }} canvas {{ display: block; width: 100vw; height: 100vh; }}</style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float; uniform vec2 iResolution; uniform float iTime;
+        
+void main() {
+    vec2 uv = gl_FragCoord.xy / iResolution.xy;
+    vec2 p = uv * 2.0 - 1.0;
+    p.x *= iResolution.x / iResolution.y;
+    
+    vec3 col = vec3(0.0);
+    
+    if (p.y > 0.4) {
+        // --- Top Section: Lime Green UI ---
+        col = vec3(0.55, 0.82, 0.35);
+        
+        // Abstract blue text "Weirdcore" on left
+        if (p.x > -1.2 && p.x < -0.4 && p.y > 0.6 && p.y < 0.75) {
+            float letters = fract(p.x * 5.0);
+            if (letters < 0.7 && fract(p.x * 20.0 + p.y*10.0 + iTime*2.0) > 0.2) { // Animated scanning lines
+                col = vec3(0.1, 0.2, 0.7);
+            }
+        }
+        
+        // "#18" in middle (pulsing)
+        if (abs(p.x) < 0.1 && p.y > 0.65 && p.y < 0.7) {
+            col = mix(vec3(0.2, 0.3, 0.5), vec3(0.1, 0.2, 0.8), sin(iTime*5.0)*0.5+0.5);
+        }
+        
+        // "Synesthesia" logo on right (blue fluid shapes animated)
+        vec2 logop = p - vec2(0.8, 0.65);
+        if (length(logop) < 0.3) {
+            float wave = sin(logop.x * 20.0 + logop.y * 10.0 + iTime*3.0) * cos(logop.y * 15.0 - iTime);
+            if (abs(wave) < 0.2 && logop.y > -0.1 && logop.y < 0.1) col = vec3(0.1, 0.1, 0.8);
+            if (length(logop - vec2(-0.2, sin(iTime*2.0)*0.02)) < 0.05) col = vec3(0.1, 0.1, 0.8);
+            if (length(logop - vec2(0.2, cos(iTime*2.0)*0.02)) < 0.05) col = vec3(0.1, 0.1, 0.8);
+        }
+        
+    } else {
+        // --- Bottom Section: DJ Photo ---
+        col = vec3(0.08, 0.1, 0.12);
+        
+        float structNoise = fract(sin(dot(floor(p * 5.0), vec2(12.9898, 78.233))) * 43758.5453);
+        if (abs(fract(p.x * 3.0)) < 0.05) col += vec3(0.05);
+        if (abs(fract(p.y * 5.0)) < 0.02) col += vec3(0.05);
+        col *= 0.8 + 0.2 * structNoise;
+        
+        // -- Lasers (Animated sweep) --
+        vec3 laserCol = vec3(0.0);
+        
+        vec2 orig1 = vec2(-0.4, 0.0);
+        vec2 orig2 = vec2(0.4, 0.1);
+        vec2 orig3 = vec2(-0.1, 0.2);
+        
+        float sweep = sin(iTime * 1.5) * 0.5;
+        
+        for(float i=0.0; i<40.0; i++) {
+            vec2 o = (mod(i, 3.0) < 1.0) ? orig1 : ((mod(i, 3.0) < 2.0) ? orig2 : orig3);
+            
+            float angle = sin(i * 123.4) * 3.14 + p.y*0.1 + sweep * sin(i*0.5); 
+            vec2 dir = vec2(cos(angle), sin(angle));
+            
+            vec2 pa = p - o;
+            float h = clamp(dot(pa, dir), 0.0, 2.0);
+            float d = length(pa - dir * h);
+            
+            float intensity = 0.001 / (d * d + 0.0001);
+            
+            vec3 lColor = vec3(1.0, 0.9, 0.6);
+            if (fract(i * 0.1) < 0.3) lColor = vec3(0.8, 0.9, 1.0);
+            
+            laserCol += lColor * intensity * (1.0 - h*0.4);
+        }
+        
+        col += laserCol * 0.5;
+        
+        // Bright central glare pulsing
+        col += vec3(1.0, 0.9, 0.7) * (0.05 / (length(p - vec2(0.0, -0.1)) + 0.01)) * (0.8 + 0.2*sin(iTime*8.0));
+        
+        // -- Foreground (DJ, Crowd, Equipment) --
+        float djDist = 1.0;
+        
+        // Animated DJ bobbing
+        vec2 djP = p - vec2(0.0, -0.4 + sin(iTime*4.0)*0.02);
+        
+        float head = length(djP) - 0.15;
+        djDist = min(djDist, head);
+        float hp1 = length(djP - vec2(-0.16, 0.0)) - 0.05;
+        float hp2 = length(djP - vec2(0.16, 0.0)) - 0.05;
+        djDist = min(min(djDist, hp1), hp2);
+        
+        float body = max(abs(djP.x) - 0.3 - (djP.y+0.2)*0.2, djP.y + 0.1);
+        if (p.y < -0.5) djDist = min(djDist, body);
+        
+        if (djDist < 0.0) {
+            col = vec3(0.05, 0.08, 0.1);
+            col += vec3(0.1, 0.15, 0.1) * (0.5 + 0.5 * sin(p.y * 50.0)) * smoothstep(-0.5, -0.8, p.y);
+        }
+        
+        vec2 screenL = p - vec2(-0.6, -0.6);
+        float sL = max(abs(screenL.x) - 0.15, abs(screenL.y) - 0.1);
+        if (sL < 0.0) {
+            col = vec3(0.2, 0.8, 0.4);
+            // Screen contents animated
+            if (fract(screenL.x*10.0 - iTime) < 0.5 && screenL.y > 0.0) col = vec3(0.3, 0.9, 0.5);
+            if (abs(screenL.y) > 0.08 || abs(screenL.x) > 0.13) col = vec3(0.8);
+        }
+        
+        vec2 screenR = p - vec2(0.6, -0.6);
+        float sR = max(abs(screenR.x) - 0.15, abs(screenR.y) - 0.08);
+        if (sR < 0.0) {
+            col = vec3(0.8, 0.8, 0.9);
+            if (fract(screenR.x * 20.0 + iTime*2.0) < 0.5 && screenR.y < 0.0) col = vec3(0.3, 0.3, 0.8);
+        }
+        
+        if (abs(p.x) > 0.7 && p.y > -0.3 && p.y < 0.1) {
+            if (abs(p.x) < 0.8) {
+                col = vec3(0.02);
+            }
+        }
+    }
+
+    gl_FragColor = vec4(col, 1.0);
+}
+
+    </script>
+    <script>
+        function main() {
+            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
+            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            
+            if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+                console.error("Link error: " + gl.getProgramInfoLog(prog));
+                console.error("FS Log: " + gl.getShaderInfoLog(fs));
+            }
+
+            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
+            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            function render(t) {
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        } window.onload = main;
+    </script>
+</body>
+</html>

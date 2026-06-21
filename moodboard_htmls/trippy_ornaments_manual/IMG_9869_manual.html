@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shader: IMG_9869 (Manual)</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+        }
+
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="glcanvas"></canvas>
+    <script id="vertex-shader"
+        type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float; uniform vec2 iResolution; uniform float iTime;
+        
+        float rim(vec2 p, vec2 c, float r) {
+            float d = length(p - c);
+            float ring = abs(d - r) - 0.02;
+            float angle = atan(p.y - c.y, p.x - c.x);
+            float bumps = sin(angle * 35.0) * 0.004;
+            return ring + bumps;
+        }
+
+        mat2 rot(float a) {
+            float s = sin(a), c = cos(a);
+            return mat2(c, -s, s, c);
+        }
+
+        void main() {
+            vec2 uv = gl_FragCoord.xy / iResolution.xy;
+            vec2 p = uv * 2.0 - 1.0;
+            p.x *= iResolution.x / iResolution.y;
+
+            // Camera looking almost straight down (IMG_9869)
+            p *= rot(sin(iTime * 0.3) * 0.2); // slight spin
+            
+            vec3 col = vec3(0.12, 0.12, 0.14); // Grey asphalt
+            col += 0.08 * fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+
+            // Bicycle Rim Structure (top-down view)
+            float t = iTime * 0.8;
+            
+            // Top rim
+            float r1 = rim(p, vec2(0.0, 0.2) + vec2(sin(t)*0.05, 0.0), 0.35);
+            // Bottom left
+            float r2 = rim(p, vec2(-0.2, -0.2) + vec2(0.0, cos(t)*0.05), 0.35);
+            // Bottom right
+            float r3 = rim(p, vec2(0.2, -0.2) + vec2(cos(t*1.2)*0.05, 0.0), 0.35);
+            
+            // Extending legs
+            float leg1 = rim(p, vec2(-0.6, -0.4), 0.4);
+            if(p.x > -0.2 || p.y > -0.1) leg1 = 1.0;
+            float leg2 = rim(p, vec2(0.6, -0.4), 0.4);
+            if(p.x < 0.2 || p.y > -0.1) leg2 = 1.0;
+            float leg3 = rim(p, vec2(0.0, 0.7), 0.4);
+            if(p.y < 0.3) leg3 = 1.0;
+            
+            float structure = min(r1, min(r2, r3));
+            structure = min(structure, min(leg1, min(leg2, leg3)));
+            
+            if (structure < 0.015) {
+                // Dark metallic
+                float metallic = sin(p.x * 30.0 + p.y * 30.0 - iTime * 3.0) * 0.5 + 0.5;
+                col = mix(vec3(0.1), vec3(0.6, 0.6, 0.7), metallic);
+                
+                // Rust
+                float dirt = fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+                if (dirt > 0.8) {
+                    col *= vec3(0.7, 0.4, 0.2); 
+                }
+            } else {
+                // Trippy color bleeding into background
+                vec3 glowColor = 0.5 + 0.5 * cos(iTime + uv.xyx + vec3(0,2,4));
+                col += glowColor * (0.003 / (abs(structure) + 0.001));
+            }
+
+            gl_FragColor = vec4(col, 1.0);
+        }
+    </script>
+    <script>
+        function main() {
+            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
+            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
+            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]), gl.STATIC_DRAW);
+            function render(t) {
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        } window.onload = main;
+    </script>
+</body>
+
+</html>

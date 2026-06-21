@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shader: IMG_9031 (Manual)</title>
+    <style>body { margin: 0; overflow: hidden; background-color: #000; } canvas { display: block; width: 100vw; height: 100vh; }</style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float; uniform vec2 iResolution; uniform float iTime;
+
+        float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+        float noise(vec2 p) {
+            vec2 i = floor(p); vec2 f = fract(p);
+            f = f * f * (3.0 - 2.0 * f);
+            return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x),
+                       mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+        }
+
+        mat2 rot(float a) { float s = sin(a), c = cos(a); return mat2(c, -s, s, c); }
+
+        float sdBox(vec2 p, vec2 b) {
+            vec2 d = abs(p) - b;
+            return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+        }
+        
+        float sdCircle(vec2 p, float r) { return length(p) - r; }
+        
+        float sdSegment(vec2 p, vec2 a, vec2 b) {
+            vec2 pa = p-a, ba = b-a;
+            float h = clamp(dot(pa,ba)/dot(ba,ba), 0.0, 1.0);
+            return length(pa - ba*h);
+        }
+        
+        // Curved segment (quadratic bezier)
+        float sdBezier(vec2 pos, vec2 p0, vec2 p1, vec2 p2) {
+            vec2 a = p1 - p0;
+            vec2 b = p0 - 2.0*p1 + p2;
+            vec2 c = a * 2.0;
+            vec2 d = p0 - pos;
+            float kk = 1.0 / dot(b,b);
+            float kx = kk * dot(a,b);
+            float ky = kk * (2.0*dot(a,a)+dot(d,b)) / 3.0;
+            float kz = kk * dot(d,a);
+            float res = 0.0;
+            float p = ky - kx*kx;
+            float p3 = p*p*p;
+            float q = kx*(2.0*kx*kx - 3.0*ky) + kz;
+            float h = q*q + 4.0*p3;
+            if(h >= 0.0) { 
+                h = sqrt(h);
+                vec2 x = (vec2(h, -h) - q) / 2.0;
+                vec2 uv = sign(x)*pow(abs(x), vec2(1.0/3.0));
+                float t = clamp(uv.x+uv.y-kx, 0.0, 1.0);
+                res = length(d + (c + b*t)*t);
+            } else {
+                float z = sqrt(-p);
+                float v = acos(q/(p*z*2.0)) / 3.0;
+                float m = cos(v);
+                float n = sin(v)*1.732050808;
+                vec3 t = clamp(vec3(m+m, -n-m, n-m)*z-kx, 0.0, 1.0);
+                res = min(length(d+(c+b*t.x)*t.x), min(length(d+(c+b*t.y)*t.y), length(d+(c+b*t.z)*t.z)));
+            }
+            return res;
+        }
+
+        void main() {
+            vec2 uv = gl_FragCoord.xy / iResolution.xy;
+            vec2 p = uv * 2.0 - 1.0;
+            p.x *= iResolution.x / iResolution.y;
+
+            vec3 col = vec3(0.0);
+
+            // The window inner rectangle
+            vec2 windowSize = vec2(0.65, 0.85);
+            float dWindow = sdBox(p, windowSize);
+
+            if (dWindow > 0.0) {
+                // --- CYAN WOODEN FRAME ---
+                col = vec3(0.35, 0.85, 0.85); // Cyan/Turquoise
+                
+                // Wood texture & weathering
+                col *= 0.9 + 0.1 * noise(p * vec2(100.0, 5.0));
+                
+                // Frame bevels
+                float bevelSize = 0.08;
+                float dBevel = sdBox(p, windowSize + vec2(bevelSize));
+                
+                // Darken inner bevel
+                if (dBevel < 0.0) {
+                    col *= 0.7;
+                    // Corner diagonal lines
+                    if (abs(abs(p.x) - abs(p.y)) < 0.01) col *= 0.8;
+                } else {
+                    // Outer frame
+                    if (noise(p * 20.0) > 0.6) col = mix(col, vec3(0.2, 0.6, 0.6), 0.3); // dirt
+                }
+                
+                // Shadow on frame edge
+                if (dWindow > 0.0 && dWindow < 0.02) col *= 0.5;
+
+            } else {
+                // --- INSIDE THE WINDOW ---
+                
+                // 1. Dark Glass Background & Reflection
+                col = vec3(0.2, 0.15, 0.1); // Tinted brown glass
+                
+                // Faint reflection of a person taking photo
+                vec2 reflP = p;
+                float reflection = 0.0;
+                // Head/Body shape
+                if (sdCircle(reflP - vec2(0.0, -0.3), 0.3) < 0.0) reflection += 0.1; // head
+                if (sdBox(reflP - vec2(0.0, -0.7), vec2(0.4, 0.3)) < 0.0) reflection += 0.1; // body
+                // Phone shape
+                if (sdBox(reflP - vec2(0.05, -0.15), vec2(0.08, 0.12)) < 0.0) reflection += 0.15; // phone
+                // Camera lens
+                if (sdCircle(reflP - vec2(0.02, -0.08), 0.02) < 0.0) reflection += 0.1;
+                
+                col += vec3(reflection) * vec3(0.8, 0.7, 0.6); // add reflection
+                
+                // Dirt/Dust on glass
+                col *= 0.8 + 0.2 * noise(p * 50.0);
+
+                // --- 2. WHITE METAL GRILLE ---
+                float dGrille = 1000.0;
+                float gThickness = 0.015;
+                
+                // Outer rectangular border of grille
+                float gOuter = abs(sdBox(p, windowSize - vec2(0.03))) - gThickness;
+                dGrille = min(dGrille, gOuter);
+                
+                // Horizontal bars
+                dGrille = min(dGrille, abs(p.y - 0.7) - gThickness); // top horizontal
+                dGrille = min(dGrille, abs(p.y + 0.7) - gThickness); // bottom horizontal
+                
+                // Vertical bars
+                if (p.y > -0.7 && p.y < 0.7) {
+                    dGrille = min(dGrille, abs(abs(p.x) - 0.5) - gThickness); // left/right verticals
+                    
+                    // Central short vertical line at top
+                    if (p.x > -gThickness && p.x < gThickness && p.y > 0.45 && p.y < 0.7) dGrille = 0.0;
+                    
+                    // Short horizontal bar at the top of the central design
+                    if (p.y > 0.45 - gThickness && p.y < 0.45 + gThickness && abs(p.x) < 0.1) dGrille = 0.0;
+                    
+                    // The Intertwined "Heart/M" shapes
+                    // Use mirror symmetry for the X axis
+                    vec2 hp = p;
+                    hp.x = abs(hp.x);
+                    
+                    // Upper loop (crossing center)
+                    // From center crossing (0, 0) up and curving outwards to the right, then down
+                    float loop1 = sdBezier(hp, vec2(-0.15, 0.0), vec2(0.4, 0.5), vec2(0.2, 0.2));
+                    float loop2 = sdBezier(hp, vec2(0.2, 0.2), vec2(0.1, 0.0), vec2(0.3, -0.1));
+                    dGrille = min(dGrille, min(loop1, loop2) - gThickness);
+                    
+                    // Arrow/Diamond tips
+                    vec2 tipP = hp - vec2(0.3, -0.1);
+                    tipP *= rot(0.785398); // 45 deg
+                    if (sdBox(tipP, vec2(0.04)) < 0.0) dGrille = 0.0;
+                    
+                    // Lower "House/Chevron" shape
+                    // From center crossing down
+                    float chev1 = sdSegment(hp, vec2(0.0, 0.0), vec2(0.4, -0.4));
+                    dGrille = min(dGrille, chev1 - gThickness);
+                    
+                    // Central dip (U shape)
+                    float dip = sdBezier(hp, vec2(0.0, -0.2), vec2(0.15, -0.45), vec2(0.25, -0.25));
+                    dGrille = min(dGrille, dip - gThickness);
+                    
+                    // Vertical legs of the chevron
+                    float leg = sdSegment(hp, vec2(0.3, -0.3), vec2(0.3, -0.7));
+                    dGrille = min(dGrille, leg - gThickness);
+                }
+
+                if (dGrille < 0.0) {
+                    // White painted metal
+                    vec3 grilleCol = vec3(0.9, 0.9, 0.9);
+                    
+                    // Bump map for rounded metal feel
+                    float edge = smoothstep(-gThickness, 0.0, dGrille);
+                    grilleCol *= mix(0.5, 1.0, 1.0 - edge); // darker on edges
+                    
+                    // Rust/Dirt
+                    float rust = noise(p * vec2(50.0, 20.0));
+                    if (rust > 0.6) grilleCol = mix(grilleCol, vec3(0.5, 0.4, 0.3), (rust-0.6)*2.0); // dirty
+                    
+                    // Shadow from grille onto glass
+                    col = mix(col * 0.4, col, smoothstep(0.0, 0.02, dGrille + 0.02)); // Drop shadow
+                    
+                    col = grilleCol;
+                } else if (dGrille < 0.03 && dGrille >= 0.0) {
+                    // Drop shadow soft edge
+                     col *= mix(0.5, 1.0, smoothstep(0.0, 0.03, dGrille));
+                }
+            }
+
+            // --- GLOBAL TRIPPY OVERLAY ---
+            vec2 trippyP = p * 1.5 + vec2(sin(iTime*0.3), cos(iTime*0.4)) * 0.1;
+            col += 0.02 * vec3(
+                sin(trippyP.x * 5.0 + iTime * 2.0),
+                sin(trippyP.y * 6.0 + iTime * 2.5),
+                sin((trippyP.x - trippyP.y) * 5.0 + iTime * 3.0)
+            );
+
+            // Vignette
+            col *= smoothstep(1.5, 0.3, length(p));
+
+            gl_FragColor = vec4(col, 1.0);
+        }
+    </script>
+    <script>
+        function main() {
+            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
+            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
+            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            function render(t) {
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        } window.onload = main;
+    </script>
+</body>
+</html>

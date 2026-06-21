@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shader: IMG_6469 (Manual)</title>
+    <style>body { margin: 0; overflow: hidden; background-color: #000; } canvas { display: block; width: 100vw; height: 100vh; }</style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float; uniform vec2 iResolution; uniform float iTime;
+
+        float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+        float noise(vec2 p) {
+            vec2 i = floor(p); vec2 f = fract(p);
+            f = f * f * (3.0 - 2.0 * f);
+            return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x),
+                       mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+        }
+
+        mat2 rot(float a) { float s = sin(a), c = cos(a); return mat2(c, -s, s, c); }
+
+        float sdBox(vec2 p, vec2 b) {
+            vec2 d = abs(p) - b;
+            return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+        }
+        
+        float sdCircle(vec2 p, float r) { return length(p) - r; }
+
+        float smin(float a, float b, float k) {
+            float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+            return mix(b, a, h) - k * h * (1.0 - h);
+        }
+        
+        // Iridescent Mother of Pearl Material
+        vec3 motherOfPearl(vec2 p, float t) {
+            // Complex layered noise for interference patterns
+            float n1 = noise(p * 5.0 + t * 0.2);
+            float n2 = noise(p * 15.0 - t * 0.1);
+            float n3 = noise(p * 30.0 + t * 0.3);
+            
+            float v = n1 * 0.5 + n2 * 0.3 + n3 * 0.2;
+            v = fract(v * 3.0 + p.x * 2.0 + p.y * 1.5); // Color bands
+            
+            // Map to iridescent colors (cyan, magenta, pale green, silver)
+            vec3 col = vec3(0.8, 0.9, 0.95); // base silver/white
+            col = mix(col, vec3(0.2, 0.8, 0.9), smoothstep(0.0, 0.3, v)); // cyan
+            col = mix(col, vec3(0.9, 0.4, 0.8), smoothstep(0.3, 0.6, v)); // pink/magenta
+            col = mix(col, vec3(0.6, 0.9, 0.5), smoothstep(0.6, 0.9, v)); // pale green
+            col = mix(col, vec3(0.9, 0.95, 1.0), smoothstep(0.9, 1.0, v)); // bright white
+            
+            // Add tiny sparkling flakes
+            float flake = step(0.95, hash(p * 100.0));
+            col += flake * 0.3 * sin(t*5.0 + p.x*100.0);
+            
+            return col;
+        }
+
+        float sdSegment(vec2 p, vec2 a, vec2 b) {
+            vec2 pa = p-a, ba = b-a;
+            float h = clamp(dot(pa,ba)/dot(ba,ba), 0.0, 1.0);
+            return length(pa - ba*h);
+        }
+
+        void main() {
+            vec2 uv = gl_FragCoord.xy / iResolution.xy;
+            vec2 p = uv * 2.0 - 1.0;
+            p.x *= iResolution.x / iResolution.y;
+
+            vec3 col = vec3(0.04, 0.03, 0.05); // Deep dark background (almost black)
+            
+            float mask = 1000.0; // Distance field for all inlaid elements
+
+            // --- 1. OUTER FRAME LINE ---
+            float dOuter = abs(sdBox(p, vec2(0.9, 0.8))) - 0.005;
+            mask = min(mask, dOuter);
+
+            // --- 2. INNER GEOMETRIC BORDER ---
+            vec2 innerBoxSize = vec2(0.65, 0.55);
+            float dInnerSq = abs(sdBox(p, innerBoxSize)) - 0.015;
+            
+            // Make it a meander pattern
+            if (abs(sdBox(p, innerBoxSize)) < 0.03) {
+                // Project point onto the perimeter to get a 1D coordinate
+                float perimeterDist = 0.0;
+                if (abs(p.y) > innerBoxSize.y - 0.03) perimeterDist = p.x;
+                else perimeterDist = p.y;
+                
+                float meander = fract(perimeterDist * 20.0);
+                if (meander > 0.3 && meander < 0.7) {
+                    mask = min(mask, dInnerSq);
+                } else if (abs(sdBox(p, innerBoxSize)) < 0.005) {
+                    mask = min(mask, dInnerSq); // continuous thin line
+                }
+            }
+
+            // --- 3. TOP & BOTTOM BORDER REPEATING MOTIFS ---
+            if (abs(p.y) > 0.6 && abs(p.y) < 0.75 && abs(p.x) < 0.7) {
+                vec2 bp = p;
+                bp.y = abs(bp.y); // mirror top/bottom
+                bp.y -= 0.68;
+                
+                // Repeat horizontally
+                float repX = fract((bp.x + 0.1) * 3.0) - 0.5;
+                float idX = floor((bp.x + 0.1) * 3.0);
+                vec2 mp = vec2(repX, bp.y) / 3.0; // scale down
+                
+                // Switch motif based on ID
+                int motifType = int(mod(idX, 3.0));
+                
+                if (motifType == 0) {
+                    // Small Goat
+                    float dG = sdCircle(mp - vec2(0.0, 0.0), 0.03); // body
+                    dG = min(dG, sdCircle(mp - vec2(0.03, 0.02), 0.015)); // head
+                    dG = min(dG, sdBox(mp - vec2(-0.02, -0.03), vec2(0.005, 0.02))); // leg
+                    dG = min(dG, sdBox(mp - vec2(0.02, -0.03), vec2(0.005, 0.02))); // leg
+                    mask = min(mask, dG);
+                } else if (motifType == 1) {
+                    // Crescent Moon
+                    float dMoon1 = sdCircle(mp, 0.02);
+                    float dMoon2 = sdCircle(mp - vec2(0.01, 0.01), 0.02);
+                    float dCrescent = max(dMoon1, -dMoon2);
+                    if (dCrescent < 0.0) mask = min(mask, dCrescent);
+                } else {
+                    // Star/Flower
+                    float a = atan(mp.y, mp.x);
+                    float r = length(mp);
+                    float star = r - (0.015 + 0.01 * sin(a * 8.0));
+                    mask = min(mask, star);
+                }
+            }
+
+            // --- 4. SIDE BORDER FLORAL MOTIFS ---
+            if (abs(p.x) > 0.75 && abs(p.x) < 0.88 && abs(p.y) < 0.6) {
+                vec2 sp = p;
+                sp.x = abs(sp.x);
+                sp.x -= 0.81;
+                
+                // Vertical wavy vine
+                float vineX = sin(sp.y * 15.0) * 0.02;
+                float dVine = abs(sp.x - vineX) - 0.005;
+                mask = min(mask, dVine);
+                
+                // Leaves attached to vine
+                float leafY = fract(sp.y * 5.0) - 0.5;
+                float leafSign = sign(sin(sp.y * 5.0 * 3.14));
+                vec2 leafP = vec2(sp.x - vineX - leafSign*0.02, leafY);
+                if (sdCircle(leafP, 0.015) < 0.0 && abs(leafP.y) < 0.01) {
+                    mask = min(mask, sdCircle(leafP, 0.015));
+                }
+                
+                // Large bird/butterfly shape in middle
+                if (abs(sp.y) < 0.2) {
+                    float dBird = sdCircle(vec2(sp.x, sp.y*0.5), 0.04);
+                    dBird = smin(dBird, sdCircle(vec2(sp.x - 0.03, sp.y - 0.05), 0.02), 0.02); // wing
+                    mask = min(mask, dBird);
+                }
+            }
+
+            // --- 5. CENTRAL SCENE ---
+            if (abs(p.x) < 0.63 && abs(p.y) < 0.53) {
+                // Mountains (Background Left)
+                vec2 mountP = p - vec2(-0.25, 0.0);
+                float dMount = sdCircle(vec2(mountP.x*0.6, mountP.y), 0.2); // Main peak
+                dMount = smin(dMount, sdCircle(vec2((mountP.x + 0.15)*0.8, mountP.y + 0.1), 0.15), 0.1); // Left peak
+                dMount = smin(dMount, sdCircle(vec2((mountP.x - 0.15)*0.7, mountP.y + 0.05), 0.12), 0.1); // Right peak
+                // Cut off bottom
+                dMount = max(dMount, -(mountP.y + 0.15));
+                if (dMount < 0.0) {
+                    // Add some internal mountain lines
+                    if (fract(mountP.y * 20.0 + sin(mountP.x*10.0)) > 0.8) mask = min(mask, dMount);
+                    else mask = min(mask, dMount + 0.01); // solid fill
+                }
+
+                // The Tree (Right)
+                vec2 treeP = p - vec2(0.25, 0.0);
+                // Trunk
+                float dTrunk = sdBox(treeP - vec2(0.0, -0.2), vec2(0.03, 0.15));
+                // Roots
+                dTrunk = min(dTrunk, sdSegment(treeP, vec2(0.0, -0.35), vec2(-0.06, -0.4)));
+                dTrunk = min(dTrunk, sdSegment(treeP, vec2(0.0, -0.35), vec2(0.08, -0.42)));
+                mask = min(mask, dTrunk);
+                
+                // Tree Canopy (Clusters of circles)
+                float dCanopy = 1000.0;
+                for (int i=0; i<15; i++) {
+                    float fi = float(i);
+                    vec2 cp = vec2(sin(fi*2.1)*0.2, cos(fi*1.7)*0.15);
+                    dCanopy = smin(dCanopy, sdCircle(treeP - cp - vec2(0.0, 0.1), 0.06 + 0.02*sin(fi)), 0.05);
+                }
+                if (dCanopy < 0.0) {
+                    // Add gaps in leaves
+                    if (noise(treeP * 40.0) > 0.4) mask = min(mask, dCanopy);
+                }
+
+                // The Goats
+                // 1. Big resting goat (Center/Left)
+                vec2 bigGoatP = p - vec2(-0.1, -0.3);
+                float dBig = sdCircle(vec2(bigGoatP.x*0.7, bigGoatP.y), 0.12); // body
+                dBig = smin(dBig, sdCircle(bigGoatP - vec2(0.12, 0.1), 0.05), 0.05); // neck/head
+                // Horn (curved)
+                float horn = abs(length(bigGoatP - vec2(0.12, 0.15)) - 0.04) - 0.005;
+                if (bigGoatP.y > 0.15 && horn < 0.0) dBig = min(dBig, horn);
+                // Legs tucked in
+                dBig = min(dBig, sdBox(bigGoatP - vec2(0.1, -0.1), vec2(0.06, 0.02)));
+                
+                if (dBig < 0.0) mask = min(mask, dBig);
+
+                // 2. Small goat playing on big goat
+                vec2 smallGoat1 = p - vec2(-0.05, -0.1);
+                float dS1 = sdCircle(vec2(smallGoat1.x, smallGoat1.y*0.8), 0.05);
+                dS1 = min(dS1, sdCircle(smallGoat1 - vec2(-0.06, 0.04), 0.03)); // head
+                dS1 = min(dS1, sdSegment(smallGoat1, vec2(-0.02, -0.04), vec2(-0.03, -0.1))); // leg
+                dS1 = min(dS1, sdSegment(smallGoat1, vec2(0.03, -0.04), vec2(0.04, -0.1))); // leg
+                mask = min(mask, dS1);
+
+                // 3. Small goat on right under tree
+                vec2 smallGoat2 = p - vec2(0.35, -0.25);
+                float dS2 = sdCircle(vec2(smallGoat2.x, smallGoat2.y*0.7), 0.06);
+                dS2 = min(dS2, sdCircle(smallGoat2 - vec2(-0.05, 0.06), 0.03)); // head
+                dS2 = min(dS2, sdSegment(smallGoat2, vec2(-0.03, -0.04), vec2(-0.04, -0.12))); // leg
+                dS2 = min(dS2, sdSegment(smallGoat2, vec2(0.04, -0.04), vec2(0.05, -0.12))); // leg
+                mask = min(mask, dS2);
+
+                // Grass tufts
+                if (sdCircle(p - vec2(-0.4, -0.4), 0.02) < 0.0 && p.y < -0.4) mask = -1.0;
+                if (sdCircle(p - vec2(0.2, -0.45), 0.015) < 0.0 && p.y < -0.45) mask = -1.0;
+                if (sdCircle(p - vec2(0.5, -0.38), 0.02) < 0.0 && p.y < -0.38) mask = -1.0;
+            }
+
+            // --- APPLY MOTHER OF PEARL MATERIAL ---
+            // If inside mask, color with iridescent noise
+            if (mask <= 0.0) {
+                // Base iridescent color
+                vec3 mopCol = motherOfPearl(p, iTime);
+                
+                // Add fake engraved lines/shadows within the material
+                float carve = noise(p * 200.0);
+                if (carve > 0.7) mopCol *= 0.5; // dark etched lines
+                
+                // Edge darkening for pieces
+                mopCol *= smoothstep(0.005, -0.01, mask);
+                
+                col = mopCol;
+            }
+
+            // Glow around the mother of pearl
+            col += vec3(0.5, 0.7, 0.9) * (0.001 / (max(mask, 0.0) + 0.001)) * 0.5;
+
+            // --- BOTTOM TEXT ---
+            // Fake text rendering
+            if (p.y < -0.85 && p.y > -0.95 && p.x > 0.3) {
+                float txtGrid = fract(p.x * 20.0);
+                if (txtGrid < 0.6 && noise(p * 100.0) > 0.4) col = vec3(0.9, 0.9, 0.95);
+            }
+
+            // Global trippy overlay (subtle color shifts on background)
+            vec2 trippyP = p * 1.5 + vec2(sin(iTime*0.2), cos(iTime*0.3)) * 0.1;
+            if (mask > 0.0) { // only apply to black bg
+                col += 0.02 * vec3(
+                    sin(trippyP.x * 3.0 + iTime * 1.0),
+                    sin(trippyP.y * 4.0 + iTime * 1.5),
+                    sin((trippyP.x - trippyP.y) * 3.0 + iTime * 2.0)
+                );
+            }
+
+            // Vignette
+            col *= smoothstep(1.5, 0.4, length(p));
+
+            gl_FragColor = vec4(col, 1.0);
+        }
+    </script>
+    <script>
+        function main() {
+            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
+            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
+            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            function render(t) {
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        } window.onload = main;
+    </script>
+</body>
+</html>

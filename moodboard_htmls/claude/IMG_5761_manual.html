@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shader: Green Construction Fence with Crane</title>
+    <style>body { margin: 0; overflow: hidden; background-color: #000; } canvas { display: block; width: 100vw; height: 100vh; }</style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float;
+        uniform vec2 iResolution;
+        uniform float iTime;
+
+        // ── Utilities ──────────────────────────────────────────────────────────
+        vec3 hsv2rgb(vec3 c) {
+            vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
+            vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+            return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+        }
+
+        float hash(vec2 p) {
+            p = fract(p * vec2(127.1, 311.7));
+            p += dot(p, p + 45.32);
+            return fract(p.x * p.y);
+        }
+        float hash1(float p) { return fract(sin(p * 127.1 + 311.7) * 43758.5453); }
+
+        float noise(vec2 p) {
+            vec2 i = floor(p), f = fract(p);
+            vec2 u = f * f * (3.0 - 2.0 * f);
+            return mix(mix(hash(i), hash(i + vec2(1,0)), u.x),
+                       mix(hash(i + vec2(0,1)), hash(i + vec2(1,1)), u.x), u.y);
+        }
+
+        float fbm(vec2 p) {
+            float v = 0.0, a = 0.5;
+            for(int i = 0; i < 5; i++) { v += a * noise(p); p *= 2.1; a *= 0.5; }
+            return v;
+        }
+
+        // ── SDFs ───────────────────────────────────────────────────────────────
+        float sdCircle(vec2 p, float r)  { return length(p) - r; }
+
+        float sdBox(vec2 p, vec2 b) {
+            vec2 d = abs(p) - b;
+            return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+        }
+
+        float sdCapsule(vec2 p, vec2 a, vec2 b, float r) {
+            vec2 pa = p - a, ba = b - a;
+            float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+            return length(pa - ba * h) - r;
+        }
+
+        // ── Bird (simple V-shape) ───────────────────────────────────────────────
+        float sdBird(vec2 p, float size) {
+            // Two capsule wings forming a V
+            float w1 = sdCapsule(p, vec2(0.0, 0.0), vec2(-size, -size * 0.5), size * 0.06);
+            float w2 = sdCapsule(p, vec2(0.0, 0.0), vec2( size, -size * 0.5), size * 0.06);
+            return min(w1, w2);
+        }
+
+        // ── Main ───────────────────────────────────────────────────────────────
+        void main() {
+            vec2 uv   = gl_FragCoord.xy / iResolution.xy;
+            float aspect = iResolution.x / iResolution.y;
+            vec2 p    = (uv - 0.5) * vec2(aspect, 1.0);
+
+            // 4 animation speeds
+            float tUltra = iTime * 0.020;
+            float tSlow  = iTime * 0.12;
+            float tMed   = iTime * 0.50;
+            float tFast  = iTime * 2.6;
+
+            // ── Domain warp background ──────────────────────────────────────────
+            vec2 wp   = p * 2.0;
+            vec2 warp = vec2(fbm(wp + tUltra), fbm(wp + 3.7 + tUltra * 0.9));
+            vec2 wp2  = p + 0.5 * warp;
+
+            // ── Overcast sky ────────────────────────────────────────────────────
+            // Three layered cloud shapes drifting left
+            float skyLine = -0.05;
+            float skyMask = smoothstep(skyLine - 0.02, skyLine + 0.02, p.y);
+            vec3 col = vec3(0.0);
+
+            // Base sky color (flat overcast)
+            vec3 skyCol = vec3(0.68, 0.70, 0.72);
+            // Moving clouds: domain warp on sky fbm
+            vec2 cloudP1 = p * vec2(1.8, 2.5) + vec2(-tSlow * 0.4, 0.0);
+            vec2 cloudP2 = p * vec2(2.2, 3.0) + vec2(-tSlow * 0.25 + 1.5, 0.3);
+            vec2 cloudP3 = p * vec2(1.5, 2.0) + vec2(-tSlow * 0.55 + 3.0, -0.2);
+            vec2 cWarp1  = vec2(fbm(cloudP1 + tUltra), fbm(cloudP1 + 3.1 + tUltra));
+            float cloud1 = fbm(cloudP1 + cWarp1 * 0.5) - 0.42;
+            float cloud2 = fbm(cloudP2) - 0.46;
+            float cloud3 = fbm(cloudP3) - 0.44;
+            float clouds = smoothstep(0.0, 0.08, max(cloud1, max(cloud2, cloud3)));
+            skyCol += clouds * vec3(0.08, 0.08, 0.09);
+            col = skyCol;
+
+            // ── White concrete building behind fence ────────────────────────────
+            float buildingLine = 0.06;
+            float buildingMask = smoothstep(buildingLine + 0.01, buildingLine - 0.01, p.y);
+            float buildingNoise = fbm(p * 5.0 + tUltra * 0.2) * 0.02;
+            vec3 buildingCol = vec3(0.82, 0.82, 0.80) + buildingNoise;
+            // Window grid on building
+            vec2 winP = (p - vec2(0.05, 0.0)) * vec2(8.0, 6.0);
+            float winGrid = min(abs(fract(winP.x) - 0.5), abs(fract(winP.y) - 0.5));
+            float winMask = smoothstep(0.44, 0.40, winGrid);
+            buildingCol = mix(buildingCol, vec3(0.58, 0.62, 0.65), winMask * 0.5);
+            col = mix(col, buildingCol, buildingMask * (1.0 - clouds * 0.5));
+
+            // ── Green corrugated fence (middle band) ────────────────────────────
+            float fenceTop = 0.08;
+            float fenceBot = -0.18;
+            float fenceMask = smoothstep(fenceTop + 0.01, fenceTop - 0.01, p.y) *
+                              smoothstep(fenceBot - 0.01, fenceBot + 0.01, p.y);
+            // Corrugated texture: vertical ridges
+            float corrugation = sin(p.x * 55.0) * 0.5 + 0.5;
+            float corrNoise   = noise(vec2(p.x * 50.0, p.y * 3.0)) * 0.15;
+            vec3 fenceGreen   = vec3(0.12, 0.42, 0.16) + corrNoise + corrugation * 0.06;
+            // Rust/wear spots
+            float rust = noise(p * 8.0 + tUltra * 0.1);
+            fenceGreen  = mix(fenceGreen, vec3(0.35, 0.20, 0.05), rust * 0.15);
+            col = mix(col, fenceGreen, fenceMask);
+
+            // Fence shadow on sidewalk (below fence)
+            float fenceShadow = smoothstep(fenceBot - 0.01, fenceBot - 0.12, p.y) *
+                                (0.4 + sin(p.x * 55.0) * 0.4) * 0.35;
+            col *= 1.0 - fenceShadow * smoothstep(-0.18, -0.38, p.y);
+
+            // ── Dirt sidewalk ───────────────────────────────────────────────────
+            float sidewalkLine = -0.18;
+            float sidewalkMask = smoothstep(sidewalkLine + 0.01, sidewalkLine - 0.01, p.y);
+            float dirtNoise = fbm(vec2(p.x * 4.0, p.y * 6.0) + tUltra * 0.3);
+            vec3 dirtCol = vec3(0.42, 0.36, 0.22) + dirtNoise * 0.06;
+            col = mix(col, dirtCol, sidewalkMask);
+
+            // ── Rebar columns (7) poking above fence ────────────────────────────
+            for(int ri = 0; ri < 7; ri++) {
+                float fi = float(ri);
+                float rx = -0.42 + fi * 0.14;
+                float rTop = 0.22 + hash1(fi * 1.3) * 0.12;
+                float rBot = fenceTop - 0.02;
+                float rebar = sdCapsule(p, vec2(rx, rBot), vec2(rx, rTop), 0.006);
+                float rMask = smoothstep(0.005, -0.005, rebar);
+                vec3 rebarCol = vec3(0.28, 0.24, 0.18);
+                // Cross-section ridges
+                float ridges = sin((p.y - rTop) * 60.0) * 0.08;
+                rebarCol += ridges;
+                col = mix(col, rebarCol, rMask);
+
+                // Glowing hot tips (orange-white, pulsing heat shimmer)
+                float tipPulse = 0.65 + 0.35 * sin(tFast * 0.7 + fi * 1.3);
+                vec2 tipP = p - vec2(rx, rTop);
+                float tipD = length(tipP);
+                float heatShimmer = fbm(tipP * 20.0 + vec2(0.0, -tFast * 0.3) + fi) * 0.012;
+                col += vec3(1.0, 0.75, 0.20) * exp(-(tipD + heatShimmer) * 70.0) * tipPulse * 2.5;
+                col += vec3(1.0, 0.50, 0.05) * exp(-(tipD + heatShimmer) * 30.0) * tipPulse * 0.8;
+                col += vec3(0.8, 0.30, 0.02) * exp(-(tipD) * 12.0) * tipPulse * 0.3;
+            }
+
+            // ── Yellow tower crane (upper-left) ─────────────────────────────────
+            vec2 craneBase = vec2(-0.55 * aspect * 0.5, -0.10);
+            // Crane mast (vertical)
+            float craneMast = sdCapsule(p, craneBase, craneBase + vec2(0.0, 0.52), 0.012);
+            float mastMask  = smoothstep(0.008, -0.008, craneMast);
+            col = mix(col, vec3(0.90, 0.82, 0.05), mastMask);
+
+            // Animated crane jib (rotates clockwise slowly, period 30s)
+            // Full 2*pi in 30s => tSlow * (6.28/30) ~ tMed * 0.035
+            float jibAngle = -tSlow * 0.21;  // clockwise
+            vec2 jibBase   = craneBase + vec2(0.0, 0.50);
+            float jibLen   = 0.38;
+            vec2 jibDir    = vec2(cos(jibAngle), sin(jibAngle));
+            vec2 jibEnd    = jibBase + jibDir * jibLen;
+            // Counter-jib (shorter, opposite)
+            vec2 cjibEnd   = jibBase - jibDir * jibLen * 0.35;
+
+            float jib  = sdCapsule(p, jibBase, jibEnd,  0.010);
+            float cjib = sdCapsule(p, jibBase, cjibEnd, 0.010);
+            col = mix(col, vec3(0.92, 0.84, 0.04), smoothstep(0.007, -0.007, jib));
+            col = mix(col, vec3(0.92, 0.84, 0.04), smoothstep(0.007, -0.007, cjib));
+
+            // Cable hanging from jib end with pendulum load
+            float cableLen   = 0.18 + sin(tSlow * 0.9) * 0.03;
+            float pendAngle  = sin(tMed * 0.55) * 0.12;  // pendulum swing
+            vec2 cableTop    = jibEnd;
+            vec2 cableBot    = cableTop + vec2(sin(pendAngle), -cos(pendAngle)) * cableLen;
+            float cable = sdCapsule(p, cableTop, cableBot, 0.003);
+            col = mix(col, vec3(0.18, 0.15, 0.12), smoothstep(0.002, -0.002, cable));
+            // Load block at cable end
+            float loadD = sdBox(p - cableBot, vec2(0.020, 0.015));
+            col = mix(col, vec3(0.35, 0.30, 0.20), smoothstep(0.005, -0.005, loadD));
+            col += vec3(0.6, 0.5, 0.2) * exp(-abs(loadD) * 25.0) * 0.2;
+            col += vec3(0.9, 0.84, 0.05) * exp(-abs(jib) * 25.0) * 0.2;
+            col += vec3(0.9, 0.84, 0.05) * exp(-abs(craneMast) * 22.0) * 0.15;
+
+            // ── Construction silhouettes through fence top gaps ──────────────────
+            for(int wi = 0; wi < 4; wi++) {
+                float fi = float(wi);
+                float wx = -0.25 + fi * 0.14;
+                float wy = fenceTop + 0.02 + hash1(fi * 2.7) * 0.06;
+                float wh = 0.04 + hash1(fi * 3.1) * 0.05;
+                vec2 workerP = p - vec2(wx, wy);
+                // Body silhouette (small rectangle)
+                float wBody = sdBox(workerP, vec2(0.015, wh));
+                float wHead = sdCircle(workerP - vec2(0.0, wh + 0.012), 0.010);
+                float wDist = min(wBody, wHead);
+                float wMask = smoothstep(0.005, -0.005, wDist);
+                // Dark silhouette visible through gaps
+                col = mix(col, vec3(0.08, 0.07, 0.06), wMask * (1.0 - fenceMask));
+            }
+
+            // ── Woman walking past (blue jacket) ───────────────────────────────
+            // Position: center-right, in front of fence
+            float walkX = 0.22 + tSlow * 0.07;  // slow walk right
+            // Keep cycling
+            walkX = walkX - floor(walkX + 0.5) * 2.0;  // wrap -1..1
+            vec2 womanP = p - vec2(walkX, fenceBot - 0.10);
+
+            // Body
+            float wBody = sdBox(womanP - vec2(0.0, 0.04), vec2(0.022, 0.055));
+            float wHead = sdCircle(womanP - vec2(0.0, 0.110), 0.020);
+            // Alternating leg step cycle
+            float walkCycle = tFast * 0.35;
+            float leg1Swing = sin(walkCycle) * 0.018;
+            float leg2Swing = sin(walkCycle + 3.14) * 0.018;
+            vec2 leg1Top = vec2(walkX - 0.008, fenceBot - 0.10 - 0.01);
+            vec2 leg1Bot = vec2(walkX - 0.008 + leg1Swing, fenceBot - 0.10 - 0.09);
+            vec2 leg2Top = vec2(walkX + 0.008, fenceBot - 0.10 - 0.01);
+            vec2 leg2Bot = vec2(walkX + 0.008 + leg2Swing, fenceBot - 0.10 - 0.09);
+            float leg1D = sdCapsule(p, leg1Top, leg1Bot, 0.008);
+            float leg2D = sdCapsule(p, leg2Top, leg2Bot, 0.008);
+
+            float womanMask = smoothstep(0.005, -0.005, min(wBody, wHead));
+            col = mix(col, vec3(0.18, 0.32, 0.72), womanMask);  // blue jacket
+            col = mix(col, vec3(0.92, 0.80, 0.70), smoothstep(0.004, -0.004, wHead));  // face
+            col = mix(col, vec3(0.22, 0.18, 0.14), smoothstep(0.005, -0.005, leg1D));
+            col = mix(col, vec3(0.22, 0.18, 0.14), smoothstep(0.005, -0.005, leg2D));
+
+            // ── Dust cloud particles (14, near walking woman) ──────────────────
+            for(int di = 0; di < 14; di++) {
+                float fi   = float(di);
+                float dpx0 = (hash1(fi * 1.17) - 0.5) * 0.12;
+                float dpy0 = -(hash1(fi * 2.33)) * 0.06;
+                float phase = hash1(fi * 3.99) * 6.28;
+                float spd   = 0.04 + hash1(fi * 5.11) * 0.06;
+                float lt    = fract(tSlow * spd + hash1(fi * 4.51));
+                // Expand outward + drift upward slightly
+                float dx    = walkX + dpx0 + sin(lt * 6.28 + phase) * 0.05 * lt;
+                float dy    = fenceBot - 0.14 + dpy0 - lt * 0.05 + hash1(fi * 6.7) * 0.03;
+                float dfade = smoothstep(0.9, 0.0, lt);
+                float dSize = 0.008 + lt * 0.025;
+
+                vec2 dustP = p - vec2(dx, dy);
+                float dustD = sdCircle(dustP, dSize);
+                float dMask = smoothstep(dSize * 0.3, -dSize * 0.3, dustD);
+                vec3 dustCol = vec3(0.55, 0.45, 0.28) * (0.6 + hash1(fi * 8.1) * 0.4);
+                col = mix(col, dustCol, dMask * dfade * 0.45);
+                col += dustCol * exp(-abs(dustD) * 40.0) * dfade * 0.18;
+            }
+
+            // ── Birds flying across sky (4-5 V-shapes) ────────────────────────
+            for(int bi = 0; bi < 5; bi++) {
+                float fi   = float(bi);
+                // Fly right to left at different heights and speeds
+                float bspd  = 0.06 + hash1(fi * 2.11) * 0.08;
+                float byt   = 0.22 + hash1(fi * 3.33) * 0.20;  // different heights
+                float bxt   = fract(-tSlow * bspd + hash1(fi * 4.77));
+                float bx    = (bxt - 0.5) * 1.2 * aspect * 0.6;
+                float by    = byt;
+                float bsize = 0.012 + hash1(fi * 6.1) * 0.008;
+                float birdD = sdBird(p - vec2(bx, by), bsize);
+                float bMask = smoothstep(0.003, -0.003, birdD);
+                // Dark silhouette against sky
+                col = mix(col, vec3(0.15, 0.14, 0.13), bMask * skyMask);
+                col += vec3(0.1, 0.09, 0.08) * exp(-abs(birdD) * 50.0) * 0.2 * skyMask;
+            }
+
+            // ── Chromatic aberration (desaturated atmospheric look) ─────────────
+            vec2 toCenter = uv - 0.5;
+            float caAmt = length(toCenter) * 0.010 + 0.002;
+            vec2 pR = (uv + vec2(caAmt, 0.0) - 0.5) * vec2(aspect, 1.0);
+            vec2 pB = (uv - vec2(caAmt, 0.0) - 0.5) * vec2(aspect, 1.0);
+            // Mild, desaturated
+            col.r += fbm(pR * 2.0 + warp * 0.4 + tUltra) * 0.010;
+            col.b += fbm(pB * 2.0 + warp * 0.4 + tUltra) * 0.012;
+            // Slight desaturation for overcast atmosphere
+            float lum = dot(col, vec3(0.299, 0.587, 0.114));
+            col = mix(col, vec3(lum), 0.18);
+
+            // ── Film grain ─────────────────────────────────────────────────────
+            col += (hash(uv * 900.0 + iTime) - 0.5) * 0.03;
+
+            col = pow(clamp(col, 0.0, 1.0), vec3(0.85));
+            gl_FragColor = vec4(col, 1.0);
+        }
+    </script>
+    <script>
+        function main() {
+            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
+            if(!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) console.error(gl.getShaderInfoLog(fs));
+            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
+            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            function render(t) {
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        } window.onload = main;
+    </script>
+</body>
+</html>

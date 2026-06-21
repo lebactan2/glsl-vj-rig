@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shader: IMG_5693 (Manual)</title>
+    <style>body { margin: 0; overflow: hidden; background-color: #000; } canvas { display: block; width: 100vw; height: 100vh; }</style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float; uniform vec2 iResolution; uniform float iTime;
+
+        float hash(float n) { return fract(sin(n) * 43758.5453123); }
+        vec2 hash2(vec2 p) {
+            p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
+            return -1.0 + 2.0 * fract(sin(p) * 43758.5453123);
+        }
+        float noise(vec2 p) {
+            vec2 i = floor(p); vec2 f = fract(p);
+            f = f * f * (3.0 - 2.0 * f);
+            return mix(mix(dot(hash2(i + vec2(0.0, 0.0)), f - vec2(0.0, 0.0)),
+                           dot(hash2(i + vec2(1.0, 0.0)), f - vec2(1.0, 0.0)), f.x),
+                       mix(dot(hash2(i + vec2(0.0, 1.0)), f - vec2(0.0, 1.0)),
+                           dot(hash2(i + vec2(1.0, 1.0)), f - vec2(1.0, 1.0)), f.x), f.y);
+        }
+
+        mat2 rot(float a) { float s = sin(a), c = cos(a); return mat2(c, -s, s, c); }
+
+        float sdBox(vec2 p, vec2 b) {
+            vec2 d = abs(p) - b;
+            return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+        }
+        float sdCircle(vec2 p, float r) { return length(p) - r; }
+
+        float fbm(vec2 p) {
+            float v = 0.0, a = 0.5;
+            for (int i=0; i<5; i++) {
+                v += a * noise(p);
+                p *= 2.0;
+                a *= 0.5;
+            }
+            return v;
+        }
+
+        void main() {
+            vec2 uv = gl_FragCoord.xy / iResolution.xy;
+            vec2 p = uv * 2.0 - 1.0;
+            p.x *= iResolution.x / iResolution.y;
+
+            vec3 col = vec3(0.0);
+
+            // --- GROUND (Asphalt) ---
+            col = vec3(0.45, 0.45, 0.48);
+            float asphalt = noise(p * 150.0) * 0.5 + noise(p * 50.0) * 0.5;
+            col *= 0.7 + 0.3 * asphalt;
+            
+            // Vignette / Shadow under pile
+            col *= smoothstep(0.0, 1.0, length(p) + 0.2);
+
+            // --- THE PILE OF VOTIVE OBJECTS ---
+            float dPile = 1000.0;
+            vec3 pileCol = vec3(0.0);
+            
+            // 1. Woven Basket (Background Left)
+            vec2 basketP = p - vec2(-0.8, 0.5);
+            float dBasket = sdBox(basketP, vec2(0.4, 0.5));
+            if (dBasket < 0.0) {
+                dPile = dBasket;
+                // Woven pattern
+                float weave = sin(basketP.x * 40.0) * sin(basketP.y * 40.0);
+                pileCol = vec3(0.6, 0.5, 0.3) * (0.7 + 0.3 * weave);
+                // Large holes
+                float holes = length(vec2(fract(basketP.x*10.0)-0.5, fract(basketP.y*10.0)-0.5));
+                if (holes < 0.25) pileCol *= 0.2; // dark inside
+            }
+
+            // 2. Yellow Object (Background Right)
+            vec2 yObjP = p - vec2(0.5, 0.6);
+            yObjP *= rot(0.2);
+            float dYObj = sdBox(yObjP, vec2(0.4, 0.3));
+            if (dYObj < 0.0) {
+                dPile = dYObj;
+                pileCol = vec3(0.9, 0.8, 0.1); // Bright yellow
+                // Blue stripe
+                if (abs(yObjP.x - -0.1) < 0.05) pileCol = vec3(0.1, 0.3, 0.8);
+                // Silver patch
+                if (sdBox(yObjP - vec2(0.1, 0.0), vec2(0.15, 0.1)) < 0.0) {
+                    pileCol = vec3(0.85); // silver
+                    pileCol *= 0.8 + 0.2 * noise(yObjP * 100.0); // foil texture
+                }
+            }
+
+            // 3. Pink Box (Top Center)
+            vec2 pinkP = p - vec2(0.1, 0.1);
+            pinkP *= rot(0.15); // slightly tilted
+            float dPinkBox = sdBox(pinkP, vec2(0.6, 0.3));
+            
+            if (dPinkBox < 0.0) {
+                dPile = dPinkBox;
+                pileCol = vec3(0.8, 0.2, 0.4); // Magenta/Pink base
+                
+                // Yellow borders
+                float edgeX = abs(pinkP.x) - 0.5;
+                float edgeY = abs(pinkP.y) - 0.25;
+                if (edgeY > -0.04) {
+                    pileCol = vec3(0.9, 0.85, 0.2); // yellow edge
+                    // Blue/red dashes
+                    if (fract(pinkP.x * 10.0) < 0.5) pileCol = vec3(0.2, 0.3, 0.8); // blue
+                }
+                
+                // Central floral pattern
+                float r = length(pinkP);
+                float a = atan(pinkP.y, pinkP.x);
+                float flower = 0.15 + 0.05 * sin(a * 8.0);
+                if (r < flower) {
+                    pileCol = vec3(0.8, 0.9, 0.3); // yellow/green center
+                    // Inner details
+                    if (r < flower * 0.8) pileCol = vec3(0.4, 0.7, 0.3); // green
+                    if (fract(r * 30.0) < 0.2) pileCol = vec3(0.9, 0.3, 0.4); // red rings
+                }
+                
+                // Smaller side flowers
+                vec2 flP = pinkP - vec2(-0.35, 0.0);
+                if (length(flP) < 0.05 + 0.02 * sin(atan(flP.y, flP.x) * 6.0)) pileCol = vec3(0.4, 0.7, 0.3);
+            }
+
+            // 4. Green Appliance (Middle Right)
+            vec2 greenAppP = p - vec2(0.2, -0.3);
+            greenAppP *= rot(-0.05);
+            float dGreenApp = sdBox(greenAppP, vec2(0.3, 0.15));
+            if (dGreenApp < 0.0) {
+                dPile = min(dPile, dGreenApp);
+                pileCol = vec3(0.3, 0.6, 0.4); // mint green
+                // Screen/Panel
+                if (sdBox(greenAppP - vec2(-0.1, 0.0), vec2(0.05, 0.1)) < 0.0) pileCol = vec3(0.1, 0.15, 0.1);
+                // "Panasonic" text abstraction
+                if (sdBox(greenAppP - vec2(0.0, 0.1), vec2(0.1, 0.01)) < 0.0) pileCol = vec3(0.9);
+                
+                // White cylinder object below it
+                if (sdBox(greenAppP - vec2(0.15, -0.1), vec2(0.1, 0.15)) < 0.0) pileCol = vec3(0.9);
+                // Silver foil cylinder
+                if (sdBox(greenAppP - vec2(0.4, -0.1), vec2(0.1, 0.1)) < 0.0) pileCol = vec3(0.8) * (0.8 + 0.2*noise(p*100.0));
+            }
+
+            // 5. The Clock (Front Left)
+            vec2 clockP = p - vec2(-0.3, -0.2);
+            clockP *= rot(0.1);
+            float dClock = sdBox(clockP, vec2(0.25, 0.25));
+            
+            if (dClock < 0.0) {
+                dPile = min(dPile, dClock);
+                
+                // Rainbow Frame Border
+                float frameDist = max(abs(clockP.x), abs(clockP.y));
+                if (frameDist > 0.2) {
+                    pileCol = vec3(0.8, 0.2, 0.2); // red outer
+                    if (frameDist < 0.23) pileCol = vec3(0.9, 0.8, 0.1); // yellow mid
+                    if (frameDist < 0.21) pileCol = vec3(0.2, 0.6, 0.3); // green inner
+                } else {
+                    // White face
+                    pileCol = vec3(0.95);
+                    
+                    // Blue clock ring
+                    float dFace = length(clockP - vec2(-0.05, 0.0));
+                    if (abs(dFace - 0.15) < 0.01) pileCol = vec3(0.3, 0.6, 0.9);
+                    
+                    // The Horse (Abstract brown shape in center)
+                    vec2 horseP = clockP - vec2(-0.05, 0.0);
+                    if (sdBox(horseP - vec2(0.0, -0.05), vec2(0.08, 0.04)) < 0.0) pileCol = vec3(0.4, 0.2, 0.1); // body
+                    if (sdBox(horseP - vec2(0.08, 0.02), vec2(0.03, 0.06)) < 0.0) pileCol = vec3(0.4, 0.2, 0.1); // neck/head
+                    
+                    // GIMIKO text block
+                    if (sdBox(clockP - vec2(0.18, 0.0), vec2(0.015, 0.1)) < 0.0) pileCol = vec3(0.1);
+                }
+            }
+
+            // 6. Green object at bottom
+            vec2 gBotP = p - vec2(-0.1, -0.7);
+            gBotP *= rot(0.1);
+            float dGBot = sdBox(gBotP, vec2(0.4, 0.15));
+            if (dGBot < 0.0) {
+                dPile = min(dPile, dGBot);
+                pileCol = vec3(0.15, 0.5, 0.25); // dark green
+                // Silver foil cutout patch
+                if (sdCircle(gBotP - vec2(-0.1, 0.0), 0.1) < 0.0) {
+                    pileCol = vec3(0.85); // silver
+                    pileCol *= 0.8 + 0.2 * noise(gBotP * 150.0);
+                }
+            }
+
+            // Apply objects to background
+            if (dPile < 0.0) {
+                col = pileCol;
+                
+                // Add soft self-shadowing between items
+                if (dPinkBox > 0.0 && dPinkBox < 0.05) col *= 0.6;
+                if (dClock > 0.0 && dClock < 0.05) col *= 0.6;
+                
+                // --- PLASTIC WRAP OVERLAY ---
+                // The entire pile is wrapped in clear, wrinkled plastic
+                // We simulate this with specular highlights driven by high freq noise
+                
+                vec2 wrapP = p * 15.0;
+                float wrapNoise = fbm(wrapP);
+                // Create sharp "creases" by taking the absolute value of the noise derivative roughly
+                float creases = abs(noise(wrapP) - noise(wrapP + vec2(0.1)));
+                
+                // Specular reflection on the plastic
+                vec3 lightDir = normalize(vec3(-1.0, 1.0, 1.0));
+                
+                // Perturb normal with creases and noise
+                vec3 n = normalize(vec3(creases * 5.0, (wrapNoise - 0.5) * 0.5, 1.0));
+                
+                vec3 viewDir = vec3(0.0, 0.0, 1.0);
+                vec3 halfDir = normalize(lightDir + viewDir);
+                
+                // Sharp plastic specular
+                float spec = pow(max(0.0, dot(n, halfDir)), 60.0);
+                
+                // Add broad reflections
+                float broadRefl = smoothstep(0.6, 0.9, wrapNoise);
+                
+                // Apply plastic layer
+                col += vec3(0.9, 0.95, 1.0) * spec * 1.5; // sharp highlights
+                col += vec3(0.7, 0.8, 0.9) * broadRefl * 0.3; // broad glare
+                
+                // Slightly desaturate/fog the colors underneath to simulate the milky plastic
+                col = mix(col, vec3(0.8), broadRefl * 0.2);
+            } else if (dPile < 0.1) {
+                // Outer drop shadow of the whole pile
+                col *= mix(0.4, 1.0, dPile / 0.1);
+            }
+
+            // Global trippy overlay to match aesthetic theme
+            vec2 trippyP = p * 1.5 + vec2(sin(iTime*0.4), cos(iTime*0.5)) * 0.1;
+            col += 0.02 * vec3(
+                sin(trippyP.x * 4.0 + iTime * 2.0),
+                sin(trippyP.y * 5.0 + iTime * 2.5),
+                sin((trippyP.x - trippyP.y) * 4.0 + iTime * 3.0)
+            );
+
+            gl_FragColor = vec4(col, 1.0);
+        }
+    </script>
+    <script>
+        function main() {
+            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
+            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
+            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            function render(t) {
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        } window.onload = main;
+    </script>
+</body>
+</html>

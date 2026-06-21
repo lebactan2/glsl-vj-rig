@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shader: IMG_9074 (Manual)</title>
+    <style>body { margin: 0; overflow: hidden; background-color: #000; } canvas { display: block; width: 100vw; height: 100vh; }</style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float; uniform vec2 iResolution; uniform float iTime;
+
+        float hash12(vec2 p) {
+            vec3 p3  = fract(vec3(p.xyx) * .1031);
+            p3 += dot(p3, p3.yzx + 33.33);
+            return fract((p3.x + p3.y) * p3.z);
+        }
+
+        vec2 hash22(vec2 p) {
+            vec3 p3 = fract(vec3(p.xyx) * vec3(.1031, .1030, .0973));
+            p3 += dot(p3, p3.yzx+33.33);
+            return fract((p3.xx+p3.yz)*p3.zy);
+        }
+        
+        float noise(vec2 p) {
+            vec2 i = floor(p); vec2 f = fract(p);
+            f = f * f * (3.0 - 2.0 * f);
+            return mix(mix(hash12(i), hash12(i + vec2(1.0, 0.0)), f.x),
+                       mix(hash12(i + vec2(0.0, 1.0)), hash12(i + vec2(1.0, 1.0)), f.x), f.y);
+        }
+
+        // Voronoi for mosaic shards
+        vec4 voronoi(vec2 x) {
+            vec2 n = floor(x);
+            vec2 f = fract(x);
+            float m = 8.0;
+            vec2 mr = vec2(0.0);
+            vec2 mc = vec2(0.0);
+            
+            for( int j=-1; j<=1; j++ )
+            for( int i=-1; i<=1; i++ ) {
+                vec2 g = vec2(float(i),float(j));
+                vec2 o = hash22( n + g );
+                vec2 r = g + o - f;
+                float d = dot(r,r);
+                if( d<m ) {
+                    m = d;
+                    mr = r;
+                    mc = n + g;
+                }
+            }
+            
+            float md = 8.0;
+            for( int j=-2; j<=2; j++ )
+            for( int i=-2; i<=2; i++ ) {
+                vec2 g = vec2(float(i),float(j));
+                vec2 o = hash22( n + g );
+                vec2 r = g + o - f;
+                if( dot(mr-r,mr-r)>0.00001 ) {
+                    md = min( md, dot( 0.5*(mr+r), normalize(r-mr) ) );
+                }
+            }
+            // Add a shape metric (distance to center of cell) to give shards a curved profile
+            float dCenter = length(mr);
+            return vec4(m, mc.x, mc.y, md); // m is dist^2, md is dist to edge
+        }
+        
+        // Detailed pattern generator for a shard
+        vec3 getShardPattern(vec2 localP, vec2 cellId) {
+            float style = hash12(cellId + 5.0);
+            vec3 bgCol = vec3(0.9, 0.95, 0.95); // White porcelain base
+            vec3 blueCol = mix(vec3(0.1, 0.2, 0.6), vec3(0.2, 0.35, 0.8), hash12(cellId + 6.0)); // Blue pigment
+            
+            // Transform localP randomly for this shard
+            float angle = hash12(cellId + 7.0) * 6.28;
+            float s = sin(angle), c = cos(angle);
+            localP = mat2(c, -s, s, c) * localP;
+            localP *= 1.0 + hash12(cellId + 8.0) * 2.0; // random scale
+            
+            float pat = 0.0;
+            
+            if (style < 0.25) {
+                // Concentric arcs (plate rims)
+                float d = length(localP);
+                pat = smoothstep(0.05, 0.1, abs(sin(d * 20.0)));
+            } else if (style < 0.5) {
+                // Floral / Swirly noise
+                pat = smoothstep(0.4, 0.6, noise(localP * 15.0 + vec2(sin(localP.y*5.0), 0.0)));
+                // Add some dots
+                if (noise(localP * 40.0) > 0.7) pat = 0.0;
+            } else if (style < 0.75) {
+                // Geometric/Borders
+                pat = step(0.5, fract(localP.x * 5.0 + step(0.5, fract(localP.y * 5.0)) * 0.5));
+            } else if (style < 0.9) {
+                // Solid blue or white
+                pat = (hash12(cellId + 9.0) > 0.5) ? 0.0 : 1.0;
+            } else {
+                // Dragon/complex shape (abstracted)
+                float n1 = noise(localP * 10.0);
+                float n2 = noise(localP * 25.0);
+                pat = smoothstep(0.4, 0.5, n1 * n2 * 2.0);
+            }
+            
+            // Faded edges on pattern
+            pat = mix(pat, 1.0, smoothstep(0.8, 1.0, noise(localP * 30.0)));
+            
+            return mix(blueCol, bgCol, pat);
+        }
+
+        // Height map for normal calculation
+        float getHeight(vec2 p) {
+            // Main mosaic
+            vec4 v = voronoi(p * 15.0); // Scale of shards
+            vec2 cellId = v.yz;
+            float edgeDist = v.w;
+            
+            // Bottom row of plates
+            if (p.y < -0.85) {
+                vec2 pp = vec2(p.x * 15.0, (p.y + 0.95) * 15.0);
+                vec2 id = floor(pp);
+                vec2 f = fract(pp) - 0.5;
+                float d = length(f);
+                if (d < 0.45) {
+                    // Plate profile
+                    float h = 1.0 - d*d;
+                    // Rim
+                    h += smoothstep(0.3, 0.45, d) * 0.2;
+                    return h * 0.5;
+                }
+            }
+            
+            // Mortar gap
+            if (edgeDist < 0.06) {
+                // Bumpy mortar
+                return noise(p * 100.0) * 0.05;
+            }
+            
+            // Shard curved profile
+            // Use distance to center of cell to make it bulge
+            vec2 localP = p * 15.0 - cellId;
+            float centerDist = length(localP - (hash22(cellId)-0.5)); // distance to the visual center of this shard
+            
+            // Shards are pieces of bowls, so they curve
+            float curveType = hash12(cellId + 20.0);
+            float h = 0.2;
+            if (curveType > 0.5) {
+                h += 0.3 * (1.0 - centerDist*centerDist); // convex
+            } else {
+                h += 0.3 * centerDist; // concave (inside of bowl)
+            }
+            
+            // Add a rim to some pieces
+            if (hash12(cellId + 21.0) > 0.7 && centerDist > 0.2 && centerDist < 0.3) {
+                h += 0.1;
+            }
+            
+            return h;
+        }
+
+        void main() {
+            vec2 uv = gl_FragCoord.xy / iResolution.xy;
+            vec2 p = uv * 2.0 - 1.0;
+            p.x *= iResolution.x / iResolution.y;
+
+            // Global animation/trippy warp
+            vec2 warp = vec2(sin(iTime*0.2 + p.y*2.0), cos(iTime*0.15 + p.x*2.0)) * 0.05;
+            p += warp;
+
+            // --- 1. GET DATA ---
+            vec4 v = voronoi(p * 15.0);
+            vec2 cellId = v.yz;
+            float edgeDist = v.w;
+            vec2 localP = p * 15.0 - cellId;
+            
+            vec3 col = vec3(0.0);
+            
+            // --- 2. BASE COLOR ---
+            bool isBottomPlate = false;
+            vec2 bpId;
+            vec2 bpF;
+            float bpD;
+            
+            if (p.y < -0.85) {
+                vec2 pp = vec2(p.x * 15.0, (p.y + 0.95) * 15.0);
+                bpId = floor(pp);
+                bpF = fract(pp) - 0.5;
+                bpD = length(bpF);
+                if (bpD < 0.45) isBottomPlate = true;
+            }
+
+            if (isBottomPlate) {
+                // Bottom intact plates
+                col = getShardPattern(bpF * 2.0, bpId + vec2(100.0));
+                // Add a dirty ring
+                if (bpD > 0.3 && bpD < 0.35) col *= 0.8;
+            } 
+            else if (edgeDist < 0.06) {
+                // Mortar
+                col = vec3(0.7, 0.7, 0.65); // Dirty white/grey
+                col *= 0.8 + 0.2 * noise(p * 150.0); // Rough texture
+                // Dirt in crevices
+                col *= smoothstep(0.0, 0.06, edgeDist);
+            } 
+            else {
+                // Shard pattern
+                col = getShardPattern(localP, cellId);
+            }
+
+            // --- 3. LIGHTING (Normal & Specular) ---
+            float h = getHeight(p);
+            
+            vec2 eps = vec2(0.005, 0.0);
+            float hx = getHeight(p + eps.xy) - h;
+            float hy = getHeight(p + eps.yx) - h;
+            vec3 normal = normalize(vec3(-hx * 40.0, -hy * 40.0, 1.0));
+            
+            vec3 lightDir = normalize(vec3(0.5, 0.8, 1.0));
+            vec3 viewDir = normalize(vec3(0.0, 0.0, 1.0));
+            
+            // Diffuse
+            float diff = max(dot(normal, lightDir), 0.0);
+            
+            // Ambient
+            float amb = 0.3 + 0.7 * smoothstep(0.0, 0.1, edgeDist); // Darker in mortar
+            
+            // Specular (glossy porcelain)
+            vec3 halfDir = normalize(lightDir + viewDir);
+            float spec = 0.0;
+            if ((!isBottomPlate && edgeDist >= 0.06) || isBottomPlate) {
+                spec = pow(max(dot(normal, halfDir), 0.0), 60.0) * 1.5;
+            }
+            
+            col = col * (diff * 0.8 + amb) + vec3(1.0) * spec;
+            
+            // Drop shadow from shards onto mortar
+            if (!isBottomPlate && edgeDist < 0.06) {
+                float shadowEdge = voronoi((p + lightDir.xy * 0.01) * 15.0).w;
+                if (shadowEdge > 0.06) col *= 0.6;
+            }
+
+            // --- GLOBAL TRIPPY OVERLAY ---
+            col += 0.02 * vec3(
+                sin(p.x * 8.0 + iTime * 2.0),
+                sin(p.y * 9.0 + iTime * 2.5),
+                sin((p.x - p.y) * 7.0 + iTime * 3.0)
+            );
+
+            // Vignette
+            col *= smoothstep(1.5, 0.4, length(uv * 2.0 - 1.0));
+
+            gl_FragColor = vec4(col, 1.0);
+        }
+    </script>
+    <script>
+        function main() {
+            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
+            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
+            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            function render(t) {
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        } window.onload = main;
+    </script>
+</body>
+</html>

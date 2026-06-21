@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GLSL Scene - Checkered Wood</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+    </style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    
+    <script id="vertex-shader" type="x-shader/x-vertex">
+        attribute vec2 position;
+        void main() {
+            gl_Position = vec4(position, 0.0, 1.0);
+        }
+    </script>
+    
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float;
+        uniform vec2 iResolution;
+
+        // Hash function
+        vec2 hash(vec2 p) {
+            p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
+            return -1.0 + 2.0 * fract(sin(p) * 43758.5453123);
+        }
+
+        // Gradient noise
+        float noise(vec2 p) {
+            vec2 i = floor(p);
+            vec2 f = fract(p);
+            vec2 u = f * f * (3.0 - 2.0 * f);
+            return mix(mix(dot(hash(i + vec2(0.0, 0.0)), f - vec2(0.0, 0.0)),
+                           dot(hash(i + vec2(1.0, 0.0)), f - vec2(1.0, 0.0)), u.x),
+                       mix(dot(hash(i + vec2(0.0, 1.0)), f - vec2(0.0, 1.0)),
+                           dot(hash(i + vec2(1.0, 1.0)), f - vec2(1.0, 1.0)), u.x), u.y);
+        }
+
+        float fbm(vec2 p) {
+            float f = 0.0;
+            float w = 0.5;
+            for(int i = 0; i < 5; i++) {
+                f += w * noise(p);
+                p *= 2.0;
+                w *= 0.5;
+            }
+            return f;
+        }
+
+        void main() {
+            vec2 uv = gl_FragCoord.xy / iResolution.xy;
+            float aspect = iResolution.x / iResolution.y;
+            vec2 p = uv;
+            p.x *= aspect;
+
+            // Grid size
+            float scale = 1.5;
+            vec2 scaledP = p * scale;
+            vec2 tileID = floor(scaledP);
+            vec2 tileUV = fract(scaledP);
+
+            // Checkerboard logic
+            bool isDark = mod(tileID.x + tileID.y, 2.0) == 0.0;
+            
+            // Random offset per tile so pattern doesn't repeat identically
+            vec2 tileOffset = vec2(hash(tileID).x * 100.0, hash(tileID).y * 100.0);
+            
+            vec3 col;
+
+            if (isDark) {
+                // Dark reddish-brown wood (Vertical grain)
+                vec2 noiseP = (p + tileOffset) * vec2(1.0, 0.1); // Stretch coordinates vertically to get vertical lines
+                
+                // Add some swirly distortion to break up straight lines
+                float distortion = fbm(noiseP * 5.0);
+                noiseP.x += distortion * 0.15;
+
+                // Base grain
+                float n = fbm(noiseP * 15.0);
+                n += 0.5 * fbm(noiseP * 30.0);
+                
+                vec3 darkBase = vec3(0.5, 0.22, 0.08); // Warm dark red-brown
+                vec3 darkHighlight = vec3(0.65, 0.32, 0.15);
+                vec3 darkStreak = vec3(0.3, 0.12, 0.05);
+
+                // Mix base color
+                col = mix(darkBase, darkHighlight, n);
+                
+                // Add sharper dark streaks
+                float streakNoise = fbm(noiseP * vec2(40.0, 1.5));
+                col = mix(col, darkStreak, smoothstep(0.4, 0.9, streakNoise));
+
+            } else {
+                // Light beige wood (Horizontal grain)
+                vec2 noiseP = (p + tileOffset) * vec2(0.2, 5.0); // Stretch coordinates horizontally to get horizontal lines
+                
+                // Keep grain straighter, very slight distortion
+                float distortion = fbm(noiseP * 2.0);
+                noiseP.y += distortion * 0.05;
+
+                // High frequency fine horizontal lines
+                float n = fbm(noiseP * vec2(2.0, 40.0));
+                
+                vec3 lightBase = vec3(0.85, 0.8, 0.72);
+                vec3 lightHighlight = vec3(0.92, 0.88, 0.8);
+                vec3 lightStreak = vec3(0.75, 0.68, 0.58);
+
+                // Mix base color
+                col = mix(lightBase, lightHighlight, n);
+                
+                // Add fine straight streaks
+                float streakNoise = fbm(noiseP * vec2(1.0, 60.0));
+                col = mix(col, lightStreak, smoothstep(0.5, 1.0, streakNoise));
+            }
+
+            // Draw Bevel and grooves between tiles
+            float grooveWidth = 0.005;
+            float distToEdgeX = min(tileUV.x, 1.0 - tileUV.x);
+            float distToEdgeY = min(tileUV.y, 1.0 - tileUV.y);
+            float minDist = min(distToEdgeX, distToEdgeY);
+
+            // Subtle dark groove line
+            vec3 grooveCol = vec3(0.15, 0.05, 0.02);
+            if (minDist < grooveWidth) {
+                // Inside the groove
+                col = mix(grooveCol, col, smoothstep(grooveWidth * 0.2, grooveWidth, minDist));
+            } else if (minDist < grooveWidth * 4.0) {
+                // Tile edge bevel (fake 3D lighting)
+                float bevelSize = grooveWidth * 4.0;
+                float shadow = smoothstep(grooveWidth, bevelSize, minDist);
+                // Top/Left edges get a highlight, Bottom/Right edges get a shadow
+                if ((tileUV.x > 1.0 - bevelSize) || (tileUV.y > 1.0 - bevelSize)) {
+                    col *= mix(0.75, 1.0, shadow); // shadow
+                } else if ((tileUV.x < bevelSize) || (tileUV.y < bevelSize)) {
+                    col *= mix(1.15, 1.0, shadow); // highlight
+                }
+            }
+
+            gl_FragColor = vec4(col, 1.0);
+        }
+    </script>
+    
+    <script>
+        function createShader(gl, type, source) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error("An error occurred compiling the shaders: " + gl.getShaderInfoLog(shader));
+                gl.deleteShader(shader);
+                return null;
+            }
+            return shader;
+        }
+
+        function main() {
+            const canvas = document.getElementById("glcanvas");
+            const gl = canvas.getContext("webgl");
+            if (!gl) {
+                alert("Unable to initialize WebGL.");
+                return;
+            }
+
+            const vsSource = document.getElementById("vertex-shader").text;
+            const fsSource = document.getElementById("fragment-shader").text;
+
+            const vertexShader = createShader(gl, gl.VERTEX_SHADER, vsSource);
+            const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fsSource);
+
+            const shaderProgram = gl.createProgram();
+            gl.attachShader(shaderProgram, vertexShader);
+            gl.attachShader(shaderProgram, fragmentShader);
+            gl.linkProgram(shaderProgram);
+
+            if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+                console.error("Unable to initialize the shader program: " + gl.getProgramInfoLog(shaderProgram));
+                return;
+            }
+
+            const positionAttributeLocation = gl.getAttribLocation(shaderProgram, "position");
+            const resolutionUniformLocation = gl.getUniformLocation(shaderProgram, "iResolution");
+
+            const positionBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+            const positions = [
+                -1.0, -1.0,
+                 1.0, -1.0,
+                -1.0,  1.0,
+                -1.0,  1.0,
+                 1.0, -1.0,
+                 1.0,  1.0,
+            ];
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
+
+            function render() {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+                gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+
+                gl.useProgram(shaderProgram);
+
+                gl.enableVertexAttribArray(positionAttributeLocation);
+                gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+                gl.vertexAttribPointer(positionAttributeLocation, 2, gl.FLOAT, false, 0, 0);
+
+                gl.uniform2f(resolutionUniformLocation, gl.canvas.width, gl.canvas.height);
+
+                gl.drawArrays(gl.TRIANGLES, 0, 6);
+                requestAnimationFrame(render);
+            }
+
+            requestAnimationFrame(render);
+        }
+
+        window.onload = main;
+    </script>
+</body>
+</html>

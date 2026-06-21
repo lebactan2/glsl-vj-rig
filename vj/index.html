@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>GLSL VJ Rig</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; overflow: hidden; background: #000; font: 12px/1.4 ui-monospace, monospace; color: #ddd; }
+  #glcanvas { display: block; width: 100vw; height: 100vh; position: fixed; inset: 0; }
+  #panel {
+    position: fixed; top: 12px; left: 12px; width: 280px; z-index: 10;
+    background: rgba(15,15,18,0.82); backdrop-filter: blur(6px);
+    border: 1px solid #333; border-radius: 8px; padding: 12px;
+  }
+  #panel.hidden { display: none; }
+  h1 { font-size: 13px; margin: 0 0 8px; letter-spacing: 1px; color: #8cf; }
+  .layer { border: 1px solid #2a2a30; border-radius: 6px; padding: 8px; margin-bottom: 8px; }
+  .layer h2 { font-size: 11px; margin: 0 0 6px; color: #aaa; display: flex; justify-content: space-between; }
+  label { display: block; margin: 6px 0 2px; color: #999; }
+  select, input[type=range], input[type=file], button { width: 100%; }
+  select, button { background: #1c1c22; color: #ddd; border: 1px solid #3a3a44; border-radius: 4px; padding: 4px; }
+  button { cursor: pointer; margin-top: 4px; }
+  button:hover { background: #26262e; }
+  .row { display: flex; gap: 6px; }
+  .row > * { flex: 1; }
+  .err { color: #f66; font-size: 10px; min-height: 12px; }
+  #meter { height: 6px; background: #222; border-radius: 3px; overflow: hidden; margin-top: 4px; }
+  #meterFill { height: 100%; width: 0%; background: linear-gradient(90deg,#3a6,#fc6,#f55); }
+  .hint { color: #666; font-size: 10px; margin-top: 8px; }
+  kbd { background:#222; border:1px solid #444; border-radius:3px; padding:0 4px; }
+</style>
+</head>
+<body>
+<canvas id="glcanvas"></canvas>
+<div id="panel">
+  <h1>GLSL VJ RIG</h1>
+
+  <div class="layer" id="layerBox0">
+    <h2><span>LAYER 1 (base)</span></h2>
+    <select id="sel0"></select>
+    <label>opacity <span id="op0v">1.00</span></label>
+    <input type="range" id="op0" min="0" max="1" step="0.01" value="1" />
+    <div class="err" id="err0"></div>
+  </div>
+
+  <div class="layer" id="layerBox1">
+    <h2><span>LAYER 2</span><label style="margin:0"><input type="checkbox" id="en1" style="width:auto"> on</label></h2>
+    <select id="sel1"></select>
+    <div class="row">
+      <div>
+        <label>blend</label>
+        <select id="mode1">
+          <option value="0">normal</option>
+          <option value="1">add</option>
+          <option value="2">screen</option>
+          <option value="3">multiply</option>
+        </select>
+      </div>
+    </div>
+    <label>opacity <span id="op1v">1.00</span></label>
+    <input type="range" id="op1" min="0" max="1" step="0.01" value="1" />
+    <div class="err" id="err1"></div>
+  </div>
+
+  <div class="layer">
+    <h2><span>AUDIO</span></h2>
+    <div class="row">
+      <button id="mic">🎤 Mic</button>
+      <button id="play">⏯ Play</button>
+    </div>
+    <label>load track</label>
+    <input type="file" id="file" accept="audio/*" />
+    <label>reactivity <span id="reactv">1.00</span></label>
+    <input type="range" id="react" min="0" max="3" step="0.05" value="1" />
+    <div id="meter"><div id="meterFill"></div></div>
+  </div>
+
+  <div class="hint">
+    <kbd>H</kbd> hide UI · <kbd>R</kbd> random both · <kbd>F</kbd> fullscreen<br>
+    Run via a local server (e.g. <code>npx serve</code>) — file:// blocks shader fetch.
+  </div>
+</div>
+
+<script type="module">
+import { Mixer } from "./mixer.js";
+import { AudioEngine } from "./audio.js";
+
+const $ = (id) => document.getElementById(id);
+const canvas = $("glcanvas");
+let mixer, audio = new AudioEngine(), manifest;
+
+function populate(sel) {
+  const groups = { procedural: [], photo: [] };
+  for (const s of manifest.shaders) groups[s.type].push(s);
+  for (const [type, list] of Object.entries(groups)) {
+    const og = document.createElement("optgroup");
+    og.label = `${type} (${list.length})`;
+    for (const s of list) {
+      const o = document.createElement("option");
+      o.value = s.id; o.textContent = s.id;
+      og.appendChild(o);
+    }
+    sel.appendChild(og);
+  }
+}
+const byId = (id) => manifest.shaders.find((s) => s.id === id);
+
+async function setLayer(i, id, errEl) {
+  errEl.textContent = "";
+  try { await mixer.loadLayer(i, byId(id)); }
+  catch (e) { errEl.textContent = "compile/load error — see console"; console.error(id, e); }
+}
+
+async function boot() {
+  manifest = await fetch("./manifest.json").then((r) => r.json());
+  mixer = new Mixer(canvas);
+  populate($("sel0")); populate($("sel1"));
+
+  // test hooks for vj/verify.js
+  window.__mixer = mixer; window.__manifest = manifest;
+  window.__setLayer = (i, id) => mixer.loadLayer(i, byId(id)).catch((e) => { mixer.layers[i].error = String(e.message || e); });
+  window.__ready = true;
+
+  // sensible defaults
+  $("sel0").value = manifest.shaders.find((s) => s.type === "procedural")?.id || manifest.shaders[0].id;
+  $("sel1").value = manifest.shaders.find((s) => s.type === "photo")?.id || manifest.shaders[0].id;
+  await setLayer(0, $("sel0").value, $("err0"));
+
+  $("sel0").onchange = (e) => setLayer(0, e.target.value, $("err0"));
+  $("sel1").onchange = (e) => { if ($("en1").checked) setLayer(1, e.target.value, $("err1")); };
+  $("en1").onchange = (e) => {
+    mixer.layers[1].enabled = e.target.checked;
+    if (e.target.checked) setLayer(1, $("sel1").value, $("err1"));
+  };
+  $("op0").oninput = (e) => { mixer.layers[0].opacity = +e.target.value; $("op0v").textContent = (+e.target.value).toFixed(2); };
+  $("op1").oninput = (e) => { mixer.layers[1].opacity = +e.target.value; $("op1v").textContent = (+e.target.value).toFixed(2); };
+  $("mode1").onchange = (e) => mixer.layers[1].mode = +e.target.value;
+  $("react").oninput = (e) => { mixer.react = +e.target.value; $("reactv").textContent = (+e.target.value).toFixed(2); };
+
+  $("mic").onclick = async () => { try { await audio.useMic(); $("mic").textContent = "🎤 live"; } catch (e) { alert("Mic denied: " + e.message); } };
+  $("file").onchange = async (e) => { if (e.target.files[0]) { await audio.useFile(e.target.files[0]); } };
+  $("play").onclick = () => audio.playPause();
+
+  addEventListener("keydown", (e) => {
+    const k = e.key.toLowerCase();
+    if (k === "h") $("panel").classList.toggle("hidden");
+    if (k === "f") (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen());
+    if (k === "r") {
+      const rnd = (t) => { const l = manifest.shaders.filter(s=>s.type===t); return l[Math.floor(Math.random()*l.length)].id; };
+      $("sel0").value = rnd("procedural"); setLayer(0, $("sel0").value, $("err0"));
+      if ($("en1").checked) { $("sel1").value = rnd("photo"); setLayer(1, $("sel1").value, $("err1")); }
+    }
+  });
+
+  const t0 = performance.now();
+  (function loop(now) {
+    audio.update();
+    mixer.render((now - t0) * 0.001, audio);
+    $("meterFill").style.width = Math.min(100, audio.level * 140) + "%";
+    requestAnimationFrame(loop);
+  })(t0);
+}
+
+boot().catch((e) => { console.error(e); alert("Boot failed: " + e.message + "\n(Are you running via a local server?)"); });
+</script>
+</body>
+</html>

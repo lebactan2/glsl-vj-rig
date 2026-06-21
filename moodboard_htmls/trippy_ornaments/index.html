@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trippy Ornaments Shader Folder</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; background: #111; color: #f2efe8; font-family: Arial, sans-serif; }
+        header { position: sticky; top: 0; z-index: 2; padding: 18px 24px; background: rgba(17,17,17,.92); border-bottom: 1px solid #333; }
+        h1 { margin: 0; font-size: 22px; font-weight: 700; }
+        p { margin: 6px 0 0; color: #b8b0a3; }
+        main { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 18px; padding: 18px; }
+        .card { background: #1b1b1b; border: 1px solid #333; border-radius: 8px; overflow: hidden; }
+        .thumbs { display: grid; grid-template-columns: 1fr 1fr; aspect-ratio: 16 / 9; background: #000; }
+        img, iframe { width: 100%; height: 100%; border: 0; object-fit: cover; }
+        .meta { display: flex; justify-content: space-between; gap: 12px; padding: 12px; align-items: center; }
+        a { color: #ffca6a; text-decoration: none; white-space: nowrap; }
+    </style>
+</head>
+<body>
+    <header><h1>Trippy Ornaments</h1><p>4 photo-derived GLSL shaders</p></header>
+    <main>
+        <article class="card">
+            <div class="thumbs">
+                <img src="assets/IMG_9786.jpg" alt="IMG_9786 original">
+                <iframe src="IMG_9786.html" title="IMG_9786 shader"></iframe>
+            </div>
+            <div class="meta"><strong>IMG_9786</strong><a href="IMG_9786.html">Open shader</a></div>
+        </article>
+        <article class="card">
+            <div class="thumbs">
+                <img src="assets/IMG_9787.jpg" alt="IMG_9787 original">
+                <iframe src="IMG_9787.html" title="IMG_9787 shader"></iframe>
+            </div>
+            <div class="meta"><strong>IMG_9787</strong><a href="IMG_9787.html">Open shader</a></div>
+        </article>
+        <article class="card">
+            <div class="thumbs">
+                <img src="assets/IMG_9868.jpg" alt="IMG_9868 original">
+                <iframe src="IMG_9868.html" title="IMG_9868 shader"></iframe>
+            </div>
+            <div class="meta"><strong>IMG_9868</strong><a href="IMG_9868.html">Open shader</a></div>
+        </article>
+        <article class="card">
+            <div class="thumbs">
+                <img src="assets/IMG_9869.jpg" alt="IMG_9869 original">
+                <iframe src="IMG_9869.html" title="IMG_9869 shader"></iframe>
+            </div>
+            <div class="meta"><strong>IMG_9869</strong><a href="IMG_9869.html">Open shader</a></div>
+        </article>
+    </main>
+</body>
+</html>

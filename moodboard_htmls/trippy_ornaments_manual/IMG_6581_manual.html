@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shader: IMG_6581 (Manual)</title>
+    <style>body { margin: 0; overflow: hidden; background-color: #000; } canvas { display: block; width: 100vw; height: 100vh; }</style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float; uniform vec2 iResolution; uniform float iTime;
+
+        float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+        float noise(vec2 p) {
+            vec2 i = floor(p); vec2 f = fract(p);
+            f = f * f * (3.0 - 2.0 * f);
+            return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x),
+                       mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+        }
+
+        mat2 rot(float a) { float s = sin(a), c = cos(a); return mat2(c, -s, s, c); }
+
+        float sdBox(vec2 p, vec2 b) {
+            vec2 d = abs(p) - b;
+            return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+        }
+        
+        float sdCircle(vec2 p, float r) { return length(p) - r; }
+        
+        float sdSegment(vec2 p, vec2 a, vec2 b) {
+            vec2 pa = p-a, ba = b-a;
+            float h = clamp(dot(pa,ba)/dot(ba,ba), 0.0, 1.0);
+            return length(pa - ba*h);
+        }
+
+        float smin(float a, float b, float k) {
+            float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+            return mix(b, a, h) - k * h * (1.0 - h);
+        }
+
+        void main() {
+            vec2 uv = gl_FragCoord.xy / iResolution.xy;
+            vec2 p = uv * 2.0 - 1.0;
+            p.x *= iResolution.x / iResolution.y;
+
+            vec3 col = vec3(0.0);
+
+            // --- BACKGROUND ---
+            
+            // 1. Sky & Clouds (Top)
+            if (p.y > 0.3) {
+                col = mix(vec3(0.6, 0.7, 0.9), vec3(0.4, 0.55, 0.8), p.y);
+                float clouds = noise(p * 3.0 + vec2(iTime*0.05, 0.0));
+                col = mix(col, vec3(0.9, 0.95, 1.0), smoothstep(0.4, 0.8, clouds));
+            }
+            
+            // 2. Tall White Buildings
+            if (p.y > 0.0 && p.y < 1.0) {
+                // Building 1 (Left)
+                float bd1 = sdBox(p - vec2(-0.7, 0.4), vec2(0.25, 0.6));
+                // Building 2 (Right)
+                float bd2 = sdBox(p - vec2(0.6, 0.45), vec2(0.3, 0.65));
+                
+                if (bd1 < 0.0 || bd2 < 0.0) {
+                    col = vec3(0.85, 0.85, 0.9); // White concrete
+                    
+                    // Windows Grid
+                    vec2 bp = (bd1 < 0.0) ? p - vec2(-0.7, 0.4) : p - vec2(0.6, 0.45);
+                    float gridX = fract(bp.x * 20.0);
+                    float gridY = fract(bp.y * 30.0);
+                    
+                    if (gridX < 0.3 && gridY < 0.5) col = vec3(0.2, 0.25, 0.3); // Dark windows
+                    
+                    // Vertical structural lines
+                    if (fract(bp.x * 5.0) < 0.1) col = vec3(0.95);
+                    
+                    // Side shadow
+                    if (bp.x > 0.1) col *= 0.8;
+                }
+            }
+
+            // 3. Green Road Sign (Center Top)
+            vec2 signP = p - vec2(-0.1, 0.75);
+            if (sdBox(signP, vec2(0.18, 0.15)) < 0.0) {
+                col = vec3(0.2, 0.5, 0.35); // Dark Green
+                
+                // White text / arrows
+                if (abs(signP.y - 0.05) < 0.01 && abs(signP.x - -0.05) < 0.08) col = vec3(0.95); // Text 1
+                if (sdBox(signP - vec2(0.12, 0.05), vec2(0.01, 0.03)) < 0.0) col = vec3(0.95); // Up arrow body
+                if (sdSegment(signP, vec2(0.12, 0.08), vec2(0.1, 0.05)) < 0.01) col = vec3(0.95); // arrow head
+                
+                if (abs(signP.y - -0.05) < 0.01 && abs(signP.x - 0.0) < 0.08) col = vec3(0.95); // Text 2
+                if (sdBox(signP - vec2(-0.12, -0.05), vec2(0.03, 0.01)) < 0.0) col = vec3(0.95); // Left arrow body
+                if (sdSegment(signP, vec2(-0.15, -0.05), vec2(-0.12, -0.02)) < 0.01) col = vec3(0.95); // arrow head
+            }
+            // Sign post
+            if (sdBox(p - vec2(-0.25, 0.4), vec2(0.015, 0.4)) < 0.0) col = vec3(0.6);
+
+            // 4. Banana Trees & Fences (Left Mid)
+            if (p.y > -0.2 && p.y < 0.5 && p.x < 0.2) {
+                // Banana leaves
+                vec2 treeP = p - vec2(-0.4, 0.1);
+                float leafNoise = noise(treeP * 10.0);
+                if (leafNoise > 0.4 && length(treeP) < 0.4) {
+                    // Make them look spiky/frondy
+                    float frond = sin(atan(treeP.y, treeP.x) * 15.0 + treeP.x * 10.0);
+                    if (frond > 0.0) {
+                        col = vec3(0.2, 0.4, 0.15); // Dark green
+                        col *= 0.7 + 0.3 * noise(p * 50.0);
+                    }
+                }
+                
+                // Concrete barriers (Bottom left)
+                if (p.y < -0.1 && p.x < -0.3) {
+                    float barrier = fract(p.x * 2.0);
+                    if (barrier > 0.1) {
+                        col = vec3(0.7); // Grey concrete
+                        col *= 0.8 + 0.2 * noise(p * 40.0);
+                        if (p.y > -0.12) col = vec3(0.8); // top edge
+                    }
+                }
+            }
+
+            // 5. Road (Bottom)
+            if (p.y <= -0.1) {
+                col = vec3(0.35, 0.36, 0.38); // Grey asphalt
+                col *= 0.9 + 0.1 * noise(p * 150.0);
+                // Perspective gradient
+                col *= smoothstep(-1.0, -0.1, p.y) * 0.4 + 0.6;
+                
+                // Black/White painted curb (Left)
+                vec2 curbP = p - vec2(-0.8, -0.1);
+                // Diagonal perspective
+                float curbLine = curbP.x - curbP.y * 1.5;
+                if (abs(curbLine) < 0.05) {
+                    float stripes = fract(p.y * 10.0);
+                    col = (stripes > 0.5) ? vec3(0.8) : vec3(0.1);
+                }
+            }
+
+            // --- MAIN SUBJECT: BLACK PICKUP TRUCK ---
+            vec2 truckP = p - vec2(0.2, -0.4);
+            float dTruck = 1000.0;
+            vec3 truckCol = vec3(0.0);
+            
+            // Drop shadow
+            if (sdBox(p - vec2(0.2, -0.75), vec2(0.4, 0.1)) < 0.0) col *= 0.3;
+
+            // 1. Lower Tailgate Body
+            float dTailgate = sdBox(truckP, vec2(0.5, 0.18));
+            if (dTailgate < 0.0) {
+                dTruck = dTailgate;
+                truckCol = vec3(0.1, 0.1, 0.12); // Black body
+                // Glossy reflection on black paint
+                float gloss = smoothstep(0.9, 1.0, sin(truckP.x * 5.0 + truckP.y * 10.0));
+                truckCol += vec3(0.1) * gloss;
+            }
+
+            // 2. Upper Cab/Window Area
+            float dCab = sdBox(truckP - vec2(0.0, 0.3), vec2(0.4, 0.25));
+            if (dCab < 0.0 && truckP.y > 0.18) {
+                dTruck = dCab;
+                truckCol = vec3(0.05); // Dark interior/window
+                // Reflections on glass
+                float glassRefl = smoothstep(0.8, 1.0, sin(truckP.x * 4.0 - truckP.y * 5.0));
+                truckCol += vec3(0.1, 0.15, 0.2) * glassRefl;
+            }
+
+            // 3. Mesh Cage (Behind cab)
+            if (dCab < 0.0 && truckP.y > 0.18) {
+                // Diamond grid
+                vec2 meshP = truckP * 25.0;
+                float mesh = smoothstep(0.8, 1.0, sin(meshP.x + meshP.y)) + 
+                             smoothstep(0.8, 1.0, sin(meshP.x - meshP.y));
+                if (mesh > 0.5) {
+                    dTruck = -1.0;
+                    truckCol = vec3(0.6); // Silver/grey wire
+                    // Specular on wire
+                    if (noise(truckP * 100.0) > 0.7) truckCol = vec3(0.9);
+                }
+            }
+            // Frame around mesh
+            if (abs(sdBox(truckP - vec2(0.0, 0.3), vec2(0.4, 0.25))) < 0.01 && truckP.y > 0.18) {
+                dTruck = -1.0; truckCol = vec3(0.2); // black tubing
+            }
+
+            // 4. White Bags in Truck Bed
+            if (truckP.y > 0.18 && truckP.y < 0.25) {
+                if (sdCircle(truckP - vec2(0.1, 0.22), 0.06) < 0.0 || 
+                    sdCircle(truckP - vec2(0.3, 0.22), 0.05) < 0.0) {
+                    dTruck = -1.0;
+                    truckCol = vec3(0.85); // dirty white bag
+                    truckCol *= 0.8 + 0.2 * noise(truckP * 50.0);
+                    // shadows between bags
+                    if (truckP.y < 0.2) truckCol *= 0.7;
+                }
+                // Green bag
+                if (sdCircle(truckP - vec2(0.3, 0.2), 0.04) < 0.0) {
+                    dTruck = -1.0; truckCol = vec3(0.1, 0.5, 0.2);
+                }
+            }
+
+            // 5. Silver Bumper Guard
+            float dBumper = sdSegment(truckP, vec2(-0.45, -0.2), vec2(0.45, -0.2));
+            // Curved ends
+            dBumper = min(dBumper, sdSegment(truckP, vec2(-0.45, -0.2), vec2(-0.5, -0.15)));
+            dBumper = min(dBumper, sdSegment(truckP, vec2(0.45, -0.2), vec2(0.5, -0.15)));
+            if (dBumper < 0.02) {
+                dTruck = dBumper;
+                truckCol = vec3(0.7); // Silver
+                // Chrome reflection
+                float chrome = smoothstep(0.0, 0.01, abs(truckP.y - -0.2)) * 0.5;
+                truckCol += vec3(0.3) * chrome;
+                // Shadow below
+                if (truckP.y < -0.2) truckCol *= 0.5;
+            }
+
+            // 6. License Plate
+            vec2 plateP = truckP - vec2(0.05, -0.12);
+            if (sdBox(plateP, vec2(0.15, 0.06)) < 0.0) {
+                dTruck = -1.0;
+                truckCol = vec3(0.95); // White plate
+                // Black Text "A 8743 ML" (abstracted)
+                if (abs(plateP.y - 0.01) < 0.015 && abs(plateP.x) < 0.12) {
+                    float txtNoise = noise(plateP * vec2(100.0, 10.0));
+                    if (txtNoise > 0.5) truckCol = vec3(0.1);
+                }
+                // Small text below
+                if (abs(plateP.y - -0.04) < 0.005 && abs(plateP.x) < 0.05) truckCol = vec3(0.1);
+            }
+
+            // 7. Tail Lights
+            vec2 tL = truckP - vec2(-0.4, -0.08);
+            vec2 tR = truckP - vec2(0.4, -0.08);
+            if (sdBox(tL, vec2(0.04, 0.03)) < 0.0) { dTruck = -1.0; truckCol = vec3(0.8, 0.1, 0.1); } // Red
+            if (sdBox(tR, vec2(0.04, 0.03)) < 0.0) { dTruck = -1.0; truckCol = vec3(0.8, 0.1, 0.1); } // Red
+            // Reverse lights (clear)
+            if (sdBox(tL - vec2(0.05, 0.0), vec2(0.01, 0.03)) < 0.0) truckCol = vec3(0.9);
+            if (sdBox(tR - vec2(-0.05, 0.0), vec2(0.01, 0.03)) < 0.0) truckCol = vec3(0.9);
+
+            // 8. TAILGATE DECALS (Colorful Stickers)
+            if (truckP.y > 0.0 && truckP.y < 0.15 && abs(truckP.x) < 0.45) {
+                // "ONE HEART" Graffiti Text
+                if (truckP.y > 0.05 && truckP.y < 0.13) {
+                    float letters = noise(truckP * vec2(20.0, 10.0) + vec2(sin(truckP.x*10.0), 0.0));
+                    if (letters > 0.4) {
+                        dTruck = -1.0;
+                        // Color bands based on X position
+                        if (truckP.x < -0.2) truckCol = vec3(0.8, 0.1, 0.1); // Red
+                        else if (truckP.x < 0.0) truckCol = vec3(0.1, 0.8, 0.2); // Green
+                        else if (truckP.x < 0.2) truckCol = vec3(0.9, 0.8, 0.1); // Yellow
+                        else truckCol = vec3(0.1, 0.4, 0.8); // Blue
+                        
+                        // White outline
+                        if (letters > 0.4 && letters < 0.45) truckCol = vec3(0.9);
+                    }
+                }
+                
+                // Cursive text below
+                if (truckP.y > 0.02 && truckP.y < 0.05) {
+                    float curs = sin(truckP.x * 50.0 + sin(truckP.x * 20.0)*2.0) * 0.01 + 0.035;
+                    if (abs(truckP.y - curs) < 0.003 && fract(truckP.x * 10.0) < 0.8) {
+                        dTruck = -1.0; truckCol = vec3(0.9);
+                    }
+                }
+                
+                // Circular Badges
+                if (sdCircle(truckP - vec2(-0.05, 0.02), 0.03) < 0.0) { dTruck = -1.0; truckCol = vec3(0.9); if (noise(truckP*100.0)>0.5) truckCol=vec3(0.2); }
+                if (sdCircle(truckP - vec2(0.1, 0.02), 0.03) < 0.0) { dTruck = -1.0; truckCol = vec3(0.9); if (noise(truckP*100.0)>0.5) truckCol=vec3(0.8, 0.2, 0.2); }
+                
+                // Blue "044" Shield Sticker
+                vec2 shieldP = truckP - vec2(0.35, 0.05);
+                float dShield = max(abs(shieldP.x) - 0.04, shieldP.y + abs(shieldP.x) - 0.04);
+                dShield = max(dShield, -shieldP.y - 0.03); // top flat
+                if (dShield < 0.0) {
+                    dTruck = -1.0;
+                    truckCol = vec3(0.1, 0.4, 0.8); // Blue
+                    // White outline
+                    if (abs(dShield) < 0.005) truckCol = vec3(0.9);
+                    // "044" text
+                    if (abs(shieldP.y) < 0.01 && abs(shieldP.x) < 0.03 && fract(shieldP.x*30.0)>0.2) truckCol = vec3(0.9);
+                }
+            }
+
+            // Combine Truck
+            if (dTruck < 0.0) {
+                col = mix(col, truckCol, smoothstep(0.0, -0.005, dTruck));
+            }
+
+            // --- GLOBAL TRIPPY OVERLAY ---
+            vec2 trippyP = p * 1.5 + vec2(sin(iTime*0.3), cos(iTime*0.4)) * 0.1;
+            col += 0.02 * vec3(
+                sin(trippyP.x * 5.0 + iTime * 2.0),
+                sin(trippyP.y * 6.0 + iTime * 2.5),
+                sin((trippyP.x - trippyP.y) * 5.0 + iTime * 3.0)
+            );
+
+            // Vignette
+            col *= smoothstep(1.5, 0.2, length(p));
+
+            gl_FragColor = vec4(col, 1.0);
+        }
+    </script>
+    <script>
+        function main() {
+            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
+            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
+            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            function render(t) {
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        } window.onload = main;
+    </script>
+</body>
+</html>

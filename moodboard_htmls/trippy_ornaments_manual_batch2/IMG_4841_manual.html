@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shader: IMG_4841 (Manual)</title>
+    <style>body { margin: 0; overflow: hidden; background-color: #000; } canvas { display: block; width: 100vw; height: 100vh; }</style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float; uniform vec2 iResolution; uniform float iTime;
+
+        float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+        float noise(vec2 p) {
+            vec2 i = floor(p); vec2 f = fract(p);
+            f = f * f * (3.0 - 2.0 * f);
+            return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x),
+                       mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+        }
+
+        float sdBox(vec2 p, vec2 b) {
+            vec2 d = abs(p) - b;
+            return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+        }
+
+        float sdCircle(vec2 p, float r) { return length(p) - r; }
+        
+        float sdSegment(vec2 p, vec2 a, vec2 b) {
+            vec2 pa = p-a, ba = b-a;
+            float h = clamp(dot(pa,ba)/dot(ba,ba), 0.0, 1.0);
+            return length(pa - ba*h);
+        }
+
+        // Extremely simplified representation of the letters "PHO MINH"
+        float sdPhoMinh(vec2 p) {
+            float d = 1000.0;
+            // P
+            d = min(d, sdSegment(p, vec2(-0.8, -0.1), vec2(-0.8, 0.1)));
+            d = min(d, sdBox(p - vec2(-0.7, 0.05), vec2(0.08, 0.05)));
+            // H
+            d = min(d, sdSegment(p, vec2(-0.5, -0.1), vec2(-0.5, 0.1)));
+            d = min(d, sdSegment(p, vec2(-0.35, -0.1), vec2(-0.35, 0.1)));
+            d = min(d, sdSegment(p, vec2(-0.5, 0.0), vec2(-0.35, 0.0)));
+            // O
+            d = min(d, abs(sdCircle(p - vec2(-0.15, 0.0), 0.1)) - 0.02);
+            
+            // M
+            d = min(d, sdSegment(p, vec2(0.15, -0.1), vec2(0.15, 0.1)));
+            d = min(d, sdSegment(p, vec2(0.15, 0.1), vec2(0.25, 0.0)));
+            d = min(d, sdSegment(p, vec2(0.25, 0.0), vec2(0.35, 0.1)));
+            d = min(d, sdSegment(p, vec2(0.35, -0.1), vec2(0.35, 0.1)));
+            // I
+            d = min(d, sdSegment(p, vec2(0.5, -0.1), vec2(0.5, 0.1)));
+            // N
+            d = min(d, sdSegment(p, vec2(0.65, -0.1), vec2(0.65, 0.1)));
+            d = min(d, sdSegment(p, vec2(0.65, 0.1), vec2(0.8, -0.1)));
+            d = min(d, sdSegment(p, vec2(0.8, -0.1), vec2(0.8, 0.1)));
+            // H
+            d = min(d, sdSegment(p, vec2(0.95, -0.1), vec2(0.95, 0.1)));
+            d = min(d, sdSegment(p, vec2(1.1, -0.1), vec2(1.1, 0.1)));
+            d = min(d, sdSegment(p, vec2(0.95, 0.0), vec2(1.1, 0.0)));
+            
+            // Hollow out the letters
+            float hollowP = sdBox(p - vec2(-0.7, 0.05), vec2(0.04, 0.02));
+            if (hollowP < 0.0) d = 1.0;
+            
+            return d - 0.02; // Thickness
+        }
+
+        float fbm(vec2 p) {
+            float v = 0.0, a = 0.5;
+            for (int i=0; i<5; i++) {
+                v += a * noise(p);
+                p *= 2.0;
+                a *= 0.5;
+            }
+            return v;
+        }
+
+        void main() {
+            vec2 uv = gl_FragCoord.xy / iResolution.xy;
+            vec2 p = uv * 2.0 - 1.0;
+            p.x *= iResolution.x / iResolution.y;
+
+            vec3 col = vec3(0.0);
+
+            // --- RESTAURANT INTERIOR (Perspective view) ---
+            if (p.y < 0.6) {
+                // Base walls
+                col = vec3(0.6, 0.9, 0.7); // Mint green walls
+                
+                // Perspective calculation
+                vec2 center = vec2(0.0, 0.1); // Vanishing point
+                vec2 dir = p - center;
+                float depth = 1.0 / max(0.1, abs(dir.y)); // Simple fake depth
+                
+                if (dir.y > 0.0) {
+                    // Ceiling
+                    col = vec3(0.95, 0.95, 0.9);
+                    // Ceiling fan (rotating)
+                    vec2 fanP = p - vec2(0.0, 0.3);
+                    float angle = atan(fanP.y, fanP.x) + iTime * 3.0;
+                    if (length(fanP) < 0.2 && mod(angle, 2.094) < 0.3) col *= 0.8;
+                } else {
+                    // Floor
+                    col = vec3(0.85, 0.85, 0.8);
+                    // Floor tiles
+                    vec2 floorUV = dir * depth * 5.0;
+                    floorUV.x += center.x;
+                    if (fract(floorUV.x) < 0.05 || fract(floorUV.y) < 0.05) col *= 0.9;
+                }
+                
+                // Side walls shading (darker further back)
+                if (abs(dir.x) > abs(dir.y) * 1.5) {
+                    col = vec3(0.5, 0.8, 0.6); // Mint green
+                    col *= min(1.0, 0.5 + 1.0 / depth);
+                    // Menu boards on walls
+                    if (abs(dir.y) < 0.2 && abs(dir.x) > abs(dir.y)*2.0) col = vec3(0.8, 0.8, 0.6);
+                }
+                
+                // Back wall
+                if (depth > 8.0) {
+                    col = vec3(0.4, 0.7, 0.5);
+                    // Mirrors/doorways in back
+                    if (abs(p.x) < 0.2 && p.y > -0.1 && p.y < 0.15) col = vec3(0.2, 0.15, 0.1);
+                }
+                
+                // --- PEOPLE AND TABLES (Abstracted) ---
+                // We'll place a few blobs based on depth to fake a crowd
+                for(float i=1.0; i<=6.0; i++) {
+                    float z = i * 1.5; // Depth
+                    float scale = 1.0 / z;
+                    
+                    // Left table
+                    vec2 tPosL = center + vec2(-0.5 * z, -0.4 * z) * scale;
+                    if (sdBox(p - tPosL, vec2(0.2, 0.05)*scale) < 0.0) col = vec3(0.8, 0.7, 0.6); // table
+                    // People left
+                    if (sdCircle(p - tPosL - vec2(-0.15, 0.15)*scale, 0.1*scale) < 0.0) col = vec3(0.1); // hair
+                    if (sdCircle(p - tPosL - vec2(0.15, 0.15)*scale, 0.1*scale) < 0.0) col = vec3(0.2); // hair
+                    if (sdBox(p - tPosL - vec2(-0.15, 0.05)*scale, vec2(0.12, 0.1)*scale) < 0.0) col = vec3(0.8, 0.8, 0.8); // white shirt
+                    if (sdBox(p - tPosL - vec2(0.15, 0.05)*scale, vec2(0.12, 0.1)*scale) < 0.0) col = vec3(0.4, 0.5, 0.3); // green shirt
+                    
+                    // Right table
+                    vec2 tPosR = center + vec2(0.5 * z, -0.4 * z) * scale;
+                    if (sdBox(p - tPosR, vec2(0.2, 0.05)*scale) < 0.0) col = vec3(0.8, 0.7, 0.6);
+                    // People right
+                    if (sdCircle(p - tPosR - vec2(-0.1, 0.15)*scale, 0.1*scale) < 0.0) col = vec3(0.3); // hair
+                    if (sdCircle(p - tPosR - vec2(0.2, 0.15)*scale, 0.1*scale) < 0.0) col = vec3(0.1); // hair
+                    if (sdBox(p - tPosR - vec2(-0.1, 0.05)*scale, vec2(0.12, 0.1)*scale) < 0.0) col = vec3(0.9, 0.8, 0.2); // yellow shirt
+                    if (sdBox(p - tPosR - vec2(0.2, 0.05)*scale, vec2(0.12, 0.1)*scale) < 0.0) col = vec3(0.9); // white shirt
+                }
+                
+                // --- MOVING WAITERS ---
+                // Waiter 1 (Foreground)
+                float w1x = sin(iTime * 0.5) * 0.1 - 0.1;
+                vec2 w1P = p - vec2(w1x, -0.2);
+                if (sdBox(w1P, vec2(0.15, 0.3)) < 0.0) col = vec3(0.1); // black clothes
+                if (sdCircle(w1P - vec2(0.0, 0.4), 0.1) < 0.0) col = vec3(0.1); // head
+                // White apron strings
+                if (abs(w1P.y + 0.1) < 0.01 && abs(w1P.x) < 0.15) col = vec3(0.9);
+                if (sdBox(w1P - vec2(-0.1, -0.2), vec2(0.01, 0.1)) < 0.0) col = vec3(0.9);
+                if (sdBox(w1P - vec2(0.1, -0.2), vec2(0.01, 0.1)) < 0.0) col = vec3(0.9);
+                
+                // Waiter 2 (Background)
+                vec2 w2P = p - vec2(0.1, 0.05 + sin(iTime*2.0)*0.02);
+                if (sdBox(w2P, vec2(0.08, 0.2)) < 0.0) col = vec3(0.1);
+                if (sdCircle(w2P - vec2(0.0, 0.25), 0.06) < 0.0) col = vec3(0.1);
+            }
+
+            // --- EXTERIOR FRAME (Granite & Sign) ---
+            float frameDist = max(abs(p.x) - 0.9, p.y - 0.6);
+            if (frameDist > 0.0) {
+                if (p.y > 0.6) {
+                    // Top Sign Area
+                    col = vec3(0.9, 0.95, 0.95); // glowing white background
+                    
+                    // The "PHO MINH" cutout text
+                    vec2 textP = p;
+                    textP.y -= 0.8; // center text vertically
+                    textP.x *= 1.2; // squeeze slightly
+                    textP.x += 0.2; // offset
+                    
+                    float dText = sdPhoMinh(textP * 1.5); // scale up
+                    
+                    if (dText < 0.0) {
+                        col = vec3(0.1, 0.1, 0.12); // black/dark brown letters
+                    } else if (dText < 0.02) {
+                        col *= 0.5; // soft shadow/edge
+                    }
+                    
+                    // Small address plaque
+                    if (sdBox(p - vec2(0.0, 0.68), vec2(0.1, 0.05)) < 0.0) {
+                        col = vec3(0.2); // dark plaque
+                        if (fract(p.x * 20.0) < 0.5 && abs(p.y - 0.68) < 0.02) col = vec3(0.8); // fake text
+                    }
+                } else {
+                    // Side Granite Pillars
+                    col = vec3(0.4, 0.4, 0.45); // grey base
+                    // Granite noise texture
+                    col *= 0.7 + 0.3 * fbm(p * 20.0);
+                    col += 0.1 * noise(p * 100.0);
+                    
+                    // Glass door edge
+                    if (abs(abs(p.x) - 0.85) < 0.02) col = vec3(0.2);
+                }
+            }
+
+            // --- FOREGROUND OBJECTS ---
+            // Left: Blue Motorcycle Front
+            vec2 motoP = p - vec2(-0.8, -0.6);
+            if (sdCircle(motoP, 0.3) < 0.0 || sdBox(motoP - vec2(0.1, -0.2), vec2(0.2, 0.3)) < 0.0) {
+                if (p.x < -0.4 && p.y < -0.2) {
+                    col = vec3(0.15, 0.2, 0.3); // dark blue
+                    col *= 0.5 + 0.5 * smoothstep(0.0, -0.2, length(motoP)); // curved shading
+                    // Headlight/silver bits
+                    if (sdCircle(motoP - vec2(0.2, 0.1), 0.08) < 0.0) col = vec3(0.9);
+                    // Wheel
+                    if (sdCircle(motoP - vec2(0.2, -0.4), 0.2) < 0.0) {
+                        col = vec3(0.1);
+                        if (sdCircle(motoP - vec2(0.2, -0.4), 0.1) < 0.0) col = vec3(0.3); // hub
+                    }
+                }
+            }
+
+            // Right: Foreground people eating
+            if (p.x > 0.4 && p.y < -0.5) {
+                // Table
+                if (sdBox(p - vec2(0.7, -0.8), vec2(0.2, 0.2)) < 0.0) col = vec3(0.85, 0.8, 0.75);
+                // Person right (white shirt)
+                if (sdCircle(p - vec2(0.8, -0.6), 0.15) < 0.0) col = vec3(0.9);
+                if (sdCircle(p - vec2(0.8, -0.4), 0.12) < 0.0) col = vec3(0.1); // hair
+                // Person left (blue shirt)
+                if (sdCircle(p - vec2(0.4, -0.5), 0.15) < 0.0) col = vec3(0.2, 0.3, 0.4);
+                if (sdCircle(p - vec2(0.5, -0.3), 0.1) < 0.0) col = vec3(0.1); // hair
+            }
+
+            // Global trippy overlay to match aesthetic theme
+            vec2 trippyP = p * 1.5 + vec2(sin(iTime*0.4), cos(iTime*0.5)) * 0.1;
+            col += 0.015 * vec3(
+                sin(trippyP.x * 4.0 + iTime * 2.0),
+                sin(trippyP.y * 5.0 + iTime * 2.5),
+                sin((trippyP.x - trippyP.y) * 4.0 + iTime * 3.0)
+            );
+
+            gl_FragColor = vec4(col, 1.0);
+        }
+    </script>
+    <script>
+        function main() {
+            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
+            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
+            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            function render(t) {
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        } window.onload = main;
+    </script>
+</body>
+</html>

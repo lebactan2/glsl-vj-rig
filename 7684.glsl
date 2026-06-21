@@ -1,0 +1,137 @@
+void main() {
+    vec2 uv = gl_FragCoord.xy / iResolution.xy;
+    vec2 p = uv * 2.0 - 1.0;
+    p.x *= iResolution.x / iResolution.y;
+    
+    vec3 col = vec3(0.0);
+    
+    // --- Background (Sky and Top Building) ---
+    col = vec3(0.8, 0.8, 0.82); // overcast sky
+    
+    // Top Green Building
+    if (p.y > 0.7 && p.x > -0.5 && p.x < 0.6) {
+        col = vec3(0.6, 0.75, 0.4); // bright green
+        // Red "PERFECT" sign
+        if (p.y > 0.85 && p.y < 0.95) {
+            col = vec3(0.6, 0.75, 0.4); // bg
+            if (fract(p.x * 6.0) < 0.5 && p.x > -0.4 && p.x < 0.5) col = vec3(0.8, 0.2, 0.2);
+        }
+        // Windows below
+        if (p.y > 0.75 && p.y < 0.85) {
+            if (abs(p.x) < 0.2) col = vec3(0.2, 0.3, 0.5);
+        }
+    }
+    
+    // Top Roof Edge of main building
+    if (p.y > 0.6 && p.y <= 0.7) {
+        col = vec3(0.5, 0.2, 0.2); // dark red
+        if (p.x < -0.4 || p.x > 0.5) col = vec3(0.8, 0.8, 0.82); // cut corners
+        // Green dragon shape on top
+        if (p.y > 0.65 && p.x < -0.1) {
+            if (fract(p.x * 10.0 + sin(p.x*20.0 + iTime)*0.5) < 0.3) col = vec3(0.3, 0.5, 0.4);
+        }
+    }
+
+    // --- Main Facade ---
+    if (p.y > -0.6 && p.y <= 0.6) {
+        col = vec3(0.4, 0.65, 0.65); // light teal wall
+        
+        // Right side shadow/structure
+        if (p.x > 0.8) col = vec3(0.4, 0.2, 0.2); // red wall side
+        
+        // --- Center Frame (Sign/Window) ---
+        float dFrame = max(abs(p.x) - 0.5, abs(p.y) - 0.3);
+        if (dFrame < 0.0) {
+            col = vec3(0.15, 0.1, 0.1); // dark interior
+            
+            vec3 grateCol = vec3(0.8, 0.7, 0.3); // yellow
+            float isGrate = 0.0;
+            
+            // Outer frame
+            if (dFrame > -0.05) isGrate = 1.0;
+            
+            // Inner grid (animate to slide slightly)
+            vec2 gridP = p;
+            gridP.x += sin(iTime + p.y * 5.0) * 0.02;
+            
+            if (fract(gridP.x * 5.0) < 0.05) isGrate = 1.0;
+            if (fract(gridP.y * 5.0) < 0.05) isGrate = 1.0;
+            // Decorative shapes (maze like)
+            vec2 gp = fract(gridP * 5.0);
+            if (abs(gp.x - 0.5) < 0.05 || abs(gp.y - 0.5) < 0.05) isGrate = 0.5;
+            
+            if (isGrate > 0.0) col = mix(col, grateCol, isGrate);
+            
+            // Center Yellow Sign
+            if (abs(p.y) < 0.12 && abs(p.x) < 0.4) {
+                col = vec3(0.8, 0.7, 0.2); // yellow bg
+                
+                // Red Chinese Text
+                if (abs(p.x - (-0.25)) < 0.06 || abs(p.x) < 0.06 || abs(p.x - 0.25) < 0.06) {
+                    if (abs(p.y) < 0.08) {
+                        // rough character shapes
+                        if (fract(p.y * 15.0) < 0.5 || fract(p.x * 20.0) < 0.5) {
+                            col = vec3(0.7, 0.2, 0.2); // red text
+                        }
+                    }
+                }
+            }
+        }
+        
+        // --- Golden Dragons (Left and Right) ---
+        vec3 goldCol = vec3(0.75, 0.65, 0.2);
+        
+        // Left Dragon
+        vec2 lp = p - vec2(-0.7, 0.0);
+        float dL = length(max(abs(lp) - vec2(0.1, 0.3), 0.0)) - 0.05;
+        dL = min(dL, abs(length(lp - vec2(0.1, 0.2)) - 0.15) - 0.05); // top curve
+        dL = min(dL, abs(length(lp - vec2(0.1, -0.2)) - 0.1) - 0.04); // bottom curve
+        
+        // Right Dragon
+        vec2 rp = p - vec2(0.65, 0.0);
+        float dR = length(max(abs(rp) - vec2(0.1, 0.3), 0.0)) - 0.05;
+        dR = min(dR, abs(length(rp - vec2(-0.1, 0.2)) - 0.15) - 0.05);
+        dR = min(dR, abs(length(rp - vec2(-0.1, -0.2)) - 0.1) - 0.04);
+        
+        if (dL < 0.0 || dR < 0.0) {
+            col = goldCol;
+            // shading + animate the gold reflection
+            col *= 0.7 + 0.3 * sin(p.x * 50.0 + p.y * 50.0 + iTime * 5.0);
+            if (p.y < 0.0) col *= 0.8;
+        }
+        
+        // Small top centerpiece
+        if (abs(p.x) < 0.15 && p.y > 0.3 && p.y < 0.5) {
+            if (length(p - vec2(0.0, 0.4)) < 0.1) col = goldCol;
+        }
+    }
+
+    // --- Bottom Roof Layer ---
+    if (p.y <= -0.6) {
+        // Red scalloped tiles
+        vec2 tp = p;
+        tp.x = fract(tp.x * 10.0) - 0.5;
+        col = vec3(0.6, 0.3, 0.25); // red roof
+        
+        float arc = length(tp - vec2(0.0, 0.5)) - 0.5;
+        if (arc < 0.0) col *= 0.8;
+        if (abs(arc) < 0.05) col *= 0.6;
+        
+        // Bottom green trim
+        if (p.y > -0.65) col = vec3(0.2, 0.4, 0.3);
+        
+        // Left corner white shape
+        if (p.x < -0.8 && p.y > -0.8) col = vec3(0.9);
+        // Right corner green shape
+        if (p.x > 0.8 && p.y > -0.8) {
+            col = vec3(0.2, 0.4, 0.3);
+            if (fract(p.x * 10.0 + p.y * 10.0) < 0.5) col = vec3(0.8, 0.7, 0.2);
+        }
+    }
+
+    // Add vignette
+    col *= 1.0 - 0.1 * length(p);
+
+    
+    gl_FragColor = vec4(col, 1.0);
+}

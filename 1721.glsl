@@ -1,0 +1,94 @@
+void main() {
+    vec2 uv = gl_FragCoord.xy / iResolution.xy;
+    vec2 p = uv * 2.0 - 1.0;
+    p.x *= iResolution.x / iResolution.y;
+    
+    // Background wall
+    vec3 col = vec3(0.9, 0.88, 0.85);
+    float siding = fract(p.y * 30.0);
+    if (siding > 0.9) col *= 0.9;
+    
+    // Bottom stone area
+    if (p.y < -0.6) {
+        col = vec3(0.2, 0.18, 0.15); 
+        vec2 stoneP = fract(p * vec2(10.0, 5.0) + vec2(sin(p.y*10.0), 0.0)) - 0.5;
+        if (length(stoneP) < 0.4) col = vec3(0.3, 0.25, 0.2);
+    }
+    // Top dark trim
+    else if (p.y > 0.8) {
+        col = vec3(0.1, 0.08, 0.05); 
+        if (fract(p.x * 20.0 + iTime) < 0.3) col = vec3(0.05); 
+    }
+    
+    #define segment(p, a, b) length(p - a - (b - a) * clamp(dot(p - a, b - a) / dot(b - a, b - a), 0.0, 1.0))
+
+    // Strep Text
+    if (p.y > 0.5 && p.x > 0.3) {
+        vec2 tp = p - vec2(0.5, 0.55);
+        float dText = 1.0;
+        // S
+        dText = min(dText, segment(tp, vec2(0.05, 0.1), vec2(0.0, 0.1)));
+        dText = min(dText, segment(tp, vec2(0.0, 0.1), vec2(0.0, 0.05)));
+        dText = min(dText, segment(tp, vec2(0.0, 0.05), vec2(0.05, 0.05)));
+        dText = min(dText, segment(tp, vec2(0.05, 0.05), vec2(0.05, 0.0)));
+        dText = min(dText, segment(tp, vec2(0.05, 0.0), vec2(0.0, 0.0)));
+        // t
+        dText = min(dText, segment(tp, vec2(0.1, 0.15), vec2(0.1, 0.0)));
+        dText = min(dText, segment(tp, vec2(0.08, 0.08), vec2(0.12, 0.08)));
+        // r
+        dText = min(dText, segment(tp, vec2(0.18, 0.0), vec2(0.18, 0.1)));
+        dText = min(dText, segment(tp, vec2(0.18, 0.08), vec2(0.22, 0.1)));
+        // e
+        dText = min(dText, abs(length(tp - vec2(0.3, 0.05)) - 0.04));
+        dText = min(dText, segment(tp, vec2(0.26, 0.05), vec2(0.34, 0.05)));
+        // p
+        dText = min(dText, segment(tp, vec2(0.4, -0.1), vec2(0.4, 0.1)));
+        dText = min(dText, abs(length(tp - vec2(0.45, 0.05)) - 0.04));
+        
+        if (dText < 0.01) col = vec3(0.1);
+    }
+    
+    // The Cartoon Character
+    vec2 cP = p - vec2(-0.3, 0.1);
+    
+    // Solid body
+    float body = segment(cP, vec2(-0.05, 0.2), vec2(-0.05, -0.3));
+    body = min(body, segment(cP, vec2(-0.05, 0.2), vec2(0.15, 0.2)));
+    body = min(body, segment(cP, vec2(0.15, 0.2), vec2(0.15, -0.3)));
+    body = min(body, segment(cP, vec2(-0.05, -0.3), vec2(0.15, -0.3)));
+    // Filled body
+    if (cP.x > -0.05 && cP.x < 0.15 && cP.y > -0.3 && cP.y < 0.2) col = vec3(0.9, 0.4, 0.4); // Red shirt
+    if (body < 0.01) col = vec3(0.1); // Outline
+    
+    // Head shape
+    float headMask = length(max(abs(cP - vec2(0.05, 0.35)) - vec2(0.15, 0.12), 0.0));
+    if (headMask < 0.05) col = vec3(1.0, 0.8, 0.7); // Skin color
+    if (abs(headMask - 0.05) < 0.01) col = vec3(0.1);
+    
+    // Eyes
+    float e1 = length(cP - vec2(0.0, 0.4));
+    if (e1 < 0.04) col = vec3(1.0);
+    if (abs(e1 - 0.04) < 0.01) col = vec3(0.1);
+    if (e1 < 0.015) col = vec3(0.1);
+    
+    vec2 eye2P = cP - vec2(0.12, 0.4);
+    eye2P.y += sin(iTime*3.0)*0.02; // floating eye
+    float e2 = length(eye2P);
+    if (e2 < 0.04) col = vec3(1.0);
+    if (abs(e2 - 0.04) < 0.01) col = vec3(0.1);
+    if (e2 < 0.015) col = vec3(0.1);
+
+    // Mouth
+    if (length(cP - vec2(0.05, 0.28)) < 0.05 && cP.y < 0.28) col = vec3(0.1);
+
+    // Arms
+    float armL = segment(cP, vec2(-0.05, 0.1), vec2(-0.25, 0.1 + sin(iTime*4.0)*0.1));
+    if (armL < 0.02) col = vec3(0.9, 0.4, 0.4);
+    if (abs(armL - 0.02) < 0.01) col = vec3(0.1);
+
+    float armR = segment(cP, vec2(0.15, 0.1), vec2(0.3, 0.15));
+    if (armR < 0.02) col = vec3(0.9, 0.4, 0.4);
+    if (abs(armR - 0.02) < 0.01) col = vec3(0.1);
+
+    gl_FragColor = vec4(col, 1.0);
+}

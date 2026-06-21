@@ -1,0 +1,186 @@
+import os
+import hashlib
+from PIL import Image
+from pillow_heif import register_heif_opener
+import shutil
+
+# Register HEIF opener for Pillow
+register_heif_opener()
+
+SOURCE_DIR = r"d:\GLSL bds\VB moodboard-3-001\VB moodboard"
+OUTPUT_DIR = r"d:\GLSL bds\moodboard_htmls"
+ASSETS_DIR = os.path.join(OUTPUT_DIR, "assets")
+
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+os.makedirs(ASSETS_DIR, exist_ok=True)
+
+VALID_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".heic"}
+
+def get_file_hash(filepath):
+    hasher = hashlib.sha256()
+    with open(filepath, 'rb') as f:
+        while chunk := f.read(8192):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+HTML_TEMPLATE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{filename}</title>
+    <style>
+        body {{ margin: 0; overflow: hidden; background-color: #111; }}
+        canvas {{ display: block; width: 100vw; height: 100vh; }}
+        #loading {{ position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-family: sans-serif; }}
+    </style>
+</head>
+<body>
+    <div id="loading">Loading Image...</div>
+    <canvas id="glcanvas"></canvas>
+    
+    <script id="vertex-shader" type="x-shader/x-vertex">
+        attribute vec2 position;
+        varying vec2 vUv;
+        void main() {{
+            vUv = position * 0.5 + 0.5;
+            gl_Position = vec4(position, 0.0, 1.0);
+        }}
+    </script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float;
+        uniform vec2 iResolution;
+        uniform float iTime;
+        uniform sampler2D tex;
+        varying vec2 vUv;
+        
+        void main() {{
+            vec2 uv = gl_FragCoord.xy / iResolution.xy;
+            // Aspect ratio correction to fit image
+            // We'll keep it simple for now
+            vec2 p = vUv;
+            
+            // Subtle wave effect based on time
+            p.y += sin(p.x * 10.0 + iTime) * 0.005;
+            p.x += cos(p.y * 10.0 + iTime * 0.8) * 0.005;
+            
+            vec4 col = texture2D(tex, vec2(p.x, 1.0 - p.y));
+            gl_FragColor = col;
+        }}
+    </script>
+    <script>
+        function main() {{
+            const img = new Image();
+            img.onload = () => {{
+                document.getElementById('loading').style.display = 'none';
+                initWebGL(img);
+            }};
+            img.src = "{img_path}";
+        }}
+        
+        function initWebGL(image) {{
+            const canvas = document.getElementById("glcanvas");
+            const gl = canvas.getContext("webgl");
+            
+            const vs = gl.createShader(gl.VERTEX_SHADER);
+            gl.shaderSource(vs, document.getElementById("vertex-shader").text);
+            gl.compileShader(vs);
+            
+            const fs = gl.createShader(gl.FRAGMENT_SHADER);
+            gl.shaderSource(fs, document.getElementById("fragment-shader").text);
+            gl.compileShader(fs);
+            
+            const prog = gl.createProgram();
+            gl.attachShader(prog, vs);
+            gl.attachShader(prog, fs);
+            gl.linkProgram(prog);
+            
+            const pos = gl.getAttribLocation(prog, "position");
+            const res = gl.getUniformLocation(prog, "iResolution");
+            const time = gl.getUniformLocation(prog, "iTime");
+            
+            const buf = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            
+            // Texture setup
+            const tex = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, tex);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+            
+            function render(t) {{
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+                gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog);
+                gl.enableVertexAttribArray(pos);
+                gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+                gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, tex);
+                gl.uniform1i(gl.getUniformLocation(prog, "tex"), 0);
+                
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height);
+                gl.uniform1f(time, t * 0.001);
+                
+                gl.drawArrays(gl.TRIANGLES, 0, 6);
+                requestAnimationFrame(render);
+            }}
+            requestAnimationFrame(render);
+        }}
+        window.onload = main;
+    </script>
+</body>
+</html>"""
+
+seen_hashes = set()
+processed_count = 0
+
+for filename in os.listdir(SOURCE_DIR):
+    filepath = os.path.join(SOURCE_DIR, filename)
+    if not os.path.isfile(filepath):
+        continue
+        
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in VALID_EXTS:
+        continue
+        
+    file_hash = get_file_hash(filepath)
+    if file_hash in seen_hashes:
+        print(f"Skipping duplicate: {filename}")
+        continue
+        
+    seen_hashes.add(file_hash)
+    
+    # Process image
+    base_name = os.path.splitext(filename)[0]
+    out_img_name = f"{base_name}.jpg"
+    out_img_path = os.path.join(ASSETS_DIR, out_img_name)
+    
+    try:
+        # Convert all to JPG to normalize format and support HEIC
+        img = Image.open(filepath)
+        if img.mode in ("RGBA", "P"):
+            img = img.convert("RGB")
+        img.save(out_img_path, "JPEG", quality=85)
+        
+        # Generate HTML
+        html_path = os.path.join(OUTPUT_DIR, f"{base_name}.html")
+        html_content = HTML_TEMPLATE.format(
+            filename=base_name,
+            img_path=f"assets/{out_img_name}"
+        )
+        
+        with open(html_path, "w", encoding="utf-8") as f:
+            f.write(html_content)
+            
+        processed_count += 1
+        print(f"Processed {filename} -> {base_name}.html")
+        
+    except Exception as e:
+        print(f"Error processing {filename}: {e}")
+
+print(f"Successfully processed {processed_count} unique images.")

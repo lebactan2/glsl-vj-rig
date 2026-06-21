@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shader: Riveted Galvanized Steel Armor</title>
+    <style>body { margin: 0; overflow: hidden; background-color: #000; } canvas { display: block; width: 100vw; height: 100vh; }</style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float;
+        uniform vec2 iResolution;
+        uniform float iTime;
+
+        float hash(vec2 p) {
+            p = fract(p * vec2(127.1, 311.7));
+            p += dot(p, p + 45.32);
+            return fract(p.x * p.y);
+        }
+        float hash1(float n) { return fract(sin(n) * 43758.5453); }
+
+        vec3 hsv2rgb(vec3 c) {
+            vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
+            vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+            return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+        }
+
+        float noise(vec2 p) {
+            vec2 i = floor(p); vec2 f = fract(p);
+            f = f*f*(3.0-2.0*f);
+            float a = hash(i), b = hash(i+vec2(1,0));
+            float c2 = hash(i+vec2(0,1)), d = hash(i+vec2(1,1));
+            return mix(mix(a,b,f.x), mix(c2,d,f.x), f.y);
+        }
+
+        float fbm(vec2 p) {
+            float v=0.0, a=0.5;
+            for(int i=0;i<6;i++){ v+=a*noise(p); p*=2.1; a*=0.5; }
+            return v;
+        }
+        float fbm3(vec2 p) {
+            float v=0.0, a=0.5;
+            for(int i=0;i<3;i++){ v+=a*noise(p); p*=2.1; a*=0.5; }
+            return v;
+        }
+        float warpFbm(vec2 p, float t) {
+            vec2 q = vec2(fbm(p + t*0.1), fbm(p + 3.7 + t*0.09));
+            return fbm(p + 0.8*q);
+        }
+
+        float sdBox(vec2 p, vec2 b) {
+            vec2 d = abs(p)-b;
+            return length(max(d,0.0))+min(max(d.x,d.y),0.0);
+        }
+
+        // Full armor SDF: chest, wings, trousers
+        float armorSDF(vec2 p) {
+            float chest = sdBox(p - vec2(0.0, 0.16), vec2(0.37, 0.31));
+            float abdo  = sdBox(p - vec2(0.0,-0.17), vec2(0.26, 0.10));
+            chest = min(chest, abdo);
+            float wL = sdBox(p - vec2(-0.54, 0.21), vec2(0.17, 0.24));
+            float wR = sdBox(p - vec2( 0.54, 0.21), vec2(0.17, 0.24));
+            float trL = sdBox(p - vec2(-0.17,-0.34), vec2(0.14, 0.17));
+            float trR = sdBox(p - vec2( 0.17,-0.34), vec2(0.14, 0.17));
+            return min(min(min(chest,wL),wR),min(trL,trR));
+        }
+
+        // Lightning segment distance
+        float segDist(vec2 uv, vec2 a, vec2 b) {
+            vec2 pa=uv-a, ba=b-a;
+            float h=clamp(dot(pa,ba)/dot(ba,ba),0.0,1.0);
+            return length(pa-ba*h);
+        }
+
+        // Single lightning bolt: 8 zigzag segments
+        float boltDist(vec2 uv, vec2 a, vec2 b, float seed, float t) {
+            vec2 dir=b-a; float len=length(dir);
+            vec2 nrm=dir/len, perp=vec2(-nrm.y,nrm.x);
+            float minD=1e9;
+            vec2 prev=a;
+            for(int i=1;i<=8;i++){
+                float f=float(i)/8.0;
+                float fp=float(i-1)/8.0;
+                vec2 pA=a+nrm*len*fp+perp*(hash1(seed+fp*7.3+floor(t*4.0)*0.1)-0.5)*0.07;
+                vec2 pB=a+nrm*len*f +perp*(hash1(seed+f*7.3 +floor(t*4.0)*0.1)-0.5)*0.07;
+                minD=min(minD,segDist(uv,pA,pB));
+            }
+            return minD;
+        }
+
+        void main() {
+            vec2 uv = gl_FragCoord.xy / iResolution.xy;
+            vec2 p  = uv*2.0-1.0;
+            p.x *= iResolution.x/iResolution.y;
+            float t = iTime;
+
+            // --- Gallery wall background ---
+            vec3 wallCol = vec3(0.92,0.90,0.86);
+            wallCol += fbm3(p*2.5+0.3)*0.04 - 0.02;
+            // Two overhead spot lights
+            wallCol += exp(-length(p-vec2(-0.65,1.5))*1.1)*0.20;
+            wallCol += exp(-length(p-vec2( 0.65,1.5))*1.1)*0.20;
+            wallCol -= smoothstep(0.0,1.2,p.y+1.3)*0.08; // subtle floor falloff
+
+            // Armor shadow on wall (soft blob)
+            float shadowD = armorSDF(p - vec2(0.045,-0.07));
+            wallCol = mix(wallCol, wallCol*0.68, (1.0-smoothstep(0.0,0.14,shadowD))*0.55);
+
+            vec3 col = wallCol;
+
+            // --- Armor interior ---
+            float armorD = armorSDF(p);
+            float armorM = 1.0-smoothstep(-0.002,0.01,armorD);
+
+            if(armorM > 0.01) {
+                // Base galvanized steel
+                vec3 steel = vec3(0.66,0.70,0.73);
+                // Warped noise texture
+                float wn = warpFbm(p*5.0, t*0.08);
+                steel += (wn-0.5)*0.13;
+
+                // Anisotropic horizontal highlight bands (light orbiting)
+                float lAngle = t*0.3;
+                float anisoY = p.y + sin(lAngle)*0.25;
+                float aniso = pow(sin(anisoY*20.0)*0.5+0.5, 2.5)*0.20;
+                steel += aniso;
+
+                // Iridescent rainbow wash – low saturation
+                float hue = fbm(p*2.2+t*0.05) + p.x*0.25 + t*0.035;
+                vec3 iriCol = hsv2rgb(vec3(fract(hue),0.14,1.0));
+                steel = mix(steel, steel*iriCol, 0.30);
+
+                // Rust from rivet sites
+                float rust = 0.0;
+                vec2 rSites[8];
+                rSites[0]=vec2(-0.28,0.37); rSites[1]=vec2(0.28,0.37);
+                rSites[2]=vec2(-0.28,0.05); rSites[3]=vec2(0.28,0.05);
+                rSites[4]=vec2(0.0, 0.21);  rSites[5]=vec2(0.0,-0.04);
+                rSites[6]=vec2(-0.54,0.31); rSites[7]=vec2(0.54,0.31);
+                for(int i=0;i<8;i++){
+                    float d=length(p-rSites[i]);
+                    float rr=0.05+sin(t*0.11+float(i)*1.4)*0.02;
+                    float rn=warpFbm((p-rSites[i])*9.0, t*0.07+float(i));
+                    rust+=smoothstep(rr+0.02,rr-0.02,d-rn*0.05);
+                }
+                rust=clamp(rust,0.0,1.0);
+                vec3 rustCol=vec3(0.55,0.26,0.07)+noise(p*14.0+t*0.04)*vec3(0.1,0.05,0.0);
+                steel=mix(steel,rustCol,rust*0.68);
+
+                // Scan wave: bright band top-to-bottom
+                float scanY = mix(1.0,-1.0,fract(t*0.17));
+                float scan  = exp(-abs(p.y-scanY)*14.0)*0.28;
+                steel += scan;
+
+                col = mix(col, steel, armorM);
+            }
+
+            // --- Armor edge glow ---
+            col += vec3(0.58,0.65,0.72)*exp(-max(armorD,0.0)*22.0)*0.14;
+
+            // --- Rivets (20 main) ---
+            vec2 rivets[20];
+            rivets[0]=vec2(-0.28,0.37); rivets[1]=vec2(-0.09,0.37);
+            rivets[2]=vec2( 0.09,0.37); rivets[3]=vec2( 0.28,0.37);
+            rivets[4]=vec2(-0.28,0.20); rivets[5]=vec2(-0.09,0.20);
+            rivets[6]=vec2( 0.09,0.20); rivets[7]=vec2( 0.28,0.20);
+            rivets[8]=vec2(-0.28,0.03); rivets[9]=vec2(-0.09,0.03);
+            rivets[10]=vec2( 0.09,0.03); rivets[11]=vec2(0.28,0.03);
+            rivets[12]=vec2(-0.22,-0.16); rivets[13]=vec2(-0.07,-0.16);
+            rivets[14]=vec2( 0.07,-0.16); rivets[15]=vec2(0.22,-0.16);
+            rivets[16]=vec2(-0.54,0.31); rivets[17]=vec2(-0.54,0.13);
+            rivets[18]=vec2( 0.54,0.31); rivets[19]=vec2(0.54,0.13);
+
+            float scanY2 = mix(1.0,-1.0,fract(t*0.17));
+            float armorEdge = 1.0-smoothstep(-0.002,0.015,armorD);
+
+            for(int i=0;i<20;i++){
+                float d = length(p-rivets[i]);
+                float r = 0.027;
+                float body = smoothstep(r, r-0.005, d);
+                if(body > 0.01) {
+                    float scanB = exp(-abs(rivets[i].y-scanY2)*14.0)*0.5;
+                    vec3 riv = vec3(0.60,0.64,0.67) + scanB;
+                    // Beveled edge: dark ring
+                    riv *= 0.65 + 0.6*smoothstep(r-0.013,r-0.003,d);
+                    // Highlight upper-left
+                    riv += exp(-length(p-rivets[i]-vec2(-0.007,0.007))*90.0)*0.75;
+                    // Shadow lower-right
+                    riv -= exp(-length(p-rivets[i]-vec2(0.008,-0.008))*90.0)*0.32;
+                    // Iridescent tint on rivet
+                    float rh = fbm(rivets[i]*3.0+t*0.04)+t*0.03;
+                    riv = mix(riv, riv*hsv2rgb(vec3(fract(rh),0.12,1.0)), 0.25);
+                    col = mix(col, riv, body*armorEdge);
+                }
+                // Glow ring
+                col += vec3(0.5,0.58,0.65)*exp(-d*32.0)*0.07*armorEdge;
+            }
+
+            // --- Lightning arcs between rivets ---
+            vec2 arcA[8]; vec2 arcB[8];
+            arcA[0]=rivets[0];  arcB[0]=rivets[4];
+            arcA[1]=rivets[3];  arcB[1]=rivets[7];
+            arcA[2]=rivets[1];  arcB[2]=rivets[5];
+            arcA[3]=rivets[2];  arcB[3]=rivets[6];
+            arcA[4]=rivets[4];  arcB[4]=rivets[8];
+            arcA[5]=rivets[7];  arcB[5]=rivets[11];
+            arcA[6]=rivets[16]; arcB[6]=rivets[0];
+            arcA[7]=rivets[18]; arcB[7]=rivets[3];
+
+            for(int i=0;i<8;i++){
+                float seed = float(i)*3.17+0.5;
+                // Flash pattern: two independent sin thresholds
+                float flash1 = step(0.45, sin(t*8.0+float(i)*2.1)*0.5+0.5);
+                float flash2 = step(0.55, sin(t*1.4+float(i)*0.97)*0.5+0.5);
+                float flash  = flash1*flash2;
+                float ld = boltDist(p, arcA[i], arcB[i], seed, t);
+                vec3 arcCol = vec3(0.80,0.93,1.0);
+                // Tight bolt + wide bloom
+                col += arcCol * exp(-ld*140.0)*0.95*flash;
+                col += arcCol * exp(-ld*45.0)*0.22*flash;
+            }
+
+            // --- Chromatic aberration at armor edges ---
+            float aberrMask = smoothstep(0.06,0.0,abs(armorD));
+            vec2 aberrDir = normalize(p+0.001)*0.009*aberrMask;
+            float rr = fbm(uv*3.5+aberrDir+t*0.08);
+            float bb = fbm(uv*3.5-aberrDir+t*0.08);
+            col.r += rr*0.07*aberrMask;
+            col.b += bb*0.07*aberrMask;
+
+            // --- Dust particles ---
+            for(int i=0;i<14;i++){
+                float fi=float(i);
+                float ph=hash1(fi*1.73);
+                float px2=(hash1(fi*2.31)*2.0-1.0)*0.8;
+                float py2=fract(ph+t*0.055*(0.5+hash1(fi*3.7)*0.5))*2.2-0.6;
+                float dp=length(p-vec2(px2,py2));
+                float life=sin(t*1.1+fi*0.9)*0.5+0.5;
+                col += vec3(0.82,0.86,0.90)*exp(-dp*200.0)*0.04*life;
+            }
+
+            // --- Film grain ---
+            col += (hash(uv*820.0+t)-0.5)*0.028;
+
+            col = pow(clamp(col,0.0,1.0), vec3(0.85));
+            gl_FragColor = vec4(col,1.0);
+        }
+    </script>
+    <script>
+        function main() {
+            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
+            if(!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) console.error(gl.getShaderInfoLog(fs));
+            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
+            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            function render(t) {
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        } window.onload = main;
+    </script>
+</body>
+</html>

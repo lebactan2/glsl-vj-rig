@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Claude Batch — Procedural GLSL Preview</title>
+  <style>
+    :root {
+      --bg: #0b0d10;
+      --panel: #13161c;
+      --panel2: #1c2028;
+      --text: #eceae4;
+      --muted: #9b9590;
+      --line: #2a2e38;
+      --accent: #7eb8f7;
+      --accent2: #f7c96a;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { min-height: 100vh; background: var(--bg); color: var(--text); font-family: 'Segoe UI', Arial, sans-serif; display: grid; grid-template-columns: 300px 1fr; grid-template-rows: 100vh; overflow: hidden; }
+
+    /* ── SIDEBAR ── */
+    aside { border-right: 1px solid var(--line); background: var(--panel); display: grid; grid-template-rows: auto auto 1fr; overflow: hidden; }
+
+    .sidebar-header { padding: 16px 16px 12px; border-bottom: 1px solid var(--line); }
+    .sidebar-header h1 { font-size: 18px; font-weight: 700; letter-spacing: -0.01em; color: var(--text); }
+    .sidebar-header p { margin-top: 4px; color: var(--muted); font-size: 12px; line-height: 1.45; }
+    .badge { display: inline-block; margin-top: 6px; background: var(--panel2); border: 1px solid var(--line); border-radius: 20px; padding: 2px 9px; font-size: 11px; color: var(--accent); }
+
+    .search-wrap { padding: 10px 12px; border-bottom: 1px solid var(--line); }
+    .search-wrap input {
+      width: 100%; padding: 8px 10px; border: 1px solid var(--line);
+      background: #0a0c0f; color: var(--text); border-radius: 6px;
+      font-size: 13px; outline: none; transition: border-color 0.15s;
+    }
+    .search-wrap input:focus { border-color: var(--accent); }
+    .search-wrap input::placeholder { color: var(--muted); }
+
+    .list { overflow-y: auto; padding: 8px; display: grid; gap: 4px; }
+    .list::-webkit-scrollbar { width: 5px; }
+    .list::-webkit-scrollbar-track { background: transparent; }
+    .list::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
+
+    .item {
+      width: 100%; border: 1px solid transparent; background: transparent;
+      color: var(--text); border-radius: 8px; padding: 7px 8px;
+      display: grid; grid-template-columns: 56px 1fr; gap: 9px;
+      text-align: left; cursor: pointer; align-items: center;
+      transition: background 0.12s, border-color 0.12s;
+    }
+    .item:hover { background: var(--panel2); }
+    .item.active { border-color: rgba(126,184,247,.5); background: rgba(126,184,247,.08); }
+    .item-thumb {
+      width: 56px; height: 42px; object-fit: cover;
+      background: #000; border-radius: 5px; display: block;
+    }
+    .item-thumb-missing {
+      width: 56px; height: 42px; background: var(--panel2);
+      border-radius: 5px; display: flex; align-items: center; justify-content: center;
+      font-size: 9px; color: var(--muted);
+    }
+    .item strong { display: block; font-size: 12px; font-weight: 600; margin-bottom: 2px; }
+    .item small {
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+      overflow: hidden; color: var(--muted); font-size: 11px; line-height: 1.3;
+    }
+
+    /* ── MAIN ── */
+    main { min-width: 0; display: grid; grid-template-rows: 48px 1fr; overflow: hidden; }
+
+    .topbar {
+      padding: 0 16px; border-bottom: 1px solid var(--line);
+      background: #0d1014; display: flex; justify-content: space-between;
+      align-items: center; gap: 12px; flex-shrink: 0;
+    }
+    .title strong { font-size: 15px; font-weight: 700; }
+    .title span { color: var(--muted); font-size: 12px; margin-left: 8px; }
+    .actions { display: flex; gap: 6px; }
+    .actions a {
+      color: var(--bg); background: var(--accent); text-decoration: none;
+      padding: 6px 11px; border-radius: 5px; font-size: 12px; font-weight: 700;
+      transition: opacity 0.15s;
+    }
+    .actions a:hover { opacity: 0.85; }
+    .actions a.secondary { background: var(--panel2); color: var(--text); border: 1px solid var(--line); }
+
+    /* ── LAYOUT TOGGLE ── */
+    .layout-toggle { display: flex; gap: 4px; }
+    .layout-btn {
+      background: var(--panel2); border: 1px solid var(--line); color: var(--muted);
+      border-radius: 5px; padding: 5px 8px; font-size: 11px; cursor: pointer;
+      transition: all 0.12s;
+    }
+    .layout-btn.active { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+
+    /* ── STAGE ── */
+    .stage {
+      min-height: 0; padding: 12px; gap: 12px; overflow: hidden;
+      display: grid; grid-template-columns: 1fr 1fr;
+    }
+    .stage.layout-stacked { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
+    .stage.layout-shader-only { grid-template-columns: 1fr; }
+    .stage.layout-shader-only .pane-photo { display: none; }
+
+    .pane {
+      min-width: 0; min-height: 0; background: #06080a;
+      border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
+      display: grid; grid-template-rows: 32px 1fr;
+    }
+    .pane-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 11px; background: var(--panel2);
+      border-bottom: 1px solid var(--line);
+    }
+    .pane-header h2 { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; font-weight: 600; }
+    .pane-header .pane-badge { font-size: 10px; color: var(--accent2); background: rgba(247,201,106,.1); padding: 1px 6px; border-radius: 10px; border: 1px solid rgba(247,201,106,.25); }
+
+    .pane img, .pane iframe {
+      width: 100%; height: 100%; border: 0;
+      object-fit: contain; background: #000; display: block;
+    }
+    .pane img { object-fit: contain; }
+
+    /* ── EMPTY STATE ── */
+    .empty-state {
+      grid-column: 1 / -1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; color: var(--muted);
+      gap: 8px;
+    }
+    .empty-state svg { opacity: 0.3; }
+    .empty-state p { font-size: 13px; }
+
+    /* ── RESPONSIVE ── */
+    @media (max-width: 860px) {
+      body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; overflow: auto; }
+      aside { max-height: 38vh; overflow: hidden; }
+      .stage { grid-template-columns: 1fr !important; grid-template-rows: 50vh 50vh; }
+    }
+  </style>
+</head>
+<body>
+  <aside>
+    <div class="sidebar-header">
+      <h1>Claude Batch</h1>
+      <p>Batch 1 — 23 procedural GLSL shaders from street photography.</p>
+      <span class="badge">23 scenes</span>
+    </div>
+    <div class="search-wrap">
+      <input id="search" placeholder="Search by name or description…" autocomplete="off">
+    </div>
+    <div class="list" id="list"></div>
+  </aside>
+
+  <main>
+    <div class="topbar">
+      <div class="title">
+        <strong id="name">Select a scene</strong>
+        <span id="desc"></span>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;">
+        <div class="layout-toggle">
+          <button class="layout-btn active" data-layout="side-by-side" title="Side by side">⬜⬜</button>
+          <button class="layout-btn" data-layout="stacked" title="Stacked">🟦<br>🟦</button>
+          <button class="layout-btn" data-layout="shader-only" title="Shader only">▶</button>
+        </div>
+        <div class="actions">
+          <a id="openShader" href="#" class="secondary">Open Shader ↗</a>
+          <a id="openPhoto" href="#" class="secondary">Open Photo ↗</a>
+        </div>
+      </div>
+    </div>
+
+    <section class="stage" id="stage">
+      <article class="pane pane-photo">
+        <div class="pane-header"><h2>Original Photo</h2><span class="pane-badge">source</span></div>
+        <img id="photo" alt="">
+      </article>
+      <article class="pane pane-shader">
+        <div class="pane-header"><h2>Generated GLSL</h2><span class="pane-badge">procedural</span></div>
+        <iframe id="shader" title="GLSL shader preview"></iframe>
+      </article>
+    </section>
+  </main>
+
+  <script>
+    const scenes = [
+      { name: "IMG_0187", title: "night apartment building with ornamental grill windows and Vietnamese flag", shader: "IMG_0187_manual.html", photo: "../trippy_ornaments_3_001/assets/IMG_0187.jpg" },
+      { name: "IMG_0188", title: "night street gate with diamond lattice and teal wall", shader: "IMG_0188_manual.html", photo: "../trippy_ornaments_3_001/assets/IMG_0188.jpg" },
+      { name: "IMG_4841", title: "Phở Minh restaurant storefront with mint-green glowing interior", shader: "IMG_4841_manual.html", photo: "../trippy_ornaments_3_001/assets/IMG_4841.jpg" },
+      { name: "IMG_5132", title: "dark green ceramic vase with kumquat orange branches on white wall", shader: "IMG_5132_manual.html", photo: "../trippy_ornaments_3_001/assets/IMG_5132.jpg" },
+      { name: "IMG_5146", title: "red banner with bold yellow Vietnamese text and orange trees", shader: "IMG_5146_manual.html", photo: "../trippy_ornaments_3_001/assets/IMG_5146.jpg" },
+      { name: "IMG_5373", title: "blue-white porcelain mosaic double-happiness window in maroon temple frame", shader: "IMG_5373_manual.html", photo: "../trippy_ornaments_3_001/assets/IMG_5373.jpg" },
+      { name: "IMG_5527", title: "galvanized steel riveted body armor sculpture on white gallery wall", shader: "IMG_5527_manual.html", photo: "../trippy_ornaments_3_001/assets/IMG_5527.jpg" },
+      { name: "IMG_5577", title: "bamboo mat plaque with golden crane and plum blossom engraving", shader: "IMG_5577_manual.html", photo: "../trippy_ornaments_3_001/assets/IMG_5577.jpg" },
+      { name: "IMG_5614", title: "ornate Vietnamese colonial house facade with rosette columns and pediment", shader: "IMG_5614_manual.html", photo: "../trippy_ornaments_3_001/assets/IMG_5614.jpg" },
+      { name: "IMG_5620", title: "stacked dark brown wood panels in warehouse", shader: "IMG_5620_manual.html", photo: "../trippy_ornaments_3_001/assets/IMG_5620.jpg" },
+      { name: "IMG_5636", title: "gold brass embossed relief panel with mythological scene on forge", shader: "IMG_5636_manual.html", photo: "../trippy_ornaments_3_001/assets/IMG_5636.jpg" },
+      { name: "IMG_5662", title: "diamond-lattice metal gate with theatrical clouds and red pyramids behind", shader: "IMG_5662_manual.html", photo: "../trippy_ornaments_3_001/assets/IMG_5662.jpg" },
+      { name: "IMG_5689", title: "white green red festival paper lantern forms outdoors with bamboo stakes", shader: "IMG_5689_manual.html", photo: "../trippy_ornaments_3_001/assets/IMG_5689.jpg" },
+      { name: "IMG_5693", title: "pile of Vietnamese votive paper goods with floral red box and rooster clock", shader: "IMG_5693_manual.html", photo: "../trippy_ornaments_3_001/assets/IMG_5693.jpg" },
+      { name: "IMG_5700", title: "hầu đồng black boat altar float with gold foliage and deity doll", shader: "IMG_5700_manual.html", photo: "../trippy_ornaments_3_001/assets/IMG_5700.jpg" },
+      { name: "IMG_5702", title: "red ceremonial shrine float with golden deity figure and attendants", shader: "IMG_5702_manual.html", photo: "../trippy_ornaments_3_001/assets/IMG_5702.jpg" },
+      { name: "IMG_5715", title: "white branch silhouettes on grid glass window panes", shader: "IMG_5715_manual.html", photo: "../trippy_ornaments_3_001/assets/IMG_5715.jpg" },
+      { name: "IMG_5761", title: "green construction fence with rebar columns and yellow crane", shader: "IMG_5761_manual.html", photo: "../trippy_ornaments_3_001/assets/IMG_5761.jpg" },
+      { name: "IMG_5762", title: "green construction fence close-up with woman's dark hair silhouette", shader: "IMG_5762_manual.html", photo: "../trippy_ornaments_3_001/assets/IMG_5762.jpg" },
+      { name: "IMG_6006", title: "Bánh Mì Hà Nội storefront with green awning sign and Lunar New Year banner", shader: "IMG_6006_manual.html", photo: "../trippy_ornaments_3_001/assets/IMG_6006.jpg" },
+      { name: "IMG_6007", title: "Nhà Hàng 241 restaurant double sign with red numbers and green roof icons", shader: "IMG_6007_manual.html", photo: "../trippy_ornaments_3_001/assets/IMG_6007.jpg" },
+      { name: "IMG_6291", title: "red silk brocade fabric with gold floral thread pattern and Vietnamese script", shader: "IMG_6291_manual.html", photo: "../trippy_ornaments_3_001/assets/IMG_6291.jpg" },
+      { name: "IMG_6348", title: "night street food candy cart with LED lights and diamond-checkered stickers", shader: "IMG_6348_manual.html", photo: "../trippy_ornaments_3_001/assets/IMG_6348.jpg" },
+    ];
+
+    const listEl = document.getElementById("list");
+    const searchEl = document.getElementById("search");
+    const nameEl = document.getElementById("name");
+    const descEl = document.getElementById("desc");
+    const photoEl = document.getElementById("photo");
+    const shaderEl = document.getElementById("shader");
+    const openShaderEl = document.getElementById("openShader");
+    const openPhotoEl = document.getElementById("openPhoto");
+    const stageEl = document.getElementById("stage");
+
+    let activeScene = null;
+
+    // Build sidebar list
+    scenes.forEach(scene => {
+      const btn = document.createElement("button");
+      btn.className = "item";
+      btn.dataset.name = scene.name;
+
+      const img = document.createElement("img");
+      img.className = "item-thumb";
+      img.src = scene.photo;
+      img.alt = scene.name;
+      img.onerror = () => {
+        const div = document.createElement("div");
+        div.className = "item-thumb-missing";
+        div.textContent = "NO IMG";
+        btn.replaceChild(div, img);
+      };
+
+      const info = document.createElement("span");
+      info.innerHTML = `<strong>${scene.name}</strong><small>${scene.title}</small>`;
+
+      btn.appendChild(img);
+      btn.appendChild(info);
+      btn.addEventListener("click", () => select(scene));
+      listEl.appendChild(btn);
+    });
+
+    function select(scene) {
+      activeScene = scene;
+      document.querySelectorAll(".item").forEach(el =>
+        el.classList.toggle("active", el.dataset.name === scene.name)
+      );
+      nameEl.textContent = scene.name;
+      descEl.textContent = scene.title;
+      photoEl.src = scene.photo;
+      photoEl.alt = scene.name + " original";
+      shaderEl.src = scene.shader;
+      openShaderEl.href = scene.shader;
+      openPhotoEl.href = scene.photo;
+
+      // Scroll selected item into view
+      const activeBtn = listEl.querySelector(".item.active");
+      if (activeBtn) activeBtn.scrollIntoView({ block: "nearest" });
+    }
+
+    // Search
+    searchEl.addEventListener("input", () => {
+      const q = searchEl.value.toLowerCase().trim();
+      listEl.querySelectorAll(".item").forEach(btn => {
+        const scene = scenes.find(s => s.name === btn.dataset.name);
+        const match = !q || scene.name.toLowerCase().includes(q) || scene.title.toLowerCase().includes(q);
+        btn.style.display = match ? "grid" : "none";
+      });
+    });
+
+    // Layout toggle
+    document.querySelectorAll(".layout-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".layout-btn").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        stageEl.className = "stage";
+        const layout = btn.dataset.layout;
+        if (layout === "stacked") stageEl.classList.add("layout-stacked");
+        if (layout === "shader-only") stageEl.classList.add("layout-shader-only");
+      });
+    });
+
+    // Keyboard navigation
+    document.addEventListener("keydown", e => {
+      if (e.target === searchEl) return;
+      const visible = scenes.filter(s => {
+        const btn = listEl.querySelector(`[data-name="${s.name}"]`);
+        return btn && btn.style.display !== "none";
+      });
+      if (!visible.length) return;
+      const idx = activeScene ? visible.findIndex(s => s.name === activeScene.name) : -1;
+      if (e.key === "ArrowDown" || e.key === "j") select(visible[Math.min(idx + 1, visible.length - 1)]);
+      if (e.key === "ArrowUp" || e.key === "k") select(visible[Math.max(idx - 1, 0)]);
+    });
+
+    // Auto-select first
+    if (scenes.length) select(scenes[0]);
+  </script>
+</body>
+</html>

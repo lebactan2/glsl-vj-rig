@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shader: IMG_5762 Green Construction Fence</title>
+    <style>body { margin: 0; overflow: hidden; background-color: #000; } canvas { display: block; width: 100vw; height: 100vh; }</style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float;
+        uniform vec2 iResolution;
+        uniform float iTime;
+
+        // --- TIMESCALES ---
+        // t * 0.01  ultra-slow world drift
+        // t * 0.05  slow aurora / cloud
+        // t * 0.25  medium wind / hair shimmer
+        // t * 2.0   fast particle flicker
+
+        // =================== CORE UTILITIES ===================
+        float hash(vec2 p) {
+            p = fract(p * vec2(127.1, 311.7));
+            p += dot(p, p + 19.19);
+            return fract(p.x * p.y);
+        }
+        float hash1(float x) { return fract(sin(x * 127.391) * 43758.5453); }
+        vec2 hash2(vec2 p) { return vec2(hash(p), hash(p + vec2(31.7, 91.3))); }
+
+        float noise(vec2 p) {
+            vec2 i = floor(p); vec2 f = fract(p);
+            vec2 u = f * f * (3.0 - 2.0 * f);
+            return mix(mix(hash(i), hash(i+vec2(1,0)), u.x),
+                       mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), u.x), u.y);
+        }
+
+        float fbm(vec2 p) {
+            float v = 0.0; float a = 0.5;
+            for(int i = 0; i < 6; i++) {
+                v += a * noise(p);
+                p = p * 2.3 + vec2(1.7, 9.2);
+                a *= 0.5;
+            }
+            return v;
+        }
+
+        vec3 hsv2rgb(vec3 c) {
+            vec3 p = abs(fract(c.xxx + vec3(1.0, 2.0/3.0, 1.0/3.0)) * 6.0 - 3.0);
+            return c.z * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), c.y);
+        }
+
+        // Domain warp
+        vec2 warp(vec2 p, float t) {
+            float s = 0.4;
+            return p + s * vec2(fbm(p * 2.0 + t * 0.1), fbm(p * 2.0 + 3.7 + t * 0.09));
+        }
+
+        // SDF helpers
+        float sdLine(vec2 p, vec2 a, vec2 b) {
+            vec2 pa = p - a, ba = b - a;
+            return length(pa - ba * clamp(dot(pa,ba)/dot(ba,ba), 0.0, 1.0));
+        }
+        float sdBox(vec2 p, vec2 b) {
+            vec2 d = abs(p) - b;
+            return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+        }
+
+        // =================== AURORA SKY ===================
+        vec3 aurora(vec2 uv, float t) {
+            vec3 col = vec3(0.0);
+            float ts = t * 0.05;
+            for(int i = 0; i < 5; i++) {
+                float fi = float(i);
+                float yBand = 0.78 + fi * 0.035;
+                float wave = sin(uv.x * (3.0 + fi * 0.7) + fi * 1.31 + ts) * 0.025
+                           + sin(uv.x * (1.5 + fi * 0.3) + ts * 0.6) * 0.012;
+                float dist = abs(uv.y - yBand - wave);
+                float band = exp(-dist * 55.0) * (0.6 + 0.4 * sin(ts * 0.7 + fi));
+                float hue = 0.42 + fi * 0.07 + sin(ts * 0.4 + fi) * 0.04; // green->teal->purple
+                vec3 aCol = hsv2rgb(vec3(hue, 0.75, 1.0));
+                col += aCol * band * 0.18;
+            }
+            return col;
+        }
+
+        // =================== CLOUD WISPS ===================
+        vec3 clouds(vec2 p, float t) {
+            float ts = t * 0.01;
+            vec2 wp = warp(p * 1.2 + vec2(ts * 2.0, 0.0), ts);
+            float c = fbm(wp * 2.5);
+            return vec3(c * 0.12);
+        }
+
+        // =================== BIRD V-SILHOUETTE ===================
+        float bird(vec2 p, float t, float id) {
+            float speed = 0.06 + id * 0.025;
+            float xBase = mod(-0.9 + id * 0.31 + t * speed, 2.8) - 1.4;
+            float yBase = 0.62 + id * 0.035 + sin(t * 0.4 + id * 2.1) * 0.008;
+            float flapAmp = 0.007 * (0.5 + 0.5 * sin(t * 4.0 + id * 3.0));
+            vec2 bCenter = vec2(xBase, yBase);
+            float sc = 0.018 + id * 0.003;
+            vec2 bp = p - bCenter;
+            float lw = sdLine(bp, vec2(0.0, 0.0), vec2(-sc, -flapAmp));
+            float rw = sdLine(bp, vec2(0.0, 0.0), vec2( sc, -flapAmp));
+            return min(lw, rw);
+        }
+
+        // =================== CRANE ARM WITH LATTICE ===================
+        float craneArm(vec2 p, out float armMask, float t) {
+            vec2 cA = vec2(-1.2, 0.56);
+            vec2 cB = vec2( 1.0, 0.82);
+            float d = sdLine(p, cA, cB);
+            armMask = smoothstep(0.028, 0.010, d);
+
+            // Lattice: progress along arm, alternating diagonal struts
+            float armLen = length(cB - cA);
+            vec2 armDir = normalize(cB - cA);
+            vec2 armPerp = vec2(-armDir.y, armDir.x);
+            float alongArm = dot(p - cA, armDir);
+            float acrossArm = dot(p - cA, armPerp);
+            float latticePeriod = 0.09;
+            float lPhase = mod(alongArm, latticePeriod) / latticePeriod;
+            float lAlt = mod(floor(alongArm / latticePeriod), 2.0);
+            float strut = lAlt < 0.5 ?
+                abs(lPhase - acrossArm / (0.028 * 2.0) * 0.5 - 0.5) :
+                abs(lPhase + acrossArm / (0.028 * 2.0) * 0.5 - 0.5);
+            float strutMask = smoothstep(0.12, 0.04, strut) * armMask;
+
+            // Cable from arm tip
+            vec2 tipPos = cB - armDir * 0.05;
+            float sway = sin(t * 0.75) * 0.018;
+            float cableDist = 1e9;
+            if(p.y < tipPos.y && p.x > tipPos.x - 0.08 && p.x < tipPos.x + 0.08) {
+                float drop = tipPos.y - p.y;
+                float cx = p.x - tipPos.x - sway * (drop / 0.4);
+                cableDist = abs(cx) - 0.003;
+                cableDist = max(cableDist, -smoothstep(0.38, 0.35, drop));
+            }
+            float cableMask = smoothstep(0.006, 0.001, cableDist);
+            armMask = max(armMask, cableMask);
+            return d;
+        }
+
+        // =================== CORRUGATED FENCE ===================
+        vec3 fence(vec2 p, float t) {
+            float ts4 = t * 0.01;
+            // Domain warp for subtle surface variation
+            vec2 wp = warp(p * 4.5, ts4);
+            float surface = fbm(wp * 2.0);
+
+            // Corrugation profile — ridges every ~0.07 units in x
+            float ridgeX = mod(p.x * aspect_approx, 0.07) / 0.07; // 0..1 per ridge
+            float litFace = smoothstep(0.48, 0.52, ridgeX); // 0=shadow, 1=lit
+            float shadowEdge = exp(-abs(ridgeX - 0.5) * 18.0) * 0.3; // crease shadow
+
+            vec3 baseGreen = mix(vec3(0.11, 0.40, 0.12), vec3(0.16, 0.52, 0.18), surface);
+            vec3 litColor   = baseGreen * 1.35;
+            vec3 shadColor  = baseGreen * 0.52;
+            vec3 fCol = mix(shadColor, litColor, litFace) - shadowEdge * vec3(0.0, 0.06, 0.01);
+
+            // Paint weathering streaks (horizontal)
+            float streak = noise(vec2(p.x * 3.0, p.y * 50.0 + ts4 * 0.5)) * 0.12;
+            fCol += vec3(0.0, streak * 0.25, streak * 0.04);
+
+            // Graffiti blob: a hash-noisy splat centered at p~(-0.15, -0.02)
+            vec2 gPos = p - vec2(-0.15, -0.02);
+            float gDist = length(gPos * vec2(1.0, 1.6));
+            float gNoise = fbm(p * 14.0 + 5.77);
+            float gMask = smoothstep(0.14 + gNoise * 0.06, 0.08, gDist);
+            // Orange-yellow tag
+            vec3 tagCol = hsv2rgb(vec3(0.08 + gNoise * 0.05, 0.88, 0.92));
+            fCol = mix(fCol, tagCol, gMask * 0.90);
+            // Inner drips
+            float drip = noise(vec2(p.x * 18.0, (p.y + 0.08) * 8.0)) * gMask;
+            fCol = mix(fCol, tagCol * 0.8, drip * 0.4 * step(p.y, -0.03));
+
+            return fCol;
+        }
+
+        // =================== HAIR ===================
+        vec3 hair(vec2 p, float t) {
+            vec2 wp = warp(p * 5.0, t * 0.02);
+            float tex = fbm(wp * 3.0);
+            vec3 col = vec3(0.04, 0.025, 0.018) + tex * vec3(0.035, 0.02, 0.01);
+
+            // Specular highlight 1 — slow slide
+            float h1Phase = sin(t * 0.22) * 0.5 + 0.5;
+            vec2 h1Center = vec2(-0.35 + h1Phase * 0.65, -0.52);
+            float h1 = exp(-length((p - h1Center) * vec2(1.4, 0.28)) * 10.0);
+            col += vec3(0.28, 0.20, 0.14) * h1 * 0.40;
+
+            // Specular highlight 2 — medium speed, narrower
+            float h2Phase = sin(t * 0.38 + 1.8) * 0.5 + 0.5;
+            vec2 h2Center = vec2(0.05 + h2Phase * 0.35, -0.44);
+            float h2 = exp(-length((p - h2Center) * vec2(2.5, 0.4)) * 12.0);
+            col += vec3(0.18, 0.12, 0.09) * h2 * 0.28;
+
+            // Blue sky reflection in hair
+            float skyRef = exp(-length((p - vec2(0.1, -0.38)) * vec2(1.0, 0.6)) * 5.0);
+            col += vec3(0.04, 0.06, 0.12) * skyRef * 0.12;
+
+            return col;
+        }
+
+        // =================== FLYAWAY STRANDS ===================
+        float strand(vec2 p, float t, float id) {
+            float ph = id * 1.618 + t * 0.18;
+            float sx = -0.38 + id * 0.19;
+            float sy = -0.32; // top of hair
+            // Cubic bezier approximated with 14 segments
+            float cx1 = sx + sin(ph) * 0.10;
+            float cy1 = sy + 0.06;
+            float cx2 = sx + sin(ph * 0.6 + 0.9) * 0.15;
+            float cy2 = sy + 0.14;
+            float ex  = sx + sin(ph * 0.4 + 1.7) * 0.18;
+            float ey  = sy + 0.22;
+            float md = 1e9;
+            for(int s = 0; s < 14; s++) {
+                float tt = float(s) / 13.0;
+                float tt2 = tt * tt;
+                float tt3 = tt2 * tt;
+                float bx = sx*(1.0-tt)*(1.0-tt)*(1.0-tt) + 3.0*cx1*tt*(1.0-tt)*(1.0-tt)
+                         + 3.0*cx2*tt2*(1.0-tt) + ex*tt3;
+                float by = sy*(1.0-tt)*(1.0-tt)*(1.0-tt) + 3.0*cy1*tt*(1.0-tt)*(1.0-tt)
+                         + 3.0*cy2*tt2*(1.0-tt) + ey*tt3;
+                md = min(md, length(p - vec2(bx, by)));
+            }
+            return md;
+        }
+
+        // =================== PUDDLE REFLECTION ===================
+        vec3 puddle(vec2 p, float t, vec3 skyCol) {
+            vec2 pCtr = vec2(0.05, -0.88);
+            vec2 pUV = (p - pCtr) / vec2(0.4, 0.06);
+            float pShape = sdBox(pUV, vec2(1.0));
+            if(pShape > 0.0) return vec3(0.0);
+
+            // Ripple distortion
+            float rDist = length(pUV);
+            float ripple = sin(rDist * 22.0 - t * 3.5) * 0.012
+                         + sin(rDist * 11.0 - t * 2.1 + 1.3) * 0.008;
+            vec2 rUV = p + vec2(ripple, ripple * 0.4);
+
+            // Reflect sky (flip y relative to puddle center)
+            float reflY = 2.0 * pCtr.y - rUV.y;
+            vec3 refl = mix(vec3(0.35, 0.55, 0.82), vec3(0.62, 0.78, 0.94), reflY * 0.5 + 0.5);
+            refl += aurora(vec2(rUV.x * 0.5 + 0.5, 1.0 - reflY * 0.5 - 0.5), t) * 0.6;
+
+            float mask = smoothstep(0.06, -0.02, pShape);
+            float fresnel = 0.55 + 0.45 * pow(1.0 - abs(pUV.x), 2.0);
+            return refl * mask * fresnel;
+        }
+
+        // =================== PARTICLES (floating dust) ===================
+        vec3 particles(vec2 p, float t) {
+            vec3 col = vec3(0.0);
+            for(int i = 0; i < 16; i++) {
+                float fi = float(i);
+                vec2 seed = vec2(fi * 7.31, fi * 11.73);
+                vec2 pos = hash2(seed) * 2.0 - 1.0;
+                float spd = 0.04 + hash1(fi) * 0.07;
+                pos.y = mod(pos.y + t * spd, 2.0) - 1.0;
+                pos.x += sin(t * 0.5 + fi * 1.7) * 0.04;
+                float d = length(p - pos);
+                float flicker = 0.5 + 0.5 * sin(t * 2.0 + fi * 2.71);
+                vec3 pCol = hsv2rgb(vec3(0.30 + fi * 0.03, 0.45, 0.9));
+                col += pCol * exp(-d * 90.0) * flicker * 0.35;
+            }
+            return col;
+        }
+
+        // =================== MAIN ===================
+        // GLSL workaround: define aspect constant via computation
+        float aspect_approx = 1.77; // approximation, overridden in main
+
+        void main() {
+            vec2 uv = gl_FragCoord.xy / iResolution.xy;
+            float aspect = iResolution.x / iResolution.y;
+            vec2 p = uv * 2.0 - 1.0;
+            p.x *= aspect;
+
+            float t = iTime;
+
+            vec3 col = vec3(0.0);
+
+            // ---- ZONE MASKS ----
+            float skyMask    = smoothstep(0.62, 0.70, uv.y);
+            float fenceMask  = smoothstep(0.27, 0.32, uv.y) * smoothstep(0.70, 0.64, uv.y);
+            float hairMask   = 0.0;
+            float sidewalkMask = smoothstep(-0.82, -0.88, p.y);
+
+            // ---- SKY ----
+            vec3 skyCol = mix(vec3(0.42, 0.60, 0.88), vec3(0.65, 0.80, 0.96), uv.y);
+            skyCol += clouds(p, t);
+            skyCol += aurora(uv, t);
+            col = mix(col, skyCol, skyMask);
+
+            // ---- BIRDS ----
+            for(int bi = 0; bi < 6; bi++) {
+                float d = bird(p, t, float(bi));
+                float m = smoothstep(0.013, 0.004, d) * skyMask;
+                col = mix(col, vec3(0.06, 0.05, 0.04), m);
+            }
+
+            // ---- TREE silhouette (upper right) ----
+            {
+                float trunk = sdLine(p, vec2(0.85*aspect, 0.60), vec2(0.85*aspect, 0.90));
+                float b1    = sdLine(p, vec2(0.85*aspect, 0.70), vec2(0.97*aspect, 0.75));
+                float b2    = sdLine(p, vec2(0.85*aspect, 0.68), vec2(0.75*aspect, 0.74));
+                float b3    = sdLine(p, vec2(0.85*aspect, 0.77), vec2(0.94*aspect, 0.83));
+                float b4    = sdLine(p, vec2(0.85*aspect, 0.80), vec2(0.78*aspect, 0.85));
+                float tree  = min(trunk, min(min(b1, b2), min(b3, b4)));
+                float tm    = smoothstep(0.011, 0.003, tree) * skyMask;
+                col = mix(col, vec3(0.10, 0.08, 0.06), tm);
+            }
+
+            // ---- CRANE ARM ----
+            {
+                float armM = 0.0;
+                float d = craneArm(p, armM, t);
+                vec3 craneYellow = vec3(0.92, 0.79, 0.08);
+                // Subtle lattice darkening on arm
+                vec2 cA = vec2(-1.2, 0.56);
+                vec2 cB = vec2( 1.0, 0.82);
+                float prog = clamp(dot(p - cA, normalize(cB - cA)) / length(cB - cA), 0.0, 1.0);
+                float armWobble = sin(prog * 28.0) * 0.15 + 0.85;
+                col = mix(col, craneYellow * armWobble, armM * skyMask);
+                // Glow
+                col += craneYellow * exp(-d * 22.0) * 0.07 * skyMask;
+            }
+
+            // ---- FENCE ----
+            if(fenceMask > 0.005) {
+                // Corrugation
+                float ridgePeriod = 0.055;
+                float ridgeX = mod(uv.x, ridgePeriod) / ridgePeriod;
+                float litFace  = smoothstep(0.46, 0.54, ridgeX);
+                float cressShadow = exp(-abs(ridgeX - 0.52) * 22.0) * 0.35;
+
+                vec2 wp = warp(p * 4.0, t * 0.01);
+                float surf = fbm(wp * 2.0);
+                vec3 baseG = mix(vec3(0.10, 0.38, 0.11), vec3(0.15, 0.50, 0.17), surf);
+                vec3 fCol  = mix(baseG * 0.52, baseG * 1.32, litFace);
+                fCol -= cressShadow * vec3(0.0, 0.07, 0.01);
+
+                // Weathering horizontal streaks
+                float streak = noise(vec2(p.x * 2.5, p.y * 45.0 + t * 0.01)) * 0.14;
+                fCol += vec3(0.01, streak * 0.25, streak * 0.04);
+
+                // Graffiti tag
+                vec2 gPos = p - vec2(-0.15, -0.04);
+                float gN = fbm(p * 13.0 + 5.5);
+                float gM = smoothstep(0.15 + gN * 0.06, 0.07, length(gPos * vec2(1.0, 1.7)));
+                vec3 tagC = hsv2rgb(vec3(0.08 + gN * 0.05, 0.88, 0.90));
+                fCol = mix(fCol, tagC, gM * 0.88);
+
+                col = mix(col, fCol, fenceMask);
+            }
+
+            // ---- HAIR ----
+            {
+                vec2 hairCtr = vec2(0.0, -0.48 * aspect / 1.77);
+                float headEllipse = length((p - vec2(0.0, -0.52)) * vec2(0.52, 0.46));
+                hairMask = max(smoothstep(0.95, 0.78, headEllipse),
+                               smoothstep(-0.45, -0.55, p.y));
+
+                vec3 hCol = hair(p, t);
+                col = mix(col, hCol, hairMask);
+
+                // Edge glow on hair
+                float edgeG = exp(-headEllipse * 2.2) * 0.05 * (1.0 - hairMask);
+                col += vec3(0.10, 0.06, 0.04) * edgeG;
+            }
+
+            // ---- FLYAWAY STRANDS ----
+            {
+                float strandZone = smoothstep(0.25, 0.32, uv.y) * smoothstep(0.52, 0.46, uv.y);
+                for(int si = 0; si < 5; si++) {
+                    float d = strand(p, t, float(si));
+                    float m = smoothstep(0.009, 0.002, d);
+                    vec3 strandC = vec3(0.055, 0.034, 0.022);
+                    col = mix(col, strandC, m * strandZone);
+                    col += vec3(0.07, 0.05, 0.03) * exp(-d * 65.0) * 0.25 * strandZone;
+                }
+            }
+
+            // ---- SIDEWALK ----
+            {
+                float swMask = smoothstep(-0.80, -0.86, p.y) * (1.0 - hairMask);
+                vec3 swCol = vec3(0.34, 0.32, 0.29);
+                swCol += fbm(p * 7.0 + t * 0.005) * 0.09;
+                col = mix(col, swCol, swMask);
+            }
+
+            // ---- PUDDLE REFLECTION ----
+            {
+                vec3 puddleC = puddle(p, t, skyCol);
+                col += puddleC;
+            }
+
+            // ---- PARTICLES ----
+            col += particles(p, t) * 0.55;
+
+            // ---- ADDITIVE GLOW ACCENTS ----
+            // Green fence glow halo at boundary
+            col += vec3(0.08, 0.28, 0.08) * exp(-abs(uv.y - 0.68) * 30.0) * fenceMask * 0.06;
+
+            // ---- FILM GRAIN (heavy, gritty outdoor) ----
+            float grain = (hash(uv * 900.0 + t) - 0.5) * 0.048;
+            col += grain;
+
+            // ---- CHROMATIC ABERRATION (strong atmospheric) ----
+            vec2 caDir = normalize(p + 0.0001);
+            float caAmt = 0.009;
+            vec2 rOff = caDir * caAmt * 1.6;
+            vec2 bOff = -caDir * caAmt * 1.1;
+            // Perturb via grain offset proxies
+            col.r += (hash((uv + rOff * 0.5) * 870.0 + t) - 0.5) * 0.010;
+            col.b += (hash((uv + bOff * 0.5) * 940.0 + t) - 0.5) * 0.008;
+            // Lateral color band shift
+            float caEdge = length(p) * 0.5;
+            col.r = mix(col.r, col.r + caEdge * 0.018, 0.5);
+            col.b = mix(col.b, col.b - caEdge * 0.014, 0.5);
+
+            // ---- TONE MAP ----
+            col = pow(clamp(col, 0.0, 1.0), vec3(0.85));
+            gl_FragColor = vec4(col, 1.0);
+        }
+    </script>
+    <script>
+        function main() {
+            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
+            if (!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) { console.error("FS error:", gl.getShaderInfoLog(fs)); }
+            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
+            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            function render(t) {
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        } window.onload = main;
+    </script>
+</body>
+</html>

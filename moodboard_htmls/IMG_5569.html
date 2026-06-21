@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shader: IMG_5569</title>
+    <style>body {{ margin: 0; overflow: hidden; background-color: #000; }} canvas {{ display: block; width: 100vw; height: 100vh; }}</style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float; uniform vec2 iResolution; uniform float iTime;
+        
+void main() {
+    vec2 uv = gl_FragCoord.xy / iResolution.xy;
+    vec2 p = uv * 2.0 - 1.0;
+    p.x *= iResolution.x / iResolution.y;
+    
+    // Background: light grey/white floor and bright background
+    vec3 col = vec3(0.85, 0.85, 0.85);
+    
+    // Add some noise to the background floor
+    float bgNoise = fract(sin(dot(p + iTime*0.05, vec2(12.9898, 78.233))) * 43758.5453);
+    if (p.x + p.y > 0.5) {
+        col *= 0.95 + 0.05 * bgNoise; // Floor texture
+    } else {
+        col = vec3(0.95); // Brighter top left
+    }
+
+    // --- The Rock Speaker ---
+    
+    // Base shape of the rock
+    // Distorted circle
+    float a = atan(p.y, p.x);
+    float r = length(p);
+    
+    // Low frequency distortion for the overall shape
+    float rockShape = 0.65;
+    rockShape += sin(a * 3.0 + iTime*0.2) * 0.1; // Gentle breathing animation
+    rockShape += cos(a * 5.0 + 1.0) * 0.05;
+    rockShape += sin(a * 7.0) * 0.03;
+    
+    // High frequency noise for the bumpy edge
+    float edgeNoise = fract(sin(a * 50.0) * 4375.5453) * 0.02;
+    rockShape += edgeNoise;
+
+    // Shift rock center slightly
+    vec2 rp = p - vec2(-0.1, -0.1);
+    float rLength = length(rp);
+    
+    if (rLength < rockShape) {
+        // Rock Base Color (Dark Grey)
+        col = vec3(0.22, 0.23, 0.25);
+        
+        // Rocky Texture
+        float rockNoise = fract(sin(dot(rp * 10.0, vec2(12.9898, 78.233))) * 43758.5453);
+        float rockNoise2 = fract(sin(dot(rp * 30.0, vec2(39.346, 11.135))) * 43758.5453);
+        
+        col *= 0.8 + 0.4 * rockNoise;
+        
+        // Greenish moss/paint flecks
+        if (rockNoise2 > 0.8 && rLength > 0.4) {
+            col = mix(col, vec3(0.2, 0.4, 0.3), 0.5);
+        }
+        
+        // Lighting / 3D shading
+        vec3 normal = normalize(vec3(rp.x, rp.y, rockShape - rLength));
+        vec3 lightDir = normalize(vec3(-1.0, 1.0, 1.0));
+        float diff = max(dot(normal, lightDir), 0.0);
+        col *= 0.5 + 0.5 * diff;
+        
+        // --- Speaker Holes ---
+        vec2 center = vec2(0.1, 0.0); 
+        float dHoles = 1.0;
+        
+        float centerHole = length(rp - center) - 0.06;
+        dHoles = min(dHoles, centerHole);
+        
+        for(float i=0.0; i<8.0; i++) {
+            float ang = i * 3.14159 / 4.0;
+            vec2 pos = center + vec2(cos(ang), sin(ang)) * 0.18;
+            vec2 hp = rp - pos;
+            
+            float c = cos(-ang);
+            float s = sin(-ang);
+            mat2 rot = mat2(c, -s, s, c);
+            hp = rot * hp;
+            
+            float oval = max(abs(hp.x) - 0.06, abs(hp.y) - 0.02) - 0.02;
+            if (mod(i, 2.0) == 0.0) oval = length(rp - pos) - 0.05;
+            
+            dHoles = min(dHoles, oval);
+        }
+        
+         for(float i=0.0; i<4.0; i++) {
+            float ang = i * 3.14159 / 2.0 + 3.14159/4.0;
+            vec2 pos = center + vec2(cos(ang), sin(ang)) * 0.09;
+            float hole = length(rp - pos) - 0.03;
+            dHoles = min(dHoles, hole);
+        }
+
+        if (dHoles < 0.0) {
+            col = vec3(0.08, 0.09, 0.1);
+            // Subtle mesh pattern animation (pulsing to "music")
+            float meshAnim = sin(iTime * 10.0 + length(rp) * 20.0) * 0.1;
+            if (fract(rp.x * 100.0 + meshAnim) < 0.2 || fract(rp.y * 100.0 + meshAnim) < 0.2) {
+                col *= 0.5;
+            }
+            // Speaker vibration effect
+            float vibration = sin(iTime * 30.0) * 0.005;
+            col *= smoothstep(0.0, -0.01 + vibration, dHoles);
+        }
+        
+        // --- Logo 'TIC' ---
+        vec2 logoPos = vec2(0.5, 0.2);
+        if (length(rp - logoPos) < 0.05) {
+            col = vec3(0.15); 
+            if (length(rp - logoPos) > 0.04) col = vec3(0.3); 
+        }
+    }
+    
+    // --- Cable ---
+    float dCable = abs(length(p - vec2(0.3, 1.2)) - 0.6);
+    if (dCable < 0.02 && p.x > 0.3 && p.y > 0.6) {
+        col = vec3(0.85); 
+        col *= 0.7 + 0.3 * cos((dCable * 50.0) * 3.14159);
+        if (dCable < 0.005 && p.x > 0.8) col = vec3(0.2, 0.6, 0.3);
+    }
+    
+    gl_FragColor = vec4(col, 1.0);
+}
+
+    </script>
+    <script>
+        function main() {
+            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
+            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            
+            if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+                console.error("Link error: " + gl.getProgramInfoLog(prog));
+                console.error("FS Log: " + gl.getShaderInfoLog(fs));
+            }
+
+            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
+            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            function render(t) {
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        } window.onload = main;
+    </script>
+</body>
+</html>

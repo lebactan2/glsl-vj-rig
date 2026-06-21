@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shader: IMG_6444 (Manual)</title>
+    <style>body { margin: 0; overflow: hidden; background-color: #000; } canvas { display: block; width: 100vw; height: 100vh; }</style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float; uniform vec2 iResolution; uniform float iTime;
+
+        float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+        float noise(vec2 p) {
+            vec2 i = floor(p); vec2 f = fract(p);
+            f = f * f * (3.0 - 2.0 * f);
+            return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x),
+                       mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+        }
+
+        mat2 rot(float a) { float s = sin(a), c = cos(a); return mat2(c, -s, s, c); }
+
+        float sdBox(vec2 p, vec2 b) {
+            vec2 d = abs(p) - b;
+            return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+        }
+        
+        float sdSegment(vec2 p, vec2 a, vec2 b) {
+            vec2 pa = p-a, ba = b-a;
+            float h = clamp(dot(pa,ba)/dot(ba,ba), 0.0, 1.0);
+            return length(pa - ba*h);
+        }
+
+        float sdCircle(vec2 p, float r) { return length(p) - r; }
+
+        void main() {
+            vec2 uv = gl_FragCoord.xy / iResolution.xy;
+            vec2 p = uv * 2.0 - 1.0;
+            p.x *= iResolution.x / iResolution.y;
+
+            vec3 col = vec3(0.0);
+
+            // --- SKY ---
+            if (p.y > 0.3) {
+                col = mix(vec3(0.5, 0.7, 0.9), vec3(0.2, 0.4, 0.8), p.y); // Gradient blue sky
+            }
+
+            // --- TREES & BUILDINGS (Above wall) ---
+            if (p.y > 0.25 && p.y < 0.5) {
+                // Trees
+                float tNoise = noise(p * 20.0 + vec2(iTime*0.1, 0.0));
+                if (tNoise > 0.5 && p.x > -0.5 && p.x < 0.5) col = mix(vec3(0.1, 0.3, 0.1), vec3(0.2, 0.4, 0.15), tNoise);
+                // Buildings right side
+                if (p.x > 0.5) {
+                    if (sdBox(p - vec2(0.7, 0.3), vec2(0.1, 0.15)) < 0.0) col = vec3(0.8, 0.8, 0.7); // white building
+                    if (sdBox(p - vec2(0.9, 0.35), vec2(0.1, 0.2)) < 0.0) col = vec3(0.8, 0.6, 0.3); // yellow/orange building
+                    // Windows
+                    if (fract(p.x * 30.0) < 0.5 && fract(p.y * 30.0) < 0.5 && p.x > 0.5) col *= 0.5;
+                }
+            }
+
+            // --- CONCRETE WALL & BARBED WIRE ---
+            if (p.y > -0.1 && p.y <= 0.3) {
+                col = vec3(0.6, 0.6, 0.6); // Grey concrete
+                col *= 0.8 + 0.2 * noise(p * 50.0);
+                
+                // Weathering/stains
+                if (noise(p * vec2(10.0, 50.0)) > 0.6) col *= 0.8;
+                
+                // Barbed wire on top
+                if (p.y > 0.28 && p.y < 0.35) {
+                    float wire = sin(p.x * 150.0) * 0.02 + 0.3;
+                    if (abs(p.y - wire) < 0.005) col = vec3(0.2); // wire line
+                    if (noise(p * 200.0) > 0.8) col = vec3(0.1); // barbs
+                }
+            }
+
+            // --- RED/WHITE STRIPED POLE (Left) ---
+            if (p.x < -0.85) {
+                col = vec3(0.9); // White
+                // Red stripes
+                if (fract(p.y * 3.0) < 0.5) col = vec3(0.8, 0.1, 0.1);
+                // Cylinder shading
+                col *= 0.5 + 0.5 * smoothstep(-0.85, -1.0, p.x);
+            }
+
+            // --- THE BANNER ---
+            float dBanner = sdBox(p - vec2(0.0, 0.1), vec2(0.7, 0.18));
+            if (dBanner < 0.0) {
+                col = vec3(0.6, 0.05, 0.15); // Dark magenta/red
+                
+                // Banner folds/texture
+                col *= 0.9 + 0.1 * sin(p.x * 20.0);
+                
+                // Yellow Text (Abstracted into rows of glowing blocks/lines)
+                vec2 txtP = p - vec2(0.0, 0.1);
+                
+                // Row 1: "MINH MINH GROUP..."
+                if (txtP.y > 0.12 && txtP.y < 0.15 && abs(txtP.x) < 0.6) {
+                    if (noise(txtP * vec2(100.0, 1.0)) > 0.4) col = vec3(0.9, 0.8, 0.2);
+                }
+                
+                // Row 2: "TUYEN DUNG 200 SALE..." (Huge)
+                if (txtP.y > 0.02 && txtP.y < 0.09 && abs(txtP.x) < 0.65) {
+                    float glyphs = step(0.3, noise(txtP * vec2(60.0, 50.0)));
+                    float words = step(0.2, fract(txtP.x * 8.0));
+                    if (glyphs * words > 0.0) col = vec3(1.0, 0.9, 0.1);
+                }
+                
+                // Row 3: "LUONG 12 TRIEU..." (Huge)
+                if (txtP.y > -0.06 && txtP.y < 0.0 && abs(txtP.x) < 0.65) {
+                    float glyphs = step(0.3, noise(txtP * vec2(60.0, 50.0)));
+                    float words = step(0.2, fract(txtP.x * 8.0 + 0.5));
+                    if (glyphs * words > 0.0) col = vec3(1.0, 0.9, 0.1);
+                }
+                
+                // Row 4: "TOP 3 THUONG..." (White text bottom left)
+                if (txtP.y > -0.14 && txtP.y < -0.08 && txtP.x > -0.65 && txtP.x < 0.1) {
+                    float glyphs = step(0.4, noise(txtP * vec2(80.0, 50.0)));
+                    if (glyphs > 0.0) col = vec3(0.95);
+                }
+                
+                // The 3 Cars (Bottom right)
+                // Red car
+                if (sdBox(txtP - vec2(0.25, -0.12), vec2(0.04, 0.02)) < 0.0) col = vec3(0.8, 0.1, 0.1);
+                // Silver car
+                if (sdBox(txtP - vec2(0.4, -0.12), vec2(0.04, 0.02)) < 0.0) col = vec3(0.8);
+                // Yellow car
+                if (sdBox(txtP - vec2(0.55, -0.12), vec2(0.04, 0.02)) < 0.0) col = vec3(0.9, 0.8, 0.1);
+            }
+            // Drop shadow from banner
+            if (dBanner > 0.0 && dBanner < 0.02 && p.y < 0.1) col *= 0.6;
+
+            // --- SIDEWALK / DIRT LOT ---
+            if (p.y <= -0.1 && p.y > -0.45) {
+                col = vec3(0.65, 0.6, 0.5); // Tan dusty color
+                
+                // Perspective tile grid
+                vec2 proj = p / abs(p.y + 0.5); // fake perspective
+                float grid = smoothstep(0.8, 1.0, sin(proj.x * 20.0)) + smoothstep(0.8, 1.0, sin(proj.y * 20.0));
+                col = mix(col, vec3(0.5, 0.45, 0.35), grid * 0.5);
+                
+                // Dirt/debris patches
+                if (noise(p * 30.0) > 0.6) col *= 0.8;
+                if (p.y > -0.15 && noise(p * 100.0) > 0.7) col = vec3(0.3, 0.4, 0.2); // Weeds near wall
+                
+                // Cast shadow from the pole
+                float shadow = sdCircle(p - vec2(-0.4, -0.2), 0.1); // round shadow shape
+                shadow = min(shadow, sdSegment(p, vec2(-0.85, -0.2), vec2(-0.4, -0.2)));
+                if (shadow < 0.0) col *= 0.6;
+            }
+
+            // --- CURB ---
+            if (p.y <= -0.45 && p.y > -0.55) {
+                col = vec3(0.5); // Grey curb
+                col *= 0.8 + 0.2 * noise(p * 50.0);
+                // Curb blocks
+                if (fract(p.x * 4.0 - p.y * 2.0) < 0.05) col *= 0.5;
+                // Shadow underneath
+                if (p.y < -0.53) col *= 0.4;
+            }
+
+            // --- ROAD (Asphalt) ---
+            if (p.y <= -0.55) {
+                col = vec3(0.25, 0.28, 0.32); // Dark blue-grey asphalt
+                col *= 0.9 + 0.1 * noise(p * 100.0);
+                // Slight gradient
+                col *= smoothstep(-1.0, -0.5, p.y) * 0.5 + 0.5;
+            }
+
+            // --- GLOBAL TRIPPY OVERLAY ---
+            vec2 trippyP = p * 1.2 + vec2(sin(iTime*0.3), cos(iTime*0.4)) * 0.1;
+            col += 0.03 * vec3(
+                sin(trippyP.x * 5.0 + iTime * 1.5),
+                sin(trippyP.y * 6.0 + iTime * 2.0),
+                sin((trippyP.x - trippyP.y) * 5.0 + iTime * 2.5)
+            );
+
+            // Vignette
+            col *= smoothstep(1.5, 0.2, length(p));
+
+            gl_FragColor = vec4(col, 1.0);
+        }
+    </script>
+    <script>
+        function main() {
+            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
+            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
+            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            function render(t) {
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        } window.onload = main;
+    </script>
+</body>
+</html>

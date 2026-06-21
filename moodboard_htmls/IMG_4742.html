@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shader: IMG_4742</title>
+    <style>body {{ margin: 0; overflow: hidden; background-color: #000; }} canvas {{ display: block; width: 100vw; height: 100vh; }}</style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float; uniform vec2 iResolution; uniform float iTime;
+        
+void main() {
+    vec2 uv = gl_FragCoord.xy / iResolution.xy;
+    vec2 p = uv * 2.0 - 1.0;
+    p.x *= iResolution.x / iResolution.y;
+    
+    // Animated scroll for street to simulate walking
+    vec2 sp = p;
+    sp.y += iTime * 0.5;
+    
+    // Street background
+    vec3 col = vec3(0.3, 0.3, 0.32);
+    // Noise on street
+    float noise = fract(sin(dot(sp * 100.0, vec2(12.9898, 78.233))) * 43758.5453);
+    col += (noise - 0.5) * 0.05;
+
+    // Person Center (bobbing up and down)
+    float bob = abs(sin(iTime * 4.0)) * 0.05;
+    vec2 pCenter = vec2(-0.1, 0.0 + bob);
+    vec2 pp = p - pCenter;
+
+    // Body
+    float body = max(abs(pp.x) - 0.3, abs(pp.y) - 0.15);
+    
+    // Legs walking animation
+    float legSway = sin(iTime * 4.0) * 0.1;
+    float leg1 = length(max(abs(p - vec2(0.2 - legSway, -0.2 + bob)) - vec2(0.05, 0.2), 0.0));
+    float leg2 = length(max(abs(p - vec2(0.4 + legSway, -0.25 + bob)) - vec2(0.05, 0.2), 0.0));
+    
+    // Clothes Pattern
+    vec3 clothesBase = vec3(0.05, 0.1, 0.15); // Dark blue/black
+    vec3 dotColor = vec3(0.2, 0.8, 0.3); // Green dots
+    float clothPattern = fract(sin(pp.x * 20.0 + iTime) * cos(pp.y * 20.0) * 10.0);
+    vec3 clothesCol = mix(clothesBase, dotColor, step(0.7, clothPattern));
+    
+    if (body < 0.0 || min(leg1, leg2) < 0.05) {
+        col = clothesCol;
+    }
+
+    // Hat (Conical, green with black dots)
+    vec2 hp = p - vec2(-0.5, 0.0 + bob);
+    // slight rotation to hat
+    float hA = sin(iTime*2.0)*0.1;
+    mat2 rotH = mat2(cos(hA), -sin(hA), sin(hA), cos(hA));
+    vec2 rotHp = hp * rotH;
+    
+    float hat = max(abs(rotHp.x) - 0.25, abs(rotHp.y) - 0.3);
+    // Make it triangular
+    hat = max(hat, -rotHp.x - rotHp.y*1.5 - 0.4);
+    hat = max(hat, rotHp.x - rotHp.y*1.5 - 0.4);
+    
+    if (hat < 0.0) {
+        col = vec3(0.3, 0.9, 0.1); // Bright green
+        // Black dots
+        vec2 hGrid = fract(rotHp * 8.0);
+        if (length(hGrid - 0.5) < 0.2) col = vec3(0.05);
+    }
+    
+    // Shoes (Red)
+    float shoe1 = length(max(abs(p - vec2(0.25 - legSway, -0.45 + bob)) - vec2(0.06, 0.03), 0.0));
+    float shoe2 = length(max(abs(p - vec2(0.45 + legSway, -0.5 + bob)) - vec2(0.06, 0.03), 0.0));
+    if (min(shoe1, shoe2) < 0.02) col = vec3(0.8, 0.2, 0.2);
+
+    // Bags
+    // Green basket (swinging)
+    vec2 bP = p - vec2(0.1, -0.3 + bob);
+    float bSway = sin(iTime*4.0 + 1.0)*0.05;
+    bP.x += bSway;
+    float basket = max(abs(bP.x) - 0.15, abs(bP.y) - 0.1);
+    if (basket < 0.0) {
+        col = vec3(0.2, 0.6, 0.2);
+        // Grid pattern
+        if (fract(bP.x * 30.0) < 0.1 || fract(bP.y * 30.0) < 0.1) col *= 0.5;
+    }
+    // Red plaid bag
+    vec2 rp = p - vec2(-0.1, -0.25 + bob);
+    rp.x -= bSway*0.5;
+    float rBag = max(abs(rp.x) - 0.1, abs(rp.y) - 0.08);
+    if (rBag < 0.0) {
+        col = vec3(0.7, 0.1, 0.1);
+        if (fract(rp.x * 20.0) < 0.2 || fract(rp.y * 20.0) < 0.2) col = vec3(0.1);
+    }
+    
+    // Motorcycle bottom left (stationary relative to street)
+    vec2 mp = sp - vec2(-0.6, -0.8);
+    float moto = max(abs(mp.x) - 0.3, abs(mp.y) - 0.3);
+    if (moto < 0.0) {
+        col = vec3(0.1);
+        // headlight
+        if (length(mp - vec2(0.2, 0.2)) < 0.05) col = vec3(0.9, 0.9, 0.8);
+    }
+
+    gl_FragColor = vec4(col, 1.0);
+}
+
+    </script>
+    <script>
+        function main() {
+            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
+            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            
+            if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+                console.error("Link error: " + gl.getProgramInfoLog(prog));
+                console.error("FS Log: " + gl.getShaderInfoLog(fs));
+            }
+
+            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
+            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            function render(t) {
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        } window.onload = main;
+    </script>
+</body>
+</html>

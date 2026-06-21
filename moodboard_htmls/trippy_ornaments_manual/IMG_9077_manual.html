@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shader: IMG_9077 (Manual)</title>
+    <style>body { margin: 0; overflow: hidden; background-color: #000; } canvas { display: block; width: 100vw; height: 100vh; }</style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float; uniform vec2 iResolution; uniform float iTime;
+
+        float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+        float noise(vec2 p) {
+            vec2 i = floor(p); vec2 f = fract(p);
+            f = f * f * (3.0 - 2.0 * f);
+            return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x),
+                       mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+        }
+
+        mat2 rot(float a) { float s = sin(a), c = cos(a); return mat2(c, -s, s, c); }
+
+        float sdBox(vec2 p, vec2 b) {
+            vec2 d = abs(p) - b;
+            return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+        }
+
+        float sdCircle(vec2 p, float r) { return length(p) - r; }
+
+        float sdSegment(vec2 p, vec2 a, vec2 b) {
+            vec2 pa = p-a, ba = b-a;
+            float h = clamp(dot(pa,ba)/dot(ba,ba), 0.0, 1.0);
+            return length(pa - ba*h);
+        }
+
+        void main() {
+            vec2 uv = gl_FragCoord.xy / iResolution.xy;
+            vec2 p = uv * 2.0 - 1.0;
+            p.x *= iResolution.x / iResolution.y;
+
+            vec3 col = vec3(0.0);
+
+            // --- BACKGROUND ---
+            if (p.y < -0.6) {
+                // Concrete Ground
+                col = vec3(0.5, 0.5, 0.45); // concrete
+                col *= 0.8 + 0.2 * noise(p * 50.0);
+                
+                // Yellow parking line
+                if (abs(p.x - 0.2) < 0.02 && p.y < -0.7) col = vec3(0.8, 0.7, 0.2);
+                
+                // Fallen leaves (scattered noise)
+                if (hash(floor(p * 20.0)) > 0.95 && noise(p * 100.0) > 0.5) {
+                    col = vec3(0.4, 0.2, 0.1);
+                }
+            } else {
+                // Building behind
+                col = vec3(0.3, 0.35, 0.4); // base greyish building
+                
+                // Corrugated blue door (center)
+                if (abs(p.x) < 0.5 && p.y > 0.0) {
+                    col = vec3(0.2, 0.3, 0.4);
+                    col *= 0.8 + 0.2 * sin(p.x * 200.0); // corrugation
+                    
+                    // Signboard at top
+                    if (p.y > 0.8) {
+                        col = vec3(0.8, 0.8, 0.85); // white sign
+                        if (abs(p.y - 0.85) < 0.03 && fract(p.x * 10.0) < 0.5) col = vec3(0.1, 0.2, 0.5); // blue text representation
+                    }
+                }
+                
+                // Red pillars/walls on sides
+                if (p.x < -0.5 || p.x > 0.5) {
+                    col = vec3(0.6, 0.2, 0.2);
+                    if (p.y > 0.8) col = vec3(0.8, 0.2, 0.2); // red sign background
+                }
+            }
+
+            // --- THE BARRICADE ---
+            vec2 frameSize = vec2(0.9, 0.6);
+            vec2 framePos = vec2(0.0, -0.1);
+            vec2 bp = p - framePos;
+            
+            float outerFrame = sdBox(bp, frameSize);
+            float innerFrame = sdBox(bp, frameSize - vec2(0.04));
+            
+            // 1. Chain-link Mesh (Background of barricade)
+            if (innerFrame < 0.0) {
+                // Drop shadow on background
+                col *= 0.7;
+                
+                // Mesh grid
+                vec2 meshP = bp * 40.0;
+                meshP *= rot(0.785398); // rotate 45 degrees (pi/4)
+                
+                vec2 grid = abs(fract(meshP) - 0.5);
+                float meshLine = min(grid.x, grid.y);
+                
+                if (meshLine < 0.05) {
+                    col = vec3(0.2, 0.2, 0.25); // dark grey wire
+                    col *= 0.8 + 0.2 * noise(bp * 100.0);
+                    // Shine on wire
+                    if (meshLine < 0.02) col += vec3(0.2);
+                }
+            }
+
+            // 2. Chevron Bars (V-shapes)
+            // They are attached to the mesh inside the inner frame
+            if (innerFrame < 0.0) {
+                float barThick = 0.02;
+                float chevronD = 1000.0;
+                vec3 chevronCol = vec3(0.0);
+                
+                // Several dark blue chevrons pointing left
+                for(int i=0; i<8; i++) {
+                    float xOffset = -0.5 + float(i)*0.06;
+                    
+                    // Top leg of V
+                    float d1 = sdSegment(bp, vec2(xOffset, 0.0), vec2(xOffset + 0.7, 0.5));
+                    // Bottom leg of V
+                    float d2 = sdSegment(bp, vec2(xOffset, 0.0), vec2(xOffset + 0.7, -0.5));
+                    
+                    float d = min(d1, d2);
+                    
+                    if (d < barThick) {
+                        chevronD = d;
+                        chevronCol = vec3(0.1, 0.2, 0.4); // dark blue
+                        // 3D bar shading
+                        chevronCol *= 0.6 + 0.4 * smoothstep(barThick, 0.0, d);
+                    }
+                }
+                
+                // One outer white chevron
+                float xOffsetWhite = 0.0;
+                float d1w = sdSegment(bp, vec2(xOffsetWhite, 0.0), vec2(xOffsetWhite + 0.75, 0.55));
+                float d2w = sdSegment(bp, vec2(xOffsetWhite, 0.0), vec2(xOffsetWhite + 0.75, -0.55));
+                float dw = min(d1w, d2w);
+                
+                if (dw < barThick * 1.5) {
+                    chevronD = dw;
+                    chevronCol = vec3(0.9, 0.9, 0.95); // white
+                    chevronCol *= 0.7 + 0.3 * smoothstep(barThick*1.5, 0.0, dw);
+                }
+                
+                if (chevronD < 1.0) { // Render chevron if we hit it
+                    if (chevronD < barThick * 1.5) {
+                        col = chevronCol;
+                    } else if (chevronD < barThick * 1.5 + 0.02) {
+                        // Shadow of chevron on mesh
+                        col *= 0.4;
+                    }
+                }
+            }
+
+            // 3. Outer Rectangular Frame (Red and White alternating)
+            if (outerFrame < 0.0 && innerFrame > 0.0) {
+                // Determine position along the perimeter for alternating color
+                // Calculate an angle or distance along the edge
+                float perimeterDist = 0.0;
+                if (abs(bp.y) > frameSize.y - 0.04) {
+                    // Top/Bottom edges
+                    perimeterDist = bp.x;
+                } else {
+                    // Left/Right edges
+                    perimeterDist = bp.y;
+                }
+                
+                // Alternate every 0.2 units
+                float block = mod(floor((perimeterDist + 0.1) * 5.0), 2.0);
+                
+                if (block == 0.0) {
+                    col = vec3(0.6, 0.15, 0.15); // Red
+                } else {
+                    col = vec3(0.9, 0.9, 0.9); // White
+                }
+                
+                // Bevel/3D effect on the frame
+                float innerEdge = abs(innerFrame);
+                float outerEdge = abs(outerFrame);
+                float edgeDist = min(innerEdge, outerEdge);
+                col *= 0.7 + 0.3 * smoothstep(0.0, 0.02, edgeDist);
+                
+                // Dirt/rust
+                col *= 0.8 + 0.2 * noise(p * 30.0);
+                if (noise(p * 15.0) > 0.6) col = mix(col, vec3(0.4, 0.2, 0.1), 0.3); // rust spots
+            }
+
+            // 4. Wheels at bottom
+            vec2 wheelCenters[4];
+            wheelCenters[0] = vec2(-0.85, -0.75);
+            wheelCenters[1] = vec2(-0.75, -0.75);
+            wheelCenters[2] = vec2(0.75, -0.75);
+            wheelCenters[3] = vec2(0.85, -0.75);
+            
+            for(int i=0; i<4; i++) {
+                vec2 wp = p - framePos - wheelCenters[i];
+                
+                // Wheel mounting bracket
+                if (sdBox(wp - vec2(0.0, 0.06), vec2(0.015, 0.03)) < 0.0) col = vec3(0.3);
+                
+                // The wheel itself
+                float dWheel = sdCircle(wp, 0.04);
+                if (dWheel < 0.0) {
+                    col = vec3(0.15); // dark grey rubber
+                    col *= 0.5 + 0.5 * smoothstep(0.0, -0.04, dWheel); // shading
+                    if (sdCircle(wp, 0.01) < 0.0) col = vec3(0.5); // metal hub
+                }
+            }
+
+
+            // Global trippy overlay to match aesthetic theme
+            vec2 trippyP = p * 1.5 + vec2(sin(iTime*0.4), cos(iTime*0.5)) * 0.1;
+            col += 0.015 * vec3(
+                sin(trippyP.x * 4.0 + iTime * 2.0),
+                sin(trippyP.y * 5.0 + iTime * 2.5),
+                sin((trippyP.x - trippyP.y) * 4.0 + iTime * 3.0)
+            );
+
+            gl_FragColor = vec4(col, 1.0);
+        }
+    </script>
+    <script>
+        function main() {
+            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
+            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
+            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            function render(t) {
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        } window.onload = main;
+    </script>
+</body>
+</html>

@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shader: IMG_0187 (Manual)</title>
+    <style>body { margin: 0; overflow: hidden; background-color: #000; } canvas { display: block; width: 100vw; height: 100vh; }</style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float; uniform vec2 iResolution; uniform float iTime;
+
+        float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+        float noise(vec2 p) {
+            vec2 i = floor(p); vec2 f = fract(p);
+            f = f * f * (3.0 - 2.0 * f);
+            return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x),
+                       mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+        }
+
+        mat2 rot(float a) { float s = sin(a), c = cos(a); return mat2(c, -s, s, c); }
+
+        float sdBox(vec2 p, vec2 b) {
+            vec2 d = abs(p) - b;
+            return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+        }
+
+        float sdSegment(vec2 p, vec2 a, vec2 b) {
+            vec2 pa = p-a, ba = b-a;
+            float h = clamp(dot(pa,ba)/dot(ba,ba), 0.0, 1.0);
+            return length(pa - ba*h);
+        }
+
+        // The specific geometric grille pattern
+        float grillePattern(vec2 p, float thickness) {
+            float d = 1000.0;
+            
+            // Assume p is in -0.5 to 0.5 range (one cell)
+            // Outer Box (already handled by grid borders, but we can reinforce)
+            d = min(d, abs(sdBox(p, vec2(0.48))) - thickness);
+            
+            // Inner Box
+            d = min(d, abs(sdBox(p, vec2(0.25))) - thickness);
+            
+            // Diagonals (X shape)
+            d = min(d, sdSegment(p, vec2(-0.5), vec2(0.5)) - thickness);
+            d = min(d, sdSegment(p, vec2(-0.5, 0.5), vec2(0.5, -0.5)) - thickness);
+            
+            // Cross (+ shape)
+            d = min(d, sdSegment(p, vec2(-0.5, 0.0), vec2(0.5, 0.0)) - thickness);
+            d = min(d, sdSegment(p, vec2(0.0, -0.5), vec2(0.0, 0.5)) - thickness);
+            
+            // Center small solid box with an inner hole
+            float centerBox = sdBox(p, vec2(0.08));
+            if (centerBox < 0.0 && sdBox(p, vec2(0.03)) > 0.0) {
+                d = 0.0; // Fill it
+            }
+            
+            return d;
+        }
+
+        // Star shape for the flag
+        float sdStar(vec2 p, float r, float rf) {
+            const vec2 k1 = vec2(0.809016994375, -0.587785252292);
+            const vec2 k2 = vec2(-k1.x,k1.y);
+            p.x = abs(p.x);
+            p -= 2.0*max(dot(k1,p),0.0)*k1;
+            p -= 2.0*max(dot(k2,p),0.0)*k2;
+            p.x = abs(p.x);
+            p.y -= r;
+            vec2 ba = rf*vec2(-k1.y,k1.x) - vec2(0,1);
+            float h = clamp( dot(p,ba)/dot(ba,ba), 0.0, r );
+            return length(p-ba*h) * sign(p.y*ba.x-p.x*ba.y);
+        }
+
+        void main() {
+            vec2 uv = gl_FragCoord.xy / iResolution.xy;
+            vec2 p = uv * 2.0 - 1.0;
+            p.x *= iResolution.x / iResolution.y;
+
+            vec3 col = vec3(0.0);
+
+            // --- BUILDING BACKGROUND ---
+            col = vec3(0.15, 0.18, 0.22); // dark night building
+            
+            // Determine floors
+            float floorLevel = floor((p.y + 1.0) * 2.5); // roughly 5 floors visible
+            
+            // Grid scaling for the main building facade
+            vec2 gridP = p * vec2(3.0, 3.0);
+            vec2 id = floor(gridP);
+            vec2 localP = fract(gridP) - 0.5;
+
+            // --- WINDOW LIGHTS ---
+            // Only light up some cells randomly
+            float isLit = step(0.7, hash(id * 13.5));
+            if (isLit > 0.0 && p.y > -0.4 && p.y < 0.8) {
+                vec3 lightCol = vec3(0.8, 0.8, 0.6); // warm indoor light
+                if (hash(id * 7.2) > 0.5) lightCol = vec3(0.6, 0.8, 0.9); // cool light
+                
+                // Dimmer towards the edges of the room
+                float roomDist = sdBox(localP, vec2(0.4));
+                float glow = smoothstep(0.0, -0.4, roomDist);
+                col = mix(col, lightCol, glow * 0.8);
+                
+                // Random silhouettes/boxes inside the room
+                if (sdBox(localP - vec2(0.2, -0.2), vec2(0.1)) < 0.0) col *= 0.3;
+                if (sdBox(localP - vec2(-0.15, 0.1), vec2(0.08, 0.2)) < 0.0) col *= 0.2;
+            }
+
+            // --- THE METAL GRILLES ---
+            if (p.y > -0.4) {
+                // Apply the repeating pattern
+                float dGrille = grillePattern(localP, 0.015);
+                
+                // Render the grille
+                if (dGrille < 0.0) {
+                    col = vec3(0.8, 0.8, 0.85); // off-white metal
+                    // 3D shading
+                    col *= 0.6 + 0.4 * smoothstep(0.0, -0.015, dGrille);
+                    // Ambient occlusion at intersections
+                    float ao = 1.0 - smoothstep(0.0, 0.1, length(localP));
+                    col *= 0.8 + 0.2 * ao;
+                    
+                    // Shadow on the background
+                } else if (dGrille < 0.03) {
+                    col *= 0.5;
+                }
+            }
+
+            // --- BOTTOM SECTION (Gate & Flag) ---
+            if (p.y <= -0.4) {
+                // Dark bottom wall/gate area
+                col = vec3(0.1, 0.1, 0.15);
+                
+                // Street gate (vertical lines)
+                if (p.y < -0.6) {
+                    float gatePattern = abs(fract(p.x * 10.0) - 0.5);
+                    if (gatePattern < 0.1) col = vec3(0.2, 0.2, 0.25);
+                    // Gate framing
+                    if (sdBox(p - vec2(0.0, -0.6), vec2(1.0, 0.02)) < 0.0) col = vec3(0.2);
+                }
+                
+                // Sign post (78)
+                if (sdBox(p - vec2(0.2, -0.5), vec2(0.05, 0.1)) < 0.0) {
+                    col = vec3(0.2, 0.3, 0.5); // blue sign
+                    if (sdBox(p - vec2(0.2, -0.45), vec2(0.04, 0.02)) < 0.0) col = vec3(0.8); // white text area
+                }
+
+                // --- VIETNAM FLAG ---
+                // Waving motion
+                vec2 flagP = p - vec2(0.4, -0.3); // Position
+                flagP.x -= flagP.y * 0.2; // slight angle
+                
+                // Wave distortion
+                float wave = sin(flagP.x * 15.0 - iTime * 3.0) * 0.05 * (flagP.x + 0.2);
+                flagP.y += wave;
+                
+                // Flag shape (Triangle/Flag hanging down)
+                float flagShape = sdBox(flagP, vec2(0.15, 0.25));
+                if (flagShape < 0.0) {
+                    // Shadows from folds
+                    float fold = sin(flagP.x * 20.0 - iTime * 3.0);
+                    
+                    // Red background
+                    col = vec3(0.8, 0.1, 0.15);
+                    col *= 0.8 + 0.2 * fold;
+                    
+                    // Yellow Star
+                    vec2 starP = flagP - vec2(-0.05, 0.05);
+                    starP *= rot(0.2); // tilt star slightly
+                    float dStar = sdStar(starP, 0.06, 0.03);
+                    
+                    if (dStar < 0.0) {
+                        col = vec3(0.9, 0.8, 0.1);
+                        col *= 0.8 + 0.2 * fold;
+                    }
+                } else if (flagShape < 0.03) {
+                    // Flag shadow on gate
+                    col *= 0.6;
+                }
+            }
+
+            // Global trippy overlay
+            vec2 trippyP = p * 1.5 + vec2(sin(iTime*0.4), cos(iTime*0.5)) * 0.1;
+            col += 0.015 * vec3(
+                sin(trippyP.x * 4.0 + iTime * 2.0),
+                sin(trippyP.y * 5.0 + iTime * 2.5),
+                sin((trippyP.x - trippyP.y) * 4.0 + iTime * 3.0)
+            );
+
+            gl_FragColor = vec4(col, 1.0);
+        }
+    </script>
+    <script>
+        function main() {
+            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
+            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
+            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            function render(t) {
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        } window.onload = main;
+    </script>
+</body>
+</html>

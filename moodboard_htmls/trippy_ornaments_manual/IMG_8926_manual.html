@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shader: IMG_8926 (Manual)</title>
+    <style>body { margin: 0; overflow: hidden; background-color: #000; } canvas { display: block; width: 100vw; height: 100vh; }</style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float; uniform vec2 iResolution; uniform float iTime;
+
+        float hash12(vec2 p) {
+            vec3 p3  = fract(vec3(p.xyx) * .1031);
+            p3 += dot(p3, p3.yzx + 33.33);
+            return fract((p3.x + p3.y) * p3.z);
+        }
+
+        vec2 hash22(vec2 p) {
+            vec3 p3 = fract(vec3(p.xyx) * vec3(.1031, .1030, .0973));
+            p3 += dot(p3, p3.yzx+33.33);
+            return fract((p3.xx+p3.yz)*p3.zy);
+        }
+
+        mat2 rot(float a) { float s = sin(a), c = cos(a); return mat2(c, -s, s, c); }
+
+        float sdSegment(vec2 p, vec2 a, vec2 b) {
+            vec2 pa = p-a, ba = b-a;
+            float h = clamp(dot(pa,ba)/dot(ba,ba), 0.0, 1.0);
+            return length(pa - ba*h);
+        }
+
+        // Curved segment (quadratic bezier)
+        float sdBezier(vec2 pos, vec2 p0, vec2 p1, vec2 p2) {
+            vec2 a = p1 - p0;
+            vec2 b = p0 - 2.0*p1 + p2;
+            vec2 c = a * 2.0;
+            vec2 d = p0 - pos;
+            float kk = 1.0 / dot(b,b);
+            float kx = kk * dot(a,b);
+            float ky = kk * (2.0*dot(a,a)+dot(d,b)) / 3.0;
+            float kz = kk * dot(d,a);
+            float res = 0.0;
+            float p = ky - kx*kx;
+            float p3 = p*p*p;
+            float q = kx*(2.0*kx*kx - 3.0*ky) + kz;
+            float h = q*q + 4.0*p3;
+            if(h >= 0.0) { 
+                h = sqrt(h);
+                vec2 x = (vec2(h, -h) - q) / 2.0;
+                vec2 uv = sign(x)*pow(abs(x), vec2(1.0/3.0));
+                float t = clamp(uv.x+uv.y-kx, 0.0, 1.0);
+                res = length(d + (c + b*t)*t);
+            } else {
+                float z = sqrt(-p);
+                float v = acos(q/(p*z*2.0)) / 3.0;
+                float m = cos(v);
+                float n = sin(v)*1.732050808;
+                vec3 t = clamp(vec3(m+m, -n-m, n-m)*z-kx, 0.0, 1.0);
+                res = min(length(d+(c+b*t.x)*t.x), min(length(d+(c+b*t.y)*t.y), length(d+(c+b*t.z)*t.z)));
+            }
+            return res;
+        }
+
+        vec3 getPalette(int id, vec2 uv_local) {
+            vec3 cols[7];
+            cols[0] = vec3(0.85, 0.78, 0.68); // Beige
+            cols[1] = vec3(0.65, 0.52, 0.38); // Brown
+            cols[2] = vec3(0.92, 0.68, 0.15); // Yellow
+            cols[3] = vec3(0.88, 0.25, 0.12); // Red/Orange
+            cols[4] = vec3(0.18, 0.15, 0.45); // Dark Blue
+            cols[5] = vec3(0.55, 0.62, 0.45); // Green
+            
+            // Striped pattern
+            float stripe = step(0.5, fract(uv_local.y * 15.0));
+            cols[6] = mix(vec3(0.1, 0.08, 0.15), vec3(0.9, 0.85, 0.8), stripe); // Black/White stripes
+
+            if(id == 0) return cols[0];
+            if(id == 1) return cols[1];
+            if(id == 2) return cols[2];
+            if(id == 3) return cols[3];
+            if(id == 4) return cols[4];
+            if(id == 5) return cols[5];
+            return cols[6];
+        }
+
+        void main() {
+            vec2 uv = gl_FragCoord.xy / iResolution.xy;
+            vec2 p = uv * 2.0 - 1.0;
+            p.x *= iResolution.x / iResolution.y;
+
+            // Global animation/trippy warp
+            p += vec2(sin(iTime*0.2 + p.y*2.0), cos(iTime*0.15 + p.x*2.0)) * 0.1;
+            
+            // Scale grid
+            float scale = 6.0;
+            vec2 gp = p * scale;
+            vec2 id = floor(gp);
+            vec2 f = fract(gp);
+
+            vec3 col = vec3(0.95, 0.9, 0.85); // Canvas base
+            float minZ = 0.0;
+
+            // Search neighborhood for overlapping brush strokes
+            // Large search radius because strokes are long
+            for (int y = -2; y <= 2; y++) {
+                for (int x = -2; x <= 2; x++) {
+                    vec2 offset = vec2(float(x), float(y));
+                    vec2 cellId = id + offset;
+                    
+                    vec2 h2 = hash22(cellId);
+                    float h1 = hash12(cellId + 10.0);
+                    
+                    // Stroke properties
+                    float zOrder = hash12(cellId + 20.0); // determines which stroke is on top
+                    int colorId = int(h1 * 7.0); // 0 to 6
+                    
+                    // Points for bezier
+                    vec2 p0 = offset + h2 - 0.5; // Start near cell center
+                    vec2 dir = (hash22(cellId + 30.0) - 0.5) * 4.0; // Random direction and length
+                    vec2 p2 = p0 + dir;
+                    // Bend control point
+                    vec2 bend = (hash22(cellId + 40.0) - 0.5) * 3.0;
+                    vec2 p1 = (p0 + p2) * 0.5 + bend;
+                    
+                    float thickness = 0.15 + 0.15 * hash12(cellId + 50.0);
+                    
+                    // Local coordinate for the stroke
+                    vec2 cellP = f - p0;
+                    
+                    // Distance to bezier curve
+                    float d = sdBezier(f, p0, p1, p2);
+                    
+                    if (d < thickness && zOrder > minZ) {
+                        // Calculate an approximate tangential/normal direction for the bristles
+                        // We can do this by finding the distance field gradient
+                        vec2 eps = vec2(0.01, 0.0);
+                        float dx = sdBezier(f + eps.xy, p0, p1, p2) - d;
+                        float dy = sdBezier(f + eps.yx, p0, p1, p2) - d;
+                        vec2 grad = normalize(vec2(dx, dy));
+                        
+                        // Bristle texture (high freq noise along the stroke normal)
+                        // We use dot(f, grad) to get a coordinate across the stroke width
+                        float strokeU = dot(f, vec2(-grad.y, grad.x)); // along stroke
+                        float strokeV = dot(f, grad); // across stroke
+                        
+                        vec2 strokeUV = vec2(strokeU, strokeV);
+                        
+                        vec3 strokeCol = getPalette(colorId, strokeUV);
+                        
+                        // Bristle lines
+                        float bristles = fract(strokeV * 40.0 + h1*10.0);
+                        bristles = smoothstep(0.0, 0.2, bristles) * smoothstep(1.0, 0.8, bristles);
+                        strokeCol *= 0.85 + 0.15 * bristles;
+                        
+                        // Edge darkness (impasto effect)
+                        float edge = smoothstep(thickness * 0.6, thickness, d);
+                        strokeCol *= mix(1.0, 0.5, edge);
+                        
+                        // Fake lighting (bump)
+                        float bump = sin(d * 3.14159 / thickness);
+                        strokeCol += vec3(0.2) * bump * (1.0-edge);
+                        
+                        // Add shadow
+                        float shadowMask = smoothstep(thickness, thickness + 0.05, d);
+                        col = mix(col * 0.7, col, shadowMask); // cast shadow on lower layers
+                        
+                        col = strokeCol;
+                        minZ = zOrder; // update z-buffer
+                    }
+                }
+            }
+            
+            // Add some global lighting/vignette
+            col *= 1.0 - 0.2 * length(p);
+
+            gl_FragColor = vec4(col, 1.0);
+        }
+    </script>
+    <script>
+        function main() {
+            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
+            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
+            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            function render(t) {
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        } window.onload = main;
+    </script>
+</body>
+</html>

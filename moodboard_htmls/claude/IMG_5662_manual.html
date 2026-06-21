@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shader: Diamond Lattice Gate Theatrical Display</title>
+    <style>body { margin: 0; overflow: hidden; background-color: #000; } canvas { display: block; width: 100vw; height: 100vh; }</style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float;
+        uniform vec2 iResolution;
+        uniform float iTime;
+
+        float hash(vec2 p){
+            p=fract(p*vec2(127.1,311.7));
+            p+=dot(p,p+45.32);
+            return fract(p.x*p.y);
+        }
+        float hash1(float n){return fract(sin(n)*43758.5453);}
+
+        vec3 hsv2rgb(vec3 c){
+            vec4 K=vec4(1.0,2.0/3.0,1.0/3.0,3.0);
+            vec3 p=abs(fract(c.xxx+K.xyz)*6.0-K.www);
+            return c.z*mix(K.xxx,clamp(p-K.xxx,0.0,1.0),c.y);
+        }
+
+        float noise(vec2 p){
+            vec2 i=floor(p); vec2 f=fract(p);
+            f=f*f*(3.0-2.0*f);
+            return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),
+                       mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);
+        }
+        float fbm(vec2 p){
+            float v=0.0,a=0.5;
+            for(int i=0;i<6;i++){v+=a*noise(p);p*=2.1;a*=0.5;}
+            return v;
+        }
+        float fbm3(vec2 p){
+            float v=0.0,a=0.5;
+            for(int i=0;i<3;i++){v+=a*noise(p);p*=2.1;a*=0.5;}
+            return v;
+        }
+        float warpFbm(vec2 p,float t){
+            vec2 q=vec2(fbm(p+t*0.1),fbm(p+3.7+t*0.09));
+            return fbm(p+0.8*q);
+        }
+
+        float sdBox(vec2 p,vec2 b){
+            vec2 d=abs(p)-b;
+            return length(max(d,0.0))+min(max(d.x,d.y),0.0);
+        }
+        float sdCircle(vec2 p,float r){return length(p)-r;}
+
+        vec2 rot2(vec2 p,float a){
+            return vec2(cos(a)*p.x-sin(a)*p.y,sin(a)*p.x+cos(a)*p.y);
+        }
+
+        // Diamond lattice: rotate uv 45 degrees, tile as grid
+        // Returns distance to lattice lines
+        float diamondLattice(vec2 p, float scale){
+            vec2 rp=rot2(p,0.7854)*scale; // 45 deg
+            vec2 fr=fract(rp)-0.5;
+            float lineX=abs(fr.x)-0.42;
+            float lineY=abs(fr.y)-0.42;
+            return min(lineX,lineY); // negative inside bar
+        }
+
+        // Pyramid/triangle shape
+        float pyramidSDF(vec2 p,float w,float h){
+            p.y += h*0.33;
+            vec2 q=abs(p);
+            return max(q.x*h/w + p.y*0.5, -p.y) - h*0.5;
+        }
+
+        // Torch flame shape (upside-down teardrop)
+        float flameSDF(vec2 p,float t2){
+            float warp=sin(p.x*8.0+t2*8.0)*0.015+cos(p.y*5.0+t2*6.0)*0.010;
+            vec2 wp=p+vec2(warp,0.0);
+            float base=sdCircle(wp,0.055);
+            float tip=length(wp-vec2(0,0.08))-0.025;
+            return min(base,tip);
+        }
+
+        // Fringe strand: thin vertical ribbon with sin sway
+        float fringe(vec2 p,float x0,float phase){
+            float sway=sin(p.y*3.0+phase)*0.010;
+            float d=abs(p.x-x0-sway)-0.005;
+            return d;
+        }
+
+        void main(){
+            vec2 uv=gl_FragCoord.xy/iResolution.xy;
+            vec2 p=uv*2.0-1.0;
+            p.x*=iResolution.x/iResolution.y;
+            float t=iTime;
+
+            // Gate vibration: subtle UV jitter (period 3s)
+            float jitter=sin(t*2.094)*0.002;
+            vec2 pj=p+vec2(jitter,jitter*0.5);
+
+            // === Interior behind gate (center vertical gap) ===
+            float gapW=0.22;
+            float gapMask=smoothstep(gapW-0.01,gapW,abs(p.x));
+
+            // Theatrical flood light color cycling (red->blue->purple->red, 8s period)
+            float colorPhase=fract(t*0.125);
+            vec3 theatreCol;
+            if(colorPhase<0.33){
+                theatreCol=mix(vec3(0.70,0.05,0.05),vec3(0.05,0.05,0.72),colorPhase*3.0);
+            } else if(colorPhase<0.66){
+                theatreCol=mix(vec3(0.05,0.05,0.72),vec3(0.55,0.02,0.68),(colorPhase-0.33)*3.0);
+            } else {
+                theatreCol=mix(vec3(0.55,0.02,0.68),vec3(0.70,0.05,0.05),(colorPhase-0.66)*3.0);
+            }
+            vec3 interior=theatreCol*0.4+vec3(0.05,0.04,0.04);
+            interior+=fbm3(p*3.0+t*0.05)*0.08;
+
+            // Cloud foam shapes inside
+            for(int i=0;i<4;i++){
+                float fi=float(i);
+                vec2 cOff=vec2(fi*0.3-0.4+sin(t*0.08+fi)*0.05, 0.3+fi*0.12);
+                float cloud=fbm3((p-cOff)*4.0);
+                interior=mix(interior,interior+vec3(0.25,0.23,0.22),smoothstep(0.5,0.7,cloud)*0.6);
+            }
+
+            // Red pyramids / torches inside
+            for(int i=0;i<3;i++){
+                float fi=float(i);
+                float px2=(fi-1.0)*0.12;
+                // Pyramid
+                float pyrD=pyramidSDF(p-vec2(px2,-0.25),0.10,0.18);
+                interior=mix(interior,vec3(0.65,0.08,0.05),smoothstep(0.006,-0.006,pyrD));
+                // Torch flame above pyramid
+                float flameD=flameSDF(p-vec2(px2,-0.06),t);
+                float flameM=1.0-smoothstep(-0.01,0.015,flameD);
+                vec3 flameCol=mix(vec3(1.0,0.85,0.10),vec3(1.0,0.30,0.02),
+                                  clamp(length(p-vec2(px2,-0.06))/0.065,0.0,1.0));
+                // fbm animated inner fire
+                float fireFbm=warpFbm((p-vec2(px2,-0.06))*10.0,t*1.2);
+                flameCol=mix(flameCol,vec3(1.0,0.95,0.35),fireFbm*flameM);
+                interior=mix(interior,flameCol,flameM);
+                interior+=vec3(0.80,0.35,0.05)*exp(-max(flameD,0.0)*18.0)*0.5;
+            }
+
+            // Metallic red silk in gap (lower half)
+            float silkMask=step(p.y,-0.05)*(1.0-gapMask);
+            vec3 silkCol=vec3(0.55,0.05,0.04);
+            float silkSheen=fbm(vec2(p.x*8.0,p.y*3.0)+t*0.2)*0.25;
+            silkCol+=silkSheen*vec3(0.8,0.4,0.3);
+            interior=mix(interior,silkCol,silkMask*0.7);
+
+            // Smoke / haze patches
+            float smokeFbm=warpFbm(p*2.5+vec2(0,t*0.06),t*0.04);
+            float smokeM=smoothstep(0.45,0.60,smokeFbm)*0.30;
+            interior=mix(interior,vec3(0.70,0.68,0.66),smokeM);
+
+            // Spotlight beams through gap (2 cones from above, animated sway)
+            for(int i=0;i<2;i++){
+                float fi=float(i);
+                float beamSway=sin(t*0.4+fi*1.5)*0.06;
+                vec2 beamTop=vec2((fi*2.0-1.0)*0.08+beamSway, 1.2);
+                vec2 beamDir=normalize(vec2((fi*2.0-1.0)*0.05, -1.0));
+                // Cone: distance from beam center line
+                vec2 toP=p-beamTop;
+                float along=dot(toP,beamDir);
+                float perp=length(toP-along*beamDir);
+                float coneHalfW=0.04+along*0.10;
+                float beamGlow=smoothstep(coneHalfW+0.02,coneHalfW,perp)*
+                               smoothstep(0.0,0.1,along)*smoothstep(1.5,0.0,along);
+                interior+=vec3(0.88,0.82,0.60)*beamGlow*0.35;
+            }
+
+            vec3 col=interior;
+
+            // === Gray diamond lattice gate ===
+            float latticeScale=5.5;
+            // Gate vibration (use pj)
+            float lD=diamondLattice(pj,latticeScale);
+            float gateBar=smoothstep(0.02,-0.02,lD); // inside bar = 1
+
+            // Gate base color: dark gray metal
+            vec3 gateCol=vec3(0.32,0.30,0.28)+fbm3(pj*8.0)*0.07;
+
+            // Rust patches on gate
+            float rust=warpFbm(pj*4.0+1.5,t*0.04);
+            float rustCycle=sin(t*0.08)*0.15+0.5;
+            float rustM=smoothstep(rustCycle,rustCycle-0.06,rust)*smoothstep(0.2,-0.2,lD);
+            gateCol=mix(gateCol,vec3(0.60,0.28,0.07),rustM*0.70);
+
+            // Highlight on upper-left of each bar
+            float highlight=smoothstep(-0.01,0.02,lD)*0.25;
+            gateCol+=highlight*vec3(0.75,0.72,0.70);
+
+            col=mix(col,gateCol,gateBar);
+
+            // Gate edge glow (additive)
+            col+=vec3(0.30,0.28,0.26)*exp(-max(lD,0.0)*30.0)*0.08;
+
+            // Gate shadow on floor (projected at bottom)
+            float floorY=-0.80;
+            float shadowY=max(p.y,floorY);
+            float shadowT=smoothstep(floorY+0.08,floorY,p.y);
+            float shadowLattice=diamondLattice(vec2(p.x, p.y*0.3-0.6)*1.0,latticeScale*0.5);
+            float shadowBar=smoothstep(0.04,-0.04,shadowLattice);
+            vec3 floorCol=vec3(0.14,0.13,0.12);
+            col=mix(col,floorCol*(1.0-shadowBar*0.5),shadowT*0.6);
+
+            // === Orange fringe (bottom of gate gap) ===
+            float fringeY=-0.60;
+            float fringeLen=0.18;
+            if(p.y < fringeY && p.y > fringeY-fringeLen && abs(p.x)<gapW){
+                float numStrands=18.0;
+                float sx=floor((p.x+gapW)/(gapW*2.0)*numStrands)/numStrands*(gapW*2.0)-gapW;
+                float phase=hash1(floor((p.x+gapW)/(gapW*2.0)*numStrands))*6.28+t*1.2;
+                float strandSway=sin(p.y*4.0+phase)*0.008;
+                float strandD=abs(p.x-(sx+gapW/numStrands*0.5+strandSway))-0.005;
+                float strandM=smoothstep(0.003,-0.003,strandD);
+                float strandFade=(p.y-(fringeY-fringeLen))/fringeLen;
+                vec3 fringeCol=vec3(0.88,0.50,0.05)*strandFade;
+                col=mix(col,fringeCol,strandM*strandFade);
+                col+=fringeCol*exp(-max(strandD,0.0)*60.0)*0.12*strandFade;
+            }
+
+            // === Strong chromatic aberration ===
+            vec2 aberrCenter=p*0.012;
+            col.r=mix(col.r,fbm(uv*3.0+aberrCenter+t*0.08)*0.5+col.r,0.12);
+            col.b=mix(col.b,fbm(uv*3.0-aberrCenter+t*0.08)*0.5+col.b,0.12);
+
+            // === Particles (floating through gate gap) ===
+            for(int i=0;i<14;i++){
+                float fi=float(i);
+                float px3=(hash1(fi*2.31))*gapW*1.8-gapW*0.9;
+                float py3=fract(hash1(fi*1.73)+t*0.055)*2.4-1.0;
+                float life=sin(t*0.9+fi)*0.5+0.5;
+                col+=vec3(0.80,0.72,0.55)*exp(-length(p-vec2(px3,py3))*220.0)*0.04*life;
+            }
+
+            // === Film grain ===
+            col+=(hash(uv*800.0+t)-0.5)*0.032;
+
+            col=pow(clamp(col,0.0,1.0),vec3(0.85));
+            gl_FragColor=vec4(col,1.0);
+        }
+    </script>
+    <script>
+        function main() {
+            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
+            if(!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) console.error(gl.getShaderInfoLog(fs));
+            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
+            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            function render(t) {
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        } window.onload = main;
+    </script>
+</body>
+</html>

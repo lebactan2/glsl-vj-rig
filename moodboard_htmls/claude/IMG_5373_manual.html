@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shader: IMG_5373</title>
+    <style>body { margin: 0; overflow: hidden; background-color: #000; } canvas { display: block; width: 100vw; height: 100vh; }</style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float; uniform vec2 iResolution; uniform float iTime;
+
+        float hash(vec2 p) {
+            p = fract(p * vec2(127.1, 311.7));
+            p += dot(p, p + 17.5);
+            return fract(p.x * p.y);
+        }
+        float hash1(float n) { return fract(sin(n) * 43758.5453); }
+
+        float noise(vec2 p) {
+            vec2 i = floor(p); vec2 f = fract(p);
+            vec2 u = f * f * (3.0 - 2.0 * f);
+            return mix(mix(hash(i), hash(i+vec2(1,0)), u.x),
+                       mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), u.x), u.y);
+        }
+
+        float fbm(vec2 p) {
+            float v = 0.0; float a = 0.5;
+            for (int i = 0; i < 5; i++) { v += a * noise(p); p = p * 2.1 + vec2(1.7, 9.2); a *= 0.5; }
+            return v;
+        }
+
+        vec2 domainWarp(vec2 p, float t) {
+            float s = 0.6;
+            return p + s * vec2(fbm(p + t*0.12), fbm(p + vec2(3.7, 1.9) + t*0.1));
+        }
+
+        vec3 hsv2rgb(vec3 c) {
+            vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
+            vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+            return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+        }
+
+        float sdBox(vec2 p, vec2 b) {
+            vec2 d = abs(p) - b;
+            return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+        }
+        float sdCircle(vec2 p, float r) { return length(p) - r; }
+        float sdSegment(vec2 p, vec2 a, vec2 b) {
+            vec2 pa = p-a, ba = b-a;
+            float h = clamp(dot(pa,ba)/dot(ba,ba), 0.0, 1.0);
+            return length(pa - ba*h);
+        }
+
+        // Porcelain shard hue variation per-shard (blue spectrum)
+        vec3 mosaicColor(vec2 q, float t) {
+            // Per-shard hash for individual hue variation
+            vec2 shardCell = floor(q * 45.0);
+            float shardHash = hash(shardCell);
+            // Range: indigo (hue 0.67) to sky blue (0.55) to near-white (0.5)
+            float shardHue = 0.55 + (shardHash - 0.5) * 0.18; // 0.47..0.64
+            float shardSat = 0.5 + shardHash * 0.4; // 0.5..0.9
+            float shardVal = 0.7 + (1.0 - shardHash) * 0.3; // 0.7..1.0
+            // Some shards are more white
+            float whiteness = step(0.82, shardHash);
+            vec3 base = hsv2rgb(vec3(shardHue, shardSat * (1.0-whiteness*0.8), shardVal));
+
+            // Animated blue-white shifting from water ripple
+            float rippleDist = length(q - vec2(0.5, 0.5));
+            float ripple = sin(rippleDist * 30.0 - t * 2.5) * 0.12;
+            base += ripple * vec3(-0.05, 0.05, 0.15);
+
+            // Shimmer highlight
+            float shimmer = sin(q.x*25.0 + q.y*20.0 + t*1.5)*0.15+0.5;
+            base += shimmer * 0.1;
+
+            // White accent flecks
+            float fleck = step(0.88, hash(shardCell + vec2(0.3, 0.7)));
+            return mix(base, vec3(0.95, 0.96, 0.98), fleck * 0.7);
+        }
+
+        // Double-happiness 喜喜 channel pattern (maze channels)
+        float doubleHappiness(vec2 q, float t) {
+            float mask = 0.0;
+            float lw = 0.022;
+
+            for (int half = 0; half < 2; half++) {
+                float ox = (half == 0) ? 0.05 : 0.52;
+                float W = 0.43;
+                // Top horizontal bar
+                float topY = 0.88;
+                float tb = abs(q.y - topY);
+                float tbx = step(ox, q.x)*step(q.x, ox+W);
+                mask = max(mask, (1.0-smoothstep(lw, lw+0.005, tb))*tbx);
+                // Upper verticals
+                float ulx = ox+W*0.28; float urx = ox+W*0.72;
+                float uvTop = topY; float uvBot = 0.68;
+                float lvy = step(uvBot, q.y)*step(q.y, uvTop);
+                mask = max(mask, (1.0-smoothstep(lw, lw+0.005, abs(q.x-ulx)))*lvy);
+                mask = max(mask, (1.0-smoothstep(lw, lw+0.005, abs(q.x-urx)))*lvy);
+                // Upper middle horizontal
+                float umY = 0.68;
+                float umx1 = ox+W*0.16; float umx2 = ox+W*0.84;
+                mask = max(mask, (1.0-smoothstep(lw, lw+0.005, abs(q.y-umY)))*step(umx1, q.x)*step(q.x, umx2));
+                // Center box (口)
+                float bx1 = ox+W*0.18; float bx2 = ox+W*0.82;
+                float by1 = 0.45; float by2 = 0.63;
+                float inBoxX = step(bx1, q.x)*step(q.x, bx2);
+                float inBoxY = step(by1, q.y)*step(q.y, by2);
+                mask = max(mask, (1.0-smoothstep(lw, lw+0.005, abs(q.x-bx1)))*inBoxY);
+                mask = max(mask, (1.0-smoothstep(lw, lw+0.005, abs(q.x-bx2)))*inBoxY);
+                mask = max(mask, (1.0-smoothstep(lw, lw+0.005, abs(q.y-by2)))*inBoxX);
+                mask = max(mask, (1.0-smoothstep(lw, lw+0.005, abs(q.y-by1)))*inBoxX);
+                float bMid = (bx1+bx2)*0.5;
+                mask = max(mask, (1.0-smoothstep(lw, lw+0.005, abs(q.x-bMid)))*inBoxX*inBoxY);
+                // Lower middle horizontal
+                float lmY = 0.42; float lmx1 = ox+W*0.1; float lmx2 = ox+W*0.9;
+                mask = max(mask, (1.0-smoothstep(lw, lw+0.005, abs(q.y-lmY)))*step(lmx1, q.x)*step(q.x, lmx2));
+                // Lower vertical pair
+                float llx = ox+W*0.3; float lrx = ox+W*0.7;
+                float lvTop = 0.42; float lvBot = 0.24;
+                float lvrange = step(lvBot, q.y)*step(q.y, lvTop);
+                mask = max(mask, (1.0-smoothstep(lw, lw+0.005, abs(q.x-llx)))*lvrange);
+                mask = max(mask, (1.0-smoothstep(lw, lw+0.005, abs(q.x-lrx)))*lvrange);
+                // Bottom horizontal bar
+                float botY = 0.16;
+                float btx1 = ox+W*0.05; float btx2 = ox+W*0.95;
+                mask = max(mask, (1.0-smoothstep(lw, lw+0.005, abs(q.y-botY)))*step(btx1, q.x)*step(q.x, btx2));
+                // Legs
+                float legY1 = 0.24; float legY2 = 0.06;
+                float legLx = ox+W*0.2; float legRx = ox+W*0.8;
+                float legRange = step(legY2, q.y)*step(q.y, legY1);
+                mask = max(mask, (1.0-smoothstep(lw, lw+0.005, abs(q.x-legLx)))*legRange);
+                mask = max(mask, (1.0-smoothstep(lw, lw+0.005, abs(q.x-legRx)))*legRange);
+            }
+            // Central divider
+            mask = max(mask, (1.0-smoothstep(lw*0.5, lw*0.5+0.005, abs(q.x-0.5))));
+            return clamp(mask, 0.0, 1.0);
+        }
+
+        // Decorative tile border row
+        float tileBorderRow(vec2 uv, float y, float height) {
+            float inRow = step(abs(uv.y - y), height);
+            float tileX = mod(uv.x * 18.0, 1.0);
+            float tileY = mod((uv.y - y + height) / (height*2.0) * 6.0, 1.0);
+            float borderLine = max(
+                1.0 - smoothstep(0.0, 0.05, tileX) + smoothstep(0.95, 1.0, tileX),
+                1.0 - smoothstep(0.0, 0.08, tileY) + smoothstep(0.92, 1.0, tileY));
+            return inRow * borderLine;
+        }
+
+        void main() {
+            vec2 uv = gl_FragCoord.xy / iResolution.xy;
+            vec2 p = uv * 2.0 - 1.0;
+            p.x *= iResolution.x / iResolution.y;
+            float t = iTime;
+
+            // Chromatic aberration (blue channel shifted more)
+            vec2 caOff = (uv - 0.5) * 0.005;
+            vec2 uvR = uv + caOff;
+            vec2 uvBl = uv - caOff * 1.8; // blue shifted significantly more
+
+            float breath = sin(t*0.38)*0.5+0.5;
+
+            // Subtle scale breathing of whole pattern
+            float scaleBreath = 1.0 + 0.015*sin(t*0.5);
+            vec2 uvB = (uv - 0.5)*scaleBreath + 0.5;
+
+            // --- YELLOW OCHRE WALL: slow color drift between warm yellow and terracotta ---
+            vec2 wallWarp = domainWarp(uv * 2.0, t * 0.06);
+            float wallDrift = sin(t * 0.18) * 0.5 + 0.5; // slow ~35s cycle
+            float wallBreath = sin(t*0.3)*0.04;
+            vec3 warmYellow = vec3(0.88+wallBreath*0.5, 0.78+wallBreath*0.3, 0.42-wallBreath*0.1);
+            vec3 terracotta = vec3(0.82, 0.55, 0.32);
+            vec3 wallCol = mix(warmYellow, terracotta, wallDrift * 0.5);
+            // Stone texture
+            wallCol += fbm(wallWarp * 3.0) * 0.05;
+            wallCol += noise(uv * 20.0) * 0.02; // fine stone grain
+            vec3 col = wallCol;
+
+            // --- DECORATIVE TILE BORDERS (top and bottom) ---
+            float tileBorderT = tileBorderRow(uv, 0.95, 0.04);
+            float tileBorderB = tileBorderRow(uv, 0.05, 0.04);
+            // Blue-white tile border colors
+            vec3 tileBorderCol = mix(vec3(0.3, 0.5, 0.85), vec3(0.95, 0.96, 0.98),
+                                     noise(uv*15.0 + t*0.1));
+            col = mix(col, tileBorderCol, tileBorderT);
+            col = mix(col, tileBorderCol, tileBorderB);
+
+            // --- OUTER FRAME: dark maroon ---
+            vec2 frameHalfSize = vec2(0.4, 0.425);
+            vec2 frameCenter = vec2(0.5, 0.5);
+            float frameW = 0.1; float frameH = 0.075;
+            vec2 fp = uvB - frameCenter;
+            float frameOuter = sdBox(fp, frameHalfSize);
+            float frameInner = sdBox(fp, frameHalfSize - vec2(frameW, frameH));
+            float onFrame = step(0.0, -frameOuter)*step(0.0, frameInner);
+
+            float framePulse = 0.85 + 0.15*sin(t*0.7);
+            vec3 frameCol = vec3(0.38, 0.14, 0.12)*framePulse;
+            frameCol = mix(frameCol, vec3(0.55, 0.08, 0.06), sin(t*0.5)*0.5+0.5)*framePulse;
+
+            // Gold-leaf trim: thin gold line on inner edge of maroon frame
+            // The inner edge is at frameInner == 0
+            float goldTrimDist = abs(frameInner);
+            float goldTrimW = 0.008;
+            float goldTrimMask = (1.0 - smoothstep(0.0, goldTrimW, goldTrimDist)) * onFrame;
+            float goldShimmer = sin(fp.x*40.0 + fp.y*30.0 + t*2.5)*0.3+0.7;
+            vec3 goldCol = vec3(0.98, 0.82, 0.3) * goldShimmer;
+
+            col = mix(col, frameCol, onFrame);
+            col = mix(col, goldCol, goldTrimMask);
+
+            // --- INNER PANEL BACKGROUND ---
+            float inInner = step(0.0, -frameInner);
+            vec3 innerBg = vec3(0.22, 0.08, 0.07);
+            col = mix(col, innerBg, inInner);
+
+            // --- WATER RIPPLE over mosaic (propagating wave) ---
+            vec2 innerSize = frameHalfSize - vec2(frameW, frameH);
+            vec2 qLocal = (fp / innerSize)*0.5 + 0.5; // [0,1] inside inner
+
+            float dh = 0.0;
+            vec3 mosaicCol = vec3(0.0);
+
+            if (inInner > 0.5) {
+                dh = doubleHappiness(qLocal, t);
+                // Ripple wave: concentric rings emanating from center
+                float rippleDist = length(qLocal - vec2(0.5, 0.5));
+                float ripple = sin(rippleDist * 30.0 - t * 2.5) * 0.5 + 0.5;
+                float rippleHigh = ripple * ripple * 0.4;
+                mosaicCol = mosaicColor(qLocal, t);
+                // Ripple brightens porcelain shards
+                mosaicCol += vec3(0.1, 0.15, 0.3) * rippleHigh * dh;
+                // The entire channel network reflects the wave
+                mosaicCol += vec3(0.2, 0.3, 0.5) * sin(rippleDist*25.0 - t*2.0)*0.1 * dh;
+            }
+
+            col = mix(col, mosaicCol, dh*inInner);
+
+            // --- MOSAIC SHIMMER ---
+            float shimmerWave = sin(uv.x*50.0 + uv.y*40.0 + t*4.0)*0.5+0.5;
+            shimmerWave *= sin(uv.x*30.0 - t*3.0)*0.3+0.7;
+            col += mosaicCol * shimmerWave * dh * inInner * 0.25;
+
+            // --- WHITE OVAL CERAMIC ACCENTS ---
+            float accentMask = 0.0;
+            for (int ax = 0; ax < 3; ax++) {
+                for (int ay = 0; ay < 3; ay++) {
+                    vec2 ac = frameCenter + vec2(
+                        (-1.0 + float(ax))*innerSize.x*0.48,
+                        (-1.0 + float(ay))*innerSize.y*0.48);
+                    float acd = sdCircle(uvB - ac, 0.015);
+                    accentMask = max(accentMask, 1.0-smoothstep(0.0, 0.01, acd));
+                }
+            }
+            // Corner ovals
+            vec2 corners[4];
+            corners[0] = frameCenter + vec2(-innerSize.x*0.5, -innerSize.y*0.5);
+            corners[1] = frameCenter + vec2( innerSize.x*0.5, -innerSize.y*0.5);
+            corners[2] = frameCenter + vec2(-innerSize.x*0.5,  innerSize.y*0.5);
+            corners[3] = frameCenter + vec2( innerSize.x*0.5,  innerSize.y*0.5);
+            for (int ci = 0; ci < 4; ci++) {
+                float cDist = sdCircle(uv - corners[ci], 0.018);
+                accentMask = max(accentMask, 1.0-smoothstep(0.0, 0.012, cDist));
+            }
+            col = mix(col, vec3(0.95, 0.96, 0.97), accentMask);
+
+            // --- INCENSE SMOKE: two thin wisps rising from below frame ---
+            for (int is = 0; is < 2; is++) {
+                float isf = float(is);
+                float smokeX = 0.42 + isf * 0.16; // left and right of center
+                float smokeBaseY = frameCenter.y - frameHalfSize.y - 0.02;
+                // Wisp: sinusoidal, fading as it rises
+                float smokeAge = fract(t * 0.2 + isf * 0.5);
+                float smokeY = smokeBaseY - smokeAge * 0.15;
+                float smokeXWave = smokeX + sin(smokeY * 20.0 + t * 1.5 + isf * 2.0) * 0.015
+                                          + cos(smokeY * 12.0 + t * 1.0) * 0.01;
+                float smokeDist = abs(uv.x - smokeXWave);
+                float smokeWidth = 0.003 + smokeAge * 0.006;
+                float smokeFade = (1.0 - smokeAge) * smoothstep(0.0, 0.02, smokeAge);
+                float smokeY_dist = abs(uv.y - smokeY);
+                float smokeMask = exp(-smokeDist*smokeDist/(smokeWidth*smokeWidth))
+                                * exp(-smokeY_dist * 30.0) * smokeFade * 0.4;
+                col += vec3(0.8, 0.8, 0.85) * smokeMask * (1.0 - inInner);
+            }
+
+            // --- FRAME OUTER GLOW ---
+            float outerGlow = exp(-abs(frameOuter)*15.0)*(0.6+0.4*sin(t*1.0));
+            col += vec3(0.6, 0.25, 0.1)*outerGlow*0.3;
+
+            // Wall color breathing
+            col += vec3(0.03, 0.025, 0.01)*breath*(1.0-inInner)*(1.0-onFrame);
+
+            // --- PARTICLE SYSTEM: 12 floating temple dust motes ---
+            for (int pi = 0; pi < 12; pi++) {
+                float pf = float(pi);
+                float px = fract(hash1(pf*1.7) + t*0.008*(hash1(pf*2.9)-0.5));
+                float py = fract(hash1(pf*3.1) + t*0.006*(hash1(pf*5.3)-0.3));
+                float pb = 0.4+0.6*sin(t*(0.5+pf*0.1)+pf*2.3);
+                col += vec3(0.9, 0.85, 0.7)*exp(-length(uv-vec2(px,py))*280.0)*pb*0.05;
+            }
+
+            // Chromatic aberration (blue shifted more prominently)
+            float edgeDist = length(uv - 0.5);
+            float caStr = smoothstep(0.2, 0.8, edgeDist);
+            col.r += noise(uvR*12.0+t*0.5)*0.015*caStr;
+            col.b += noise(uvBl*12.0+t*0.5)*0.025*caStr; // blue more prominent
+
+            // Film grain
+            float grain = noise(uv*800.0 + t*2.3)*0.025;
+            col += grain - 0.0125;
+
+            // Vignette
+            float vig = 1.0-smoothstep(0.3, 1.1, length(uv - 0.5)*1.5);
+            col *= 0.85 + 0.15*vig;
+
+            col = pow(clamp(col, 0.0, 1.0), vec3(0.85));
+            gl_FragColor = vec4(col, 1.0);
+        }
+    </script>
+    <script>
+        function main() {
+            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
+            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
+            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            function render(t) {
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        } window.onload = main;
+    </script>
+</body>
+</html>

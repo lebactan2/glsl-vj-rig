@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shader: Vietnamese Ornate Colonial House</title>
+    <style>body { margin: 0; overflow: hidden; background-color: #000; } canvas { display: block; width: 100vw; height: 100vh; }</style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float;
+        uniform vec2 iResolution;
+        uniform float iTime;
+
+        float hash(vec2 p){
+            p=fract(p*vec2(127.1,311.7));
+            p+=dot(p,p+45.32);
+            return fract(p.x*p.y);
+        }
+        float hash1(float n){return fract(sin(n)*43758.5453);}
+
+        vec3 hsv2rgb(vec3 c){
+            vec4 K=vec4(1.0,2.0/3.0,1.0/3.0,3.0);
+            vec3 p=abs(fract(c.xxx+K.xyz)*6.0-K.www);
+            return c.z*mix(K.xxx,clamp(p-K.xxx,0.0,1.0),c.y);
+        }
+
+        float noise(vec2 p){
+            vec2 i=floor(p); vec2 f=fract(p);
+            f=f*f*(3.0-2.0*f);
+            return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),
+                       mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);
+        }
+        float fbm(vec2 p){
+            float v=0.0,a=0.5;
+            for(int i=0;i<6;i++){v+=a*noise(p);p*=2.1;a*=0.5;}
+            return v;
+        }
+        float fbm3(vec2 p){
+            float v=0.0,a=0.5;
+            for(int i=0;i<3;i++){v+=a*noise(p);p*=2.1;a*=0.5;}
+            return v;
+        }
+        float warpFbm(vec2 p,float t){
+            vec2 q=vec2(fbm(p+t*0.1),fbm(p+3.7+t*0.09));
+            return fbm(p+0.7*q);
+        }
+
+        float sdBox(vec2 p,vec2 b){
+            vec2 d=abs(p)-b;
+            return length(max(d,0.0))+min(max(d.x,d.y),0.0);
+        }
+        float sdCircle(vec2 p,float r){return length(p)-r;}
+
+        vec2 rot2(vec2 p,float a){
+            return vec2(cos(a)*p.x-sin(a)*p.y,sin(a)*p.x+cos(a)*p.y);
+        }
+
+        // Triangle SDF (for pediment)
+        float sdTri(vec2 p,float w,float h){
+            p.y -= h*0.33;
+            vec2 q=abs(p);
+            return max(q.x*0.866+p.y*0.5,-p.y)-h*0.5;
+        }
+
+        // Arch shape (box with semicircle top)
+        float sdArch(vec2 p,float w,float h,float aw){
+            float box=sdBox(p-vec2(0,-aw),vec2(w,h-aw));
+            float arc=sdCircle(p-vec2(0,h-aw),w)-aw;
+            return min(box,arc);
+        }
+
+        // Eagle silhouette
+        float eagleSDF(vec2 p,float flap){
+            float body=length(p/vec2(0.04,0.025))-1.0;
+            float head=length(p-vec2(0.035,0.015))-0.016;
+            float lw=sdBox(rot2(p-vec2(-0.025,0.01),0.4+sin(flap)*0.15),vec2(0.07,0.014));
+            float rw=sdBox(rot2(p-vec2( 0.025,0.01),-0.4-sin(flap)*0.15),vec2(0.07,0.014));
+            float tail=sdBox(p-vec2(0,-0.03),vec2(0.03,0.014));
+            return min(min(min(body,head),min(lw,rw)),tail);
+        }
+
+        // Rosette medallion: 8-petal spinning
+        float rosette(vec2 p,float spin){
+            vec2 rp=rot2(p,spin);
+            float minPetal=1e9;
+            for(int i=0;i<8;i++){
+                float a=float(i)*0.7854;
+                vec2 pp=rot2(rp,a)-vec2(0.014,0.0);
+                float petal=length(pp/vec2(0.014,0.006))-1.0;
+                minPetal=min(minPetal,petal);
+            }
+            float center=sdCircle(rp,0.007);
+            return min(minPetal,center);
+        }
+
+        // Pigeon V-shape
+        float pigeonSDF(vec2 p){
+            float lw=sdBox(rot2(p-vec2(-0.012,0.0),-0.5),vec2(0.022,0.005));
+            float rw=sdBox(rot2(p-vec2( 0.012,0.0), 0.5),vec2(0.022,0.005));
+            return min(lw,rw);
+        }
+
+        void main(){
+            vec2 uv=gl_FragCoord.xy/iResolution.xy;
+            vec2 p=uv*2.0-1.0;
+            p.x*=iResolution.x/iResolution.y;
+            float t=iTime;
+
+            // === Overcast sky background ===
+            vec3 skyCol=mix(vec3(0.55,0.68,0.80),vec3(0.72,0.80,0.88),uv.y);
+            // 4 cloud blobs using fbm
+            for(int i=0;i<4;i++){
+                float fi=float(i);
+                vec2 cOff=vec2(fi*0.45-0.7+t*0.025*(0.5+fi*0.1), 0.5+fi*0.07);
+                float cloud=fbm3((p-cOff)*2.5)*1.5;
+                float cm=smoothstep(0.55,0.80,cloud);
+                skyCol=mix(skyCol,vec3(0.88,0.88,0.87),cm*0.65);
+            }
+            // Atmospheric aberration: more blue at top
+            skyCol.b+=uv.y*0.06;
+
+            vec3 col=skyCol;
+
+            // === Red terracotta roof ===
+            float roofY=-0.05;
+            float roofH=0.14;
+            float roofM=smoothstep(0.004,-0.004,sdBox(p-vec2(0,roofY+roofH*0.5),vec2(0.68,roofH)));
+            vec3 roofCol=vec3(0.72,0.28,0.14)+fbm3(p*8.0)*0.06;
+            col=mix(col,roofCol,roofM);
+
+            // === Pediment (sky-blue triangle) ===
+            float pedimentY=-0.19;
+            vec2 pedP=p-vec2(0,pedimentY);
+            float pedD=sdTri(pedP,0.90,0.36);
+            float pedM=smoothstep(0.005,-0.005,pedD);
+            vec3 pedCol=vec3(0.38,0.62,0.78)+fbm3(p*6.0)*0.04;
+            col=mix(col,pedCol,pedM);
+
+            // Eagle in pediment
+            float eagleFlap=t*1.4;
+            vec2 eagP=(p-vec2(0.0,-0.13))*7.0;
+            float eagD=eagleSDF(eagP,eagleFlap);
+            float eagM=1.0-smoothstep(-0.01,0.015,eagD);
+            col=mix(col,vec3(0.72,0.62,0.20),eagM*pedM);
+            col+=vec3(0.75,0.65,0.25)*exp(-max(eagD,0.0)*40.0)*0.12*pedM;
+
+            // Flag at pediment apex
+            vec2 flagP=p-vec2(0.0,0.04);
+            float flagPole=sdBox(flagP-vec2(-0.003,0.04),vec2(0.003,0.06));
+            float flagM2=smoothstep(0.002,-0.002,flagPole);
+            col=mix(col,vec3(0.3,0.3,0.3),flagM2);
+            // Waving flag
+            float wave=sin(flagP.x*20.0+t*3.0)*0.008;
+            vec2 fgP=flagP-vec2(0.0,0.08)-vec2(0.0,wave);
+            float flag=smoothstep(0.003,-0.003,sdBox(fgP-vec2(0.022,0.0),vec2(0.022,0.016)));
+            col=mix(col,vec3(0.85,0.10,0.08),flag);
+            // Yellow star
+            float starD=sdCircle(fgP-vec2(0.022,0.0),0.007);
+            col=mix(col,vec3(0.95,0.88,0.10),smoothstep(0.003,-0.003,starD)*flag);
+
+            // === Main facade (beige) ===
+            float facadeM=smoothstep(0.004,-0.004,sdBox(p-vec2(0,-0.57),vec2(0.65,0.45)));
+            vec3 beigeTile=vec3(0.82,0.76,0.62);
+
+            // Tile grid
+            vec2 tileUV=(p+vec2(0.65,1.0))*vec2(7.0,5.0);
+            vec2 tileID=floor(tileUV);
+            vec2 tileFr=fract(tileUV);
+            float tileJoint=smoothstep(0.04,0.12,tileFr.x)*smoothstep(0.04,0.12,tileFr.y)*
+                             smoothstep(0.04,0.12,1.0-tileFr.x)*smoothstep(0.04,0.12,1.0-tileFr.y);
+            beigeTile*=0.82+0.18*tileJoint;
+            // Wet gleam: specular ripple from rain
+            float wetGleam=fbm(p*12.0+t*0.8)*0.5;
+            beigeTile+=wetGleam*0.06*vec3(0.9,0.95,1.0);
+
+            // Rain streaks on facade
+            float rainStreak=fract((p.x*18.0+p.y*1.2+t*1.8)*10.0);
+            float rainLine=smoothstep(0.0,0.03,rainStreak)*smoothstep(0.05,0.03,rainStreak);
+            float rainFall=smoothstep(0.0,0.3,fract(p.y*8.0+t*2.2));
+            beigeTile=mix(beigeTile,beigeTile+0.08,rainLine*rainFall*0.5);
+
+            col=mix(col,beigeTile,facadeM);
+
+            // === Decorative columns with rosette medallions ===
+            vec2 colPos[4];
+            colPos[0]=vec2(-0.44,−0.40); colPos[1]=vec2(-0.22,−0.40);
+            colPos[2]=vec2( 0.22,−0.40); colPos[3]=vec2( 0.44,−0.40);
+            for(int i=0;i<4;i++){
+                // Column shaft
+                float cShaft=sdBox(p-colPos[i]-vec2(0,0.08),vec2(0.06,0.30));
+                float cM=smoothstep(0.003,-0.003,cShaft);
+                vec3 colShaftCol=vec3(0.78,0.72,0.60)+fbm3(p*8.0)*0.05;
+                col=mix(col,colShaftCol,cM);
+                // Rosette medallion
+                float fi=float(i);
+                bool isGreen=(i==0||i==2);
+                float spin=t*0.3*(isGreen?1.0:-1.0);
+                vec2 rosP=(p-colPos[i]-vec2(0,0.20))*18.0;
+                float rosD=rosette(rosP,spin);
+                float rosM=1.0-smoothstep(-0.015,0.02,rosD);
+                vec3 rosCol=isGreen?vec3(0.25,0.52,0.28):vec3(0.72,0.38,0.10);
+                col=mix(col,rosCol,rosM*facadeM);
+                col+=rosCol*exp(-max(rosD,0.0)*0.05)*0.04*facadeM;
+            }
+
+            // === Arched balcony ===
+            float archD=sdArch(p-vec2(0.0,-0.28),0.22,0.22,0.22);
+            float archM=smoothstep(0.006,-0.006,archD);
+            // Interior balcony lights (warm glow from inside)
+            vec3 archInterior=vec3(0.20,0.15,0.10);
+            archInterior+=exp(-length(p-vec2(-0.09,-0.32))*6.0)*vec3(0.90,0.65,0.25)*0.8;
+            archInterior+=exp(-length(p-vec2( 0.09,-0.32))*6.0)*vec3(0.88,0.60,0.22)*0.8;
+            col=mix(col,archInterior,archM);
+            // Arch edge
+            float archEdge=smoothstep(0.018,0.0,abs(archD));
+            col+=vec3(0.82,0.76,0.62)*archEdge*0.4;
+
+            // === White spindle balustrade ===
+            float railTop=-0.42;
+            float railing=sdBox(p-vec2(0,railTop),vec2(0.60,0.012));
+            float railM=smoothstep(0.003,-0.003,railing);
+            col=mix(col,vec3(0.92,0.92,0.90),railM);
+
+            // Spindles
+            for(int i=0;i<14;i++){
+                float fx=float(i)/13.0*1.14-0.57;
+                float spinD=sdBox(p-vec2(fx,railTop-0.04),vec2(0.008,0.04));
+                col=mix(col,vec3(0.92,0.92,0.90),smoothstep(0.002,-0.002,spinD));
+            }
+
+            // === Pigeons ===
+            // Pigeon 0: static left
+            float pig0=pigeonSDF((p-vec2(-0.35,-0.415))*14.0);
+            col=mix(col,vec3(0.42,0.40,0.38),1.0-smoothstep(-0.01,0.02,pig0));
+            // Pigeon 1: static center
+            float pig1=pigeonSDF((p-vec2(0.10,-0.415))*14.0);
+            col=mix(col,vec3(0.42,0.40,0.38),1.0-smoothstep(-0.01,0.02,pig1));
+            // Pigeon 2: occasionally flies off
+            float flyPhase=fract(t*0.07);
+            float flyX=0.30+flyPhase*1.4;
+            float flyY=-0.415+sin(flyPhase*3.14)*0.30;
+            float pig2=pigeonSDF((p-vec2(flyX,flyY))*14.0);
+            float pig2life=smoothstep(0.0,0.05,flyPhase)*smoothstep(1.0,0.95,flyPhase);
+            col=mix(col,vec3(0.40,0.38,0.36),(1.0-smoothstep(-0.01,0.02,pig2))*pig2life);
+
+            // === Chromatic aberration (atmospheric, more blue at distance/top) ===
+            float aberrY=uv.y*0.012;
+            col.r=mix(col.r,fbm(uv*3.0+vec2(0.006,0.0)+t*0.05)*0.5+col.r,0.08);
+            col.b+=aberrY*0.5;
+
+            // === Dust/rain particles ===
+            for(int i=0;i<18;i++){
+                float fi=float(i);
+                float rx=hash1(fi*1.31)*1.8-0.9;
+                float ry=fract(hash1(fi*2.73)+t*0.35)*2.4-1.2;
+                float rlen=0.04+hash1(fi*3.11)*0.06;
+                float rd=sdBox(p-vec2(rx,ry)-vec2(0,rlen*0.5),vec2(0.002,rlen));
+                float rm=1.0-smoothstep(-0.001,0.003,rd);
+                col+=vec3(0.78,0.84,0.92)*rm*0.35*(step(-0.57,p.y)*step(p.y,-0.12));
+            }
+
+            // === Film grain ===
+            col+=(hash(uv*800.0+t)-0.5)*0.025;
+
+            col=pow(clamp(col,0.0,1.0),vec3(0.85));
+            gl_FragColor=vec4(col,1.0);
+        }
+    </script>
+    <script>
+        function main() {
+            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
+            if(!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) console.error(gl.getShaderInfoLog(fs));
+            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
+            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            function render(t) {
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        } window.onload = main;
+    </script>
+</body>
+</html>

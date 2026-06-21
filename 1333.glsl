@@ -1,0 +1,156 @@
+void main() {
+    vec2 uv = gl_FragCoord.xy / iResolution.xy;
+    vec2 p = uv * 2.0 - 1.0;
+    p.x *= iResolution.x / iResolution.y;
+
+    // Background: White/Light grey backdrop
+    vec3 col = vec3(0.95, 0.95, 0.95); 
+    
+    // Add subtle vignette
+    float vignette = length(p);
+    col *= 1.0 - 0.1 * vignette;
+
+    // Person wearing raincoat
+    
+    // Head/Hood area
+    vec2 headP = p - vec2(0.0, 0.65);
+    float hoodOut = length(max(abs(headP) - vec2(0.12, 0.18), 0.0)) - 0.05; // Outer hood shape
+    float faceCutout = length(max(abs(headP - vec2(0.0, -0.05)) - vec2(0.08, 0.1), 0.0)) - 0.02; // Face opening
+    
+    if (hoodOut < 0.0) {
+        if (faceCutout < 0.0) {
+            // Face
+            col = vec3(0.9, 0.7, 0.6); // Skin tone
+            // Hat/Visor inside hood
+            float hat = length(max(abs(headP - vec2(0.0, 0.1)) - vec2(0.08, 0.02), 0.0));
+            if (hat < 0.01) col = vec3(0.6, 0.2, 0.2); // Reddish hat
+            float hatBrim = length(max(abs(headP - vec2(0.0, 0.05)) - vec2(0.09, 0.01), 0.0));
+            if (hatBrim < 0.01) col = vec3(0.2); // Dark brim
+        } else {
+            // Hood fabric
+            col = vec3(0.2, 0.5, 0.25); // Green raincoat color
+            // Hood folds and shading
+            float hFolds = sin(headP.x * 30.0 + headP.y * 20.0);
+            col *= 0.8 + 0.2 * hFolds;
+            // Subtle wind animation on hood
+            float wind = sin(iTime * 3.0 + headP.y * 10.0) * (0.05 + iMid * 0.12);
+            col *= 1.0 + wind;
+        }
+    }
+
+    // Raincoat Body (Jacket + Pants)
+    // Upper body / Jacket
+    vec2 bodyP = p - vec2(0.0, 0.05);
+    float jacket = length(max(abs(bodyP) - vec2(0.25, 0.4), 0.0)) - 0.05;
+    
+    // Shoulder epaulets (red/white)
+    float epauletL = length(max(abs(bodyP - vec2(-0.25, 0.38)) - vec2(0.08, 0.02), 0.0)) - 0.01;
+    float epauletR = length(max(abs(bodyP - vec2(0.25, 0.38)) - vec2(0.08, 0.02), 0.0)) - 0.01;
+    
+    // Red collar patches
+    float collarL = length(max(abs(bodyP - vec2(-0.1, 0.35)) - vec2(0.03, 0.04), 0.0));
+    float collarR = length(max(abs(bodyP - vec2(0.1, 0.35)) - vec2(0.03, 0.04), 0.0));
+
+    // Sleeves
+    float armL = length(max(abs(bodyP - vec2(-0.35, 0.0)) - vec2(0.06, 0.35), 0.0)) - 0.02;
+    float armR = length(max(abs(bodyP - vec2(0.35, 0.0)) - vec2(0.06, 0.35), 0.0)) - 0.02;
+    
+    // Belt
+    float belt = length(max(abs(bodyP - vec2(0.0, -0.1)) - vec2(0.28, 0.03), 0.0));
+    float buckle = length(max(abs(bodyP - vec2(0.0, -0.1)) - vec2(0.04, 0.05), 0.0));
+
+    // Lower body / Pants
+    vec2 pantsP = p - vec2(0.0, -0.65);
+    float legL = length(max(abs(pantsP - vec2(-0.12, 0.0)) - vec2(0.08, 0.25), 0.0)) - 0.02;
+    float legR = length(max(abs(pantsP - vec2(0.12, 0.0)) - vec2(0.08, 0.25), 0.0)) - 0.02;
+
+    // Combine raincoat parts
+    float raincoat = min(min(jacket, min(armL, armR)), min(legL, legR));
+
+    if (raincoat < 0.0) {
+        col = vec3(0.2, 0.5, 0.25); // Green raincoat color
+        
+        // Fabric wrinkles and texture (Shiny/plastic material)
+        float wrinkleX = sin(p.x * 20.0 + p.y * 10.0 + sin(p.y * 5.0) * 2.0);
+        float wrinkleY = cos(p.y * 30.0 - p.x * 15.0);
+        
+        // Highlight for plastic shine
+        float shine = smoothstep(0.8, 1.0, wrinkleX * wrinkleY);
+        
+        // Base shading
+        col *= 0.7 + 0.3 * (wrinkleX + wrinkleY) * 0.5;
+        // Add shine
+        col += vec3(0.2) * shine;
+        
+        // Animation: Raincoat fluttering slightly
+        float flutter = sin(p.x * 5.0 + p.y * 10.0 + iTime * 4.0) * (0.05 + iBass * 0.12) + iBeat * 0.04;
+        col *= 1.0 + flutter;
+
+        // Details
+        // Center seam/buttons
+        if (abs(bodyP.x) < 0.01 && bodyP.y > -0.4 && bodyP.y < 0.4) {
+            col *= 0.5; // Seam shadow
+        }
+        // Gold Buttons
+        if (abs(bodyP.x) < 0.02) {
+            float b1 = length(bodyP - vec2(0.0, 0.2)) - 0.015;
+            float b2 = length(bodyP - vec2(0.0, 0.05)) - 0.015;
+            float b3 = length(bodyP - vec2(0.0, -0.25)) - 0.015;
+            if (min(min(b1, b2), b3) < 0.0) col = vec3(0.8, 0.7, 0.2); // Gold
+        }
+
+        // Draw Belt
+        if (belt < 0.01) {
+            col = vec3(0.15, 0.4, 0.2); // Darker green belt
+            if (buckle < 0.01) {
+                col = vec3(0.8, 0.7, 0.2); // Gold buckle
+                // Buckle hole
+                if (length(max(abs(bodyP - vec2(0.0, -0.1)) - vec2(0.02, 0.03), 0.0)) < 0.005) {
+                    col = vec3(0.2, 0.5, 0.25);
+                }
+            }
+        }
+        
+        // Draw Epaulets
+        if (epauletL < 0.0 || epauletR < 0.0) {
+            col = vec3(0.9, 0.2, 0.2); // Red base
+            if (fract(p.x * 20.0) < 0.2) col = vec3(0.9); // White stripes
+        }
+        
+        // Draw Collar patches
+        if (collarL < 0.01 || collarR < 0.01) {
+             col = vec3(0.9, 0.1, 0.1); // Bright red
+             // Little gold star/pin
+             if (length(bodyP - vec2(-0.1, 0.35)) < 0.01 || length(bodyP - vec2(0.1, 0.35)) < 0.01) {
+                 col = vec3(0.9, 0.8, 0.2);
+             }
+        }
+    }
+
+    // Hands
+    float handL = length(max(abs(bodyP - vec2(-0.35, -0.4)) - vec2(0.03, 0.05), 0.0)) - 0.02;
+    float handR = length(max(abs(bodyP - vec2(0.35, -0.4)) - vec2(0.03, 0.05), 0.0)) - 0.02;
+    if (handL < 0.0 || handR < 0.0) col = vec3(0.9, 0.7, 0.6);
+
+    // Shoes
+    float shoeL = length(max(abs(pantsP - vec2(-0.15, -0.3)) - vec2(0.06, 0.04), 0.0)) - 0.02;
+    float shoeR = length(max(abs(pantsP - vec2(0.15, -0.3)) - vec2(0.06, 0.04), 0.0)) - 0.02;
+    if (shoeL < 0.0 || shoeR < 0.0) {
+        col = vec3(0.1); // Black shoes
+        // Shoe shine
+        if (pantsP.y > -0.28 && abs(pantsP.x) > 0.12 && abs(pantsP.x) < 0.16) col += vec3(0.2);
+    }
+
+    // Floor line
+    if (p.y < -0.9) {
+        col = mix(col, vec3(0.8, 0.8, 0.85), 0.5); // Tiled floor
+        // Tile lines
+        if (fract(p.x * 5.0) < 0.02) col = vec3(0.6);
+    }
+    
+    // Shadow on floor
+    float shadow = exp(-15.0 * length(max(abs(p - vec2(0.0, -0.95)) - vec2(0.3, 0.05), 0.0)));
+    col *= 1.0 - 0.4 * shadow;
+
+    gl_FragColor = vec4(col, 1.0);
+}

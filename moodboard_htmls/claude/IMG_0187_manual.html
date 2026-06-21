@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shader: IMG_0187</title>
+    <style>body { margin: 0; overflow: hidden; background-color: #000; } canvas { display: block; width: 100vw; height: 100vh; }</style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float; uniform vec2 iResolution; uniform float iTime;
+
+        float hash(vec2 p) {
+            p = fract(p * vec2(127.1, 311.7));
+            p += dot(p, p + 17.5);
+            return fract(p.x * p.y);
+        }
+        float hash1(float n) { return fract(sin(n) * 43758.5453); }
+
+        float noise(vec2 p) {
+            vec2 i = floor(p); vec2 f = fract(p);
+            vec2 u = f * f * (3.0 - 2.0 * f);
+            return mix(mix(hash(i), hash(i+vec2(1,0)), u.x),
+                       mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), u.x), u.y);
+        }
+
+        float fbm(vec2 p) {
+            float v = 0.0; float a = 0.5;
+            for (int i = 0; i < 5; i++) { v += a * noise(p); p = p * 2.1 + vec2(1.7, 9.2); a *= 0.5; }
+            return v;
+        }
+
+        vec2 domainWarp(vec2 p, float t) {
+            float s = 0.6;
+            return p + s * vec2(fbm(p + t*0.12), fbm(p + vec2(3.7, 1.9) + t*0.1));
+        }
+
+        vec3 hsv2rgb(vec3 c) {
+            vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
+            vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+            return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+        }
+
+        float sdBox(vec2 p, vec2 b) {
+            vec2 d = abs(p) - b;
+            return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+        }
+        float sdCircle(vec2 p, float r) { return length(p) - r; }
+        float sdSegment(vec2 p, vec2 a, vec2 b) {
+            vec2 pa = p-a, ba = b-a;
+            float h = clamp(dot(pa,ba)/dot(ba,ba), 0.0, 1.0);
+            return length(pa - ba*h);
+        }
+        float sdDiamond(vec2 p, float s) { p = abs(p); return (p.x+p.y)-s; }
+
+        // Window with ornamental iron grille (square + diamond-cross)
+        float windowGrille(vec2 uv, vec2 center, vec2 size) {
+            vec2 p = uv - center;
+            float border = sdBox(p, size);
+            float win = 1.0 - smoothstep(0.0, 0.005, abs(border));
+            float inside = step(0.0, -border);
+            // Diamond cross pattern
+            float diamond = sdDiamond(p, size.x * 0.6);
+            float diamondLine = 1.0 - smoothstep(0.0, 0.003, abs(diamond));
+            // Grid bars
+            float hBar = 1.0 - smoothstep(0.0, 0.0025, abs(p.y));
+            float vBar = 1.0 - smoothstep(0.0, 0.0025, abs(p.x));
+            // Sub-grid
+            float hBar2 = 1.0 - smoothstep(0.0, 0.002, abs(mod(p.y + size.y, size.y*0.5) - size.y*0.25));
+            float vBar2 = 1.0 - smoothstep(0.0, 0.002, abs(mod(p.x + size.x, size.x*0.5) - size.x*0.25));
+            float cross = max(hBar, vBar);
+            float cross2 = max(hBar2, vBar2) * 0.6;
+            return max(win, inside * max(diamondLine, max(cross, cross2) * 0.8));
+        }
+
+        // AC unit box on building facade
+        float acUnit(vec2 uv, vec2 center) {
+            vec2 p = uv - center;
+            float box = sdBox(p, vec2(0.025, 0.018));
+            float mask = 1.0 - smoothstep(0.0, 0.004, box);
+            float slat = mod(p.y * 40.0, 1.0);
+            slat = step(0.5, slat) * 0.3;
+            return mask * (0.7 + slat);
+        }
+
+        // Animated flag with 3D two-axis wave
+        vec4 drawFlag(vec2 uv, float t) {
+            // Flag pole
+            float poleX = 0.77;
+            float poleTop = 0.32;
+            float poleBot = 0.06;
+            float poleMask = 1.0 - smoothstep(0.0, 0.003, abs(uv.x - poleX));
+            poleMask *= step(poleBot, uv.y) * step(uv.y, poleTop);
+
+            // Flag body hangs from pole top
+            vec2 fc = vec2(0.87, 0.27);
+            vec2 fs = vec2(0.1, 0.07);
+            vec2 fp = uv - fc;
+            fp.x -= (fp.x + fs.x) * 0.0; // anchored at pole
+            // Two-axis wave for 3D flapping
+            float waveX = sin(fp.x * 22.0 + t * 2.8) * 0.013 * (fp.x + fs.x + 0.01);
+            float waveY = sin(fp.x * 10.0 + t * 1.5) * 0.006;
+            fp.y += waveX + waveY;
+            float flagBox = sdBox(fp, fs);
+            float inFlag = step(0.0, -flagBox + 0.001);
+            // Flag color
+            float flagShade = 1.0 - waveX * 4.0;
+            vec3 flagCol = vec3(0.85, 0.1, 0.1) * flagShade;
+            // Yellow star
+            vec2 sp = fp / 0.038;
+            float starR = length(sp);
+            float starAngle = atan(sp.y, sp.x);
+            float starN = 5.0;
+            float starA = mod(starAngle, 6.28318/starN) - 3.14159/starN;
+            float outerR = 1.0; float innerR = 0.42;
+            float starSDF = mix(outerR, innerR, cos(starA*starN)*0.5+0.5);
+            float starMask = step(starR, starSDF);
+            vec3 col = mix(flagCol, vec3(0.98, 0.9, 0.05), starMask);
+            return vec4(col, max(inFlag, poleMask * 0.9));
+        }
+
+        void main() {
+            vec2 uv = gl_FragCoord.xy / iResolution.xy;
+            vec2 p = uv * 2.0 - 1.0;
+            p.x *= iResolution.x / iResolution.y;
+            float t = iTime;
+
+            // Chromatic aberration offsets
+            vec2 caOff = (uv - 0.5) * 0.006;
+            vec2 uvR = uv + caOff;
+            vec2 uvB = uv - caOff;
+
+            // --- DOMAIN-WARPED NIGHT SKY ---
+            vec2 skyUV = domainWarp(uv * 1.8, t * 0.08);
+            vec3 skyCol = mix(vec3(0.01, 0.02, 0.06), vec3(0.04, 0.05, 0.12), uv.y);
+            skyCol += fbm(skyUV * 3.0 + t*0.05) * 0.03;
+            // Color cycle the sky subtly
+            skyCol += hsv2rgb(vec3(0.62 + fbm(skyUV*2.0)*0.08, 0.4, 0.06));
+
+            // --- 40 TWINKLING STARS ---
+            for (int si = 0; si < 40; si++) {
+                float sf = float(si);
+                float sx = hash1(sf * 1.7 + 0.1);
+                float sy = 0.35 + hash1(sf * 2.3 + 0.4) * 0.65;
+                // Only in sky region (above building)
+                float phase = hash1(sf * 5.1) * 6.28;
+                float twinkle = 0.4 + 0.6 * sin(t * (1.5 + hash1(sf)*2.0) + phase);
+                float starBrightness = hash1(sf * 3.7) * twinkle;
+                float starSize = 0.002 + hash1(sf * 0.9) * 0.003;
+                float starDist = length(uv - vec2(sx, sy));
+                float starMask = exp(-starDist / starSize) * starBrightness;
+                vec3 starColor = hsv2rgb(vec3(hash1(sf*7.3)*0.15+0.55, 0.2, 1.0));
+                skyCol += starColor * starMask * 0.8;
+                // Additive glow
+                skyCol += starColor * exp(-starDist * 180.0) * starBrightness * 0.15;
+            }
+
+            // Warm amber streetlight bloom lower-left
+            float streetDist = length(uv - vec2(0.0, 0.05));
+            float streetLight = exp(-streetDist * 2.8) * (0.7 + 0.3*sin(t*0.8));
+            vec3 ambientGlow = vec3(0.9, 0.55, 0.15) * streetLight * 0.55;
+            skyCol += ambientGlow;
+
+            vec3 col = skyCol;
+
+            // --- BUILDING FACADE ---
+            float buildingTop = 0.92;
+            float bL = 0.05; float bR = 0.95;
+            float inBuilding = step(bL, uv.x)*step(uv.x, bR)*step(0.0, uv.y)*step(uv.y, buildingTop);
+
+            vec3 concreteBase = vec3(0.26, 0.23, 0.20);
+            float concreteNoise = fbm(uv * 14.0 + vec2(0.3, 0.7)) * 0.04;
+            // Vertical panel lines
+            float panelV = sin(uv.x * 28.0) * 0.007;
+            // Horizontal floor lines
+            float floorLine = (1.0 - smoothstep(0.0, 0.003, mod(uv.y, 0.22) - 0.0)) * 0.08;
+            vec3 concreteCol = concreteBase + concreteNoise + panelV + floorLine;
+            col = mix(col, concreteCol, inBuilding);
+
+            // --- RAIN STREAKS ---
+            // Thin diagonal lines falling at angle
+            for (int ri = 0; ri < 20; ri++) {
+                float rf = float(ri);
+                float rxBase = hash1(rf * 2.1 + 0.5);
+                // Animate: rain falls diagonally
+                float rainT = fract(t * 0.4 + hash1(rf * 3.7));
+                float rainX = rxBase + (1.0 - rainT) * 0.05; // slight angle
+                float rainY = rainT;
+                vec2 rainUV = uv - vec2(rainX, rainY);
+                // Project onto diagonal direction
+                vec2 rainDir = normalize(vec2(0.07, -1.0));
+                float along = dot(rainUV, rainDir);
+                float perp = abs(dot(rainUV, vec2(rainDir.y, -rainDir.x)));
+                float rainLen = 0.04 + hash1(rf) * 0.04;
+                float rainMask = step(0.0, along) * step(along, rainLen);
+                rainMask *= 1.0 - smoothstep(0.0, 0.0025, perp);
+                float rainAlpha = (0.15 + hash1(rf*9.0)*0.2) * rainMask;
+                col += vec3(0.6, 0.7, 0.85) * rainAlpha * inBuilding;
+            }
+
+            // --- WINDOWS WITH ORNAMENTAL GRILLES ---
+            float shimmer = sin(uv.x * 80.0 + t*3.0)*0.5+0.5;
+            shimmer *= sin(uv.y * 60.0 - t*2.0)*0.5+0.5;
+            float glowMask = 0.0;
+            float grilleMask = 0.0;
+            vec2 winSize = vec2(0.085, 0.08);
+
+            for (int ci = 0; ci < 3; ci++) {
+                for (int ri = 0; ri < 4; ri++) {
+                    float cx = 0.22 + float(ci) * 0.26;
+                    float cy = 0.63 - float(ri) * 0.18;
+                    vec2 wCenter = vec2(cx, cy);
+
+                    // Window light state: 4 states via hash
+                    float wHash = hash(vec2(float(ci), float(ri)));
+                    float wState = floor(wHash * 4.0); // 0=off,1=dim,2=bright,3=flicker
+
+                    float pulse = 0.0;
+                    if (wState < 0.5) {
+                        pulse = 0.0; // OFF
+                    } else if (wState < 1.5) {
+                        pulse = 0.25 + 0.08 * sin(t*0.4 + wHash*6.28); // DIM
+                    } else if (wState < 2.5) {
+                        pulse = 0.7 + 0.15 * sin(t*1.2 + wHash*6.28); // BRIGHT
+                    } else {
+                        // FLICKERING: HF noise
+                        float flick = fract(sin(t*17.3 + wHash*100.0)*4000.0);
+                        pulse = mix(0.3, 0.9, step(0.5, flick));
+                        pulse *= 0.7;
+                    }
+
+                    float g = windowGrille(uv, wCenter, winSize);
+                    grilleMask = max(grilleMask, g);
+
+                    vec2 wp = uv - wCenter;
+                    float glowDist = sdBox(wp, winSize * 0.82);
+                    float glow = exp(-max(glowDist, 0.0)*30.0) * pulse;
+                    glowMask += glow;
+
+                    // AC units below some windows
+                    float acH = hash(vec2(float(ci)+10.0, float(ri)));
+                    if (acH > 0.4) {
+                        float acMask = acUnit(uv, wCenter + vec2(0.05, -winSize.y - 0.025));
+                        vec3 acCol = vec3(0.22, 0.22, 0.24) + acMask*0.1;
+                        col = mix(col, acCol, acMask * inBuilding);
+                    }
+                }
+            }
+
+            vec3 windowGlowCol = vec3(1.0, 0.88, 0.62) * glowMask * 0.55;
+            col += windowGlowCol;
+            vec3 grilleCol = mix(vec3(0.82, 0.80, 0.76), vec3(1.0, 0.97, 0.88), shimmer);
+            col = mix(col, grilleCol, grilleMask * inBuilding * 0.95);
+
+            // --- NEON PUDDLE REFLECTION at bottom strip ---
+            float puddleY = 0.04;
+            float puddleH = puddleY;
+            float inPuddle = step(uv.y, puddleY);
+            if (inPuddle > 0.5) {
+                // Rippling orange-yellow reflection
+                float ripple = sin(uv.x * 35.0 + t*2.5) * 0.008;
+                float ripple2 = sin(uv.x * 18.0 - t*1.8) * 0.006;
+                vec2 refUV = vec2(uv.x + ripple + ripple2, puddleY*2.0 - uv.y);
+                float streetRef = exp(-length(refUV - vec2(0.0, 0.08)) * 3.5) * 0.6;
+                col = mix(col, vec3(0.9, 0.55, 0.15) * streetRef + vec3(0.04, 0.03, 0.06), inPuddle*0.85);
+                col += vec3(0.9, 0.55, 0.1) * streetRef * 0.4 * inPuddle;
+            }
+
+            // --- CAR HEADLIGHT TRAILS at bottom road ---
+            float roadY = 0.08;
+            for (int ci2 = 0; ci2 < 2; ci2++) {
+                float cf = float(ci2);
+                float carT = fract(t * 0.12 + cf * 0.5);
+                float carX = carT;
+                float carBaseY = 0.06 + cf * 0.035;
+                // Headlight beams
+                vec2 headL = vec2(carX - 0.06, carBaseY);
+                vec2 headR = vec2(carX + 0.06, carBaseY);
+                float beamL = exp(-length(uv - headL) * 22.0);
+                float beamR = exp(-length(uv - headR) * 22.0);
+                float beam = beamL + beamR;
+                // Beam cone in front of car
+                float coneLen = max(0.0, carX - uv.x) * step(uv.x, carX);
+                float coneY = abs(uv.y - carBaseY);
+                float cone = exp(-coneLen * 5.0) * exp(-coneY * 30.0) * step(uv.y, roadY*1.5);
+                col += vec3(1.0, 0.95, 0.75) * (beam * 0.3 + cone * 0.15) * step(uv.y, roadY*2.0);
+                // Tail lights - red
+                float tailX = carX + 0.07;
+                col += vec3(0.9, 0.1, 0.05) * exp(-length(uv - vec2(tailX, carBaseY))*30.0) * 0.4;
+            }
+
+            // --- FLAG ---
+            vec4 flagData = drawFlag(uv, t);
+            col = mix(col, flagData.rgb, flagData.a);
+            col += vec3(0.9, 0.1, 0.1) * flagData.a * 0.1; // flag glow
+
+            // --- PARTICLE SYSTEM: 15 floating dust motes ---
+            for (int pi = 0; pi < 15; pi++) {
+                float pf = float(pi);
+                float px = fract(hash1(pf*1.3) + t*0.02*(hash1(pf*2.1)-0.5));
+                float py = fract(hash1(pf*2.7) + t*0.015*(hash1(pf*3.4)-0.3));
+                float pb = 0.3 + 0.7*sin(t*0.8 + pf*1.2);
+                float pdist = length(uv - vec2(px, py));
+                col += vec3(0.9, 0.7, 0.4) * exp(-pdist * 300.0) * pb * 0.08;
+            }
+
+            // Chromatic aberration (edges)
+            float edgeDist = length(uv - 0.5);
+            float caStrength = smoothstep(0.3, 0.8, edgeDist);
+            float rSample = fbm(uvR * 14.0) * 0.04;
+            float bSample = fbm(uvB * 14.0) * 0.04;
+            col.r += rSample * caStrength * 0.3;
+            col.b += bSample * caStrength * 0.3;
+
+            // Film grain
+            float grain = noise(uv * 800.0 + t) * 0.025;
+            col += grain - 0.0125;
+
+            // Ambient color breathing
+            float breath = sin(t * 0.4) * 0.5 + 0.5;
+            vec3 ambientTint = mix(vec3(0.04, 0.02, 0.0), vec3(0.0, 0.01, 0.04), breath);
+            col += ambientTint;
+
+            // Vignette
+            float vignette = 1.0 - smoothstep(0.4, 1.3, length(uv - 0.5) * 1.5);
+            col *= vignette;
+
+            col = pow(clamp(col, 0.0, 1.0), vec3(0.85));
+            gl_FragColor = vec4(col, 1.0);
+        }
+    </script>
+    <script>
+        function main() {
+            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
+            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
+            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            function render(t) {
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        } window.onload = main;
+    </script>
+</body>
+</html>

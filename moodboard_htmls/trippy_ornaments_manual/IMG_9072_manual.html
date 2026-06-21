@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shader: IMG_9072 (Manual)</title>
+    <style>body { margin: 0; overflow: hidden; background-color: #000; } canvas { display: block; width: 100vw; height: 100vh; }</style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float; uniform vec2 iResolution; uniform float iTime;
+
+        float hash12(vec2 p) {
+            vec3 p3  = fract(vec3(p.xyx) * .1031);
+            p3 += dot(p3, p3.yzx + 33.33);
+            return fract((p3.x + p3.y) * p3.z);
+        }
+
+        vec2 hash22(vec2 p) {
+            vec3 p3 = fract(vec3(p.xyx) * vec3(.1031, .1030, .0973));
+            p3 += dot(p3, p3.yzx+33.33);
+            return fract((p3.xx+p3.yz)*p3.zy);
+        }
+        
+        float noise(vec2 p) {
+            vec2 i = floor(p); vec2 f = fract(p);
+            f = f * f * (3.0 - 2.0 * f);
+            return mix(mix(hash12(i), hash12(i + vec2(1.0, 0.0)), f.x),
+                       mix(hash12(i + vec2(0.0, 1.0)), hash12(i + vec2(1.0, 1.0)), f.x), f.y);
+        }
+
+        mat2 rot(float a) { float s = sin(a), c = cos(a); return mat2(c, -s, s, c); }
+
+        float sdBox(vec2 p, vec2 b) {
+            vec2 d = abs(p) - b;
+            return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+        }
+        
+        float sdCircle(vec2 p, float r) { return length(p) - r; }
+
+        // Cellular noise for mosaic texture
+        vec4 voronoi(vec2 x) {
+            vec2 n = floor(x);
+            vec2 f = fract(x);
+            float m = 8.0;
+            vec2 mr = vec2(0.0);
+            vec2 mc = vec2(0.0);
+            
+            for( int j=-1; j<=1; j++ )
+            for( int i=-1; i<=1; i++ ) {
+                vec2 g = vec2(float(i),float(j));
+                vec2 o = hash22( n + g );
+                vec2 r = g + o - f;
+                float d = dot(r,r);
+                if( d<m ) {
+                    m = d;
+                    mr = r;
+                    mc = n + g;
+                }
+            }
+            // Add second pass for edge distance
+            float md = 8.0;
+            for( int j=-2; j<=2; j++ )
+            for( int i=-2; i<=2; i++ ) {
+                vec2 g = vec2(float(i),float(j));
+                vec2 o = hash22( n + g );
+                vec2 r = g + o - f;
+                if( dot(mr-r,mr-r)>0.00001 ) {
+                    md = min( md, dot( 0.5*(mr+r), normalize(r-mr) ) );
+                }
+            }
+            return vec4(m, mc.x, mc.y, md); // return distance squared, cell id x, cell id y, edge distance
+        }
+
+        // The Blue/White Porcelain Mosaic Texture
+        vec3 getMosaicCol(vec2 p) {
+            // Generate cells
+            vec4 v = voronoi(p * 25.0); // Scale of mosaic pieces
+            
+            // Mortar
+            float edge = smoothstep(0.0, 0.04, v.w);
+            if (edge < 0.5) return vec3(0.5, 0.5, 0.45); // Grey mortar
+            
+            // Inside the shard
+            vec2 cellId = v.yz;
+            float h = hash12(cellId);
+            
+            // Base white
+            vec3 shardCol = vec3(0.85, 0.9, 0.9);
+            
+            // Blue patterns on the shards
+            if (h > 0.3) {
+                // Generate a mini pattern per cell
+                vec2 localP = p * 25.0 - cellId;
+                float pat = sin(localP.x * 10.0 + h * 20.0) * sin(localP.y * 10.0 + h * 15.0);
+                if (pat > 0.2) {
+                    shardCol = mix(vec3(0.2, 0.3, 0.7), vec3(0.1, 0.2, 0.5), hash12(cellId+1.0)); // Blue
+                }
+                
+                // Some shards are solid blue
+                if (h > 0.8) shardCol = vec3(0.15, 0.25, 0.6);
+            }
+            
+            // Some shards are a bit dirty/brownish
+            if (hash12(cellId+2.0) > 0.9) shardCol *= vec3(0.9, 0.8, 0.7);
+            
+            return shardCol;
+        }
+
+        float sdSegment(vec2 p, vec2 a, vec2 b) {
+            vec2 pa = p-a, ba = b-a;
+            float h = clamp(dot(pa,ba)/dot(ba,ba), 0.0, 1.0);
+            return length(pa - ba*h);
+        }
+
+        void main() {
+            vec2 uv = gl_FragCoord.xy / iResolution.xy;
+            vec2 p = uv * 2.0 - 1.0;
+            p.x *= iResolution.x / iResolution.y;
+
+            vec3 col = vec3(0.0);
+
+            // --- BUILDING BACKGROUND / MUD ---
+            col = vec3(0.6, 0.6, 0.65); // Sky/Background
+            if (p.y < -0.6) {
+                col = vec3(0.2, 0.22, 0.2); // Dark paved ground
+                col *= 0.8 + 0.2 * noise(p * 50.0);
+                // Puddles
+                if (noise(p * 10.0) > 0.6) col *= 0.7;
+            }
+
+            // --- THE BUILDING (Porcelain Mosaic Facade) ---
+            float dBuilding = 1000.0;
+            
+            // Left block
+            float dLeft = sdBox(p - vec2(-0.4, -0.1), vec2(0.35, 0.6));
+            dBuilding = min(dBuilding, dLeft);
+            
+            // Right block
+            float dRight = sdBox(p - vec2(0.45, -0.1), vec2(0.45, 0.6));
+            dBuilding = min(dBuilding, dRight);
+            
+            if (dBuilding < 0.0) {
+                // Apply the mosaic texture globally to the building
+                col = getMosaicCol(p);
+                
+                // --- ARCHITECTURAL DETAILS (CUTOUTS) ---
+                
+                // 1. LEFT SIDE DETAILS
+                if (p.x < -0.05) {
+                    // Ground floor glass doors
+                    float dDoor = sdBox(p - vec2(-0.4, -0.5), vec2(0.3, 0.35));
+                    if (dDoor < 0.0) {
+                        col = vec3(0.1, 0.12, 0.15); // Dark glass interior
+                        // Reflections on glass
+                        float refl = smoothstep(0.8, 1.0, sin(p.x * 5.0 + p.y * 5.0));
+                        col += vec3(0.1) * refl;
+                        
+                        // Metal frames
+                        if (abs(p.y - -0.15) < 0.015 || abs(p.y - -0.85) < 0.015 || abs(abs(p.x - -0.4) - 0.3) < 0.01) col = vec3(0.8);
+                        if (abs(p.x - -0.4) < 0.01 || abs(p.x - -0.1) < 0.01 || abs(p.x - -0.7) < 0.01) col = vec3(0.8);
+                    }
+                    
+                    // Balcony protrusion (adds shadow)
+                    if (p.y > -0.15 && p.y < 0.1) {
+                        if (sdBox(p - vec2(-0.4, -0.025), vec2(0.35, 0.125)) < 0.0) {
+                            // Keep mosaic, but add highlight on top edge
+                            if (p.y > 0.08) col += vec3(0.2);
+                        }
+                    }
+                    // Shadow from balcony
+                    if (p.y > -0.2 && p.y <= -0.15 && abs(p.x - -0.4) < 0.35) col *= 0.5;
+                    
+                    // Arched window top
+                    vec2 lArchP = p - vec2(-0.35, 0.4);
+                    float dLArch = max(sdBox(lArchP, vec2(0.1, 0.1)), -lArchP.y);
+                    dLArch = min(dLArch, max(sdCircle(lArchP - vec2(0.0, 0.1), 0.1), lArchP.y - 0.1));
+                    if (dLArch < 0.0 && p.y > 0.3) {
+                        col = vec3(0.05); // Dark hole
+                        // Brick arch rim
+                        if (dLArch > -0.02) col = vec3(0.6, 0.4, 0.3);
+                    }
+                }
+                
+                // 2. RIGHT SIDE DETAILS
+                if (p.x >= -0.05) {
+                    // Ground floor large arched window
+                    vec2 rArchBP = p - vec2(0.45, -0.5);
+                    float dRArchB = max(sdBox(rArchBP, vec2(0.35, 0.2)), -rArchBP.y);
+                    dRArchB = min(dRArchB, max(sdCircle(rArchBP - vec2(0.0, 0.2), 0.35), rArchBP.y - 0.2));
+                    
+                    if (dRArchB < 0.0 && p.y < -0.15) {
+                        col = vec3(0.15, 0.16, 0.18); // Dark tinted glass
+                        // Reflection
+                        col += vec3(0.1) * smoothstep(0.9, 1.0, sin(p.x*3.0 - p.y*4.0));
+                        // White Frame/Mullions
+                        if (abs(p.y - -0.3) < 0.01) col = vec3(0.8);
+                        // Brick rim
+                        if (dRArchB > -0.02) col = vec3(0.6, 0.4, 0.3);
+                    }
+                    
+                    // Balcony 
+                    if (p.y > -0.1 && p.y < 0.15) {
+                        float dBalc = sdBox(p - vec2(0.45, 0.025), vec2(0.4, 0.125));
+                        if (dBalc < 0.0) {
+                            // Balusters (cutouts)
+                            float balusterX = fract((p.x - 0.05) * 15.0);
+                            if (p.y > -0.05 && p.y < 0.1 && balusterX > 0.4) {
+                                col = vec3(0.05); // dark behind balusters
+                            }
+                        }
+                    }
+                    
+                    // Top Arched Windows (3 of them)
+                    for(int i=-1; i<=1; i++) {
+                        vec2 tArchP = p - vec2(0.45 + float(i)*0.2, 0.35);
+                        float dTArch = max(sdBox(tArchP, vec2(0.06, 0.1)), -tArchP.y);
+                        dTArch = min(dTArch, max(sdCircle(tArchP - vec2(0.0, 0.1), 0.06), tArchP.y - 0.1));
+                        
+                        if (dTArch < 0.0 && p.y > 0.2) {
+                            col = vec3(0.05);
+                            if (dTArch > -0.015) col = vec3(0.6, 0.4, 0.3); // brick rim
+                        }
+                    }
+                    
+                    // Rightmost white window box
+                    if (sdBox(p - vec2(0.9, 0.15), vec2(0.1, 0.15)) < 0.0) {
+                        col = vec3(0.9); // White frame
+                        if (sdBox(p - vec2(0.9, 0.15), vec2(0.08, 0.12)) < 0.0) {
+                            col = vec3(0.6, 0.7, 0.8); // Glass
+                            // Flowers inside (blobs)
+                            if (noise(p * 50.0) > 0.6 && p.y < 0.1) col = vec3(0.8, 0.4, 0.5);
+                        }
+                    }
+                }
+                
+                // Roof shadow at very top
+                if (p.y > 0.65) col *= mix(0.2, 1.0, smoothstep(0.7, 0.65, p.y));
+            }
+            
+            // --- ROOF ---
+            if (p.y > 0.7 && p.x > -0.05) {
+                col = vec3(0.7, 0.3, 0.15); // Terracotta orange
+                // Tiles texture
+                col *= 0.8 + 0.2 * sin(p.x * 200.0);
+                if (p.y > 0.85) col = vec3(0.6, 0.6, 0.65); // sky over roof
+            }
+
+            // --- FOREGROUND OBJECTS ---
+            
+            // 1. Large Vase (Center Bottom)
+            vec2 vaseP = p - vec2(-0.05, -0.9);
+            // Profile of vase
+            float vW = 0.15 + 0.05 * sin(vaseP.y * 8.0) - 0.05 * vaseP.y;
+            if (abs(vaseP.x) < vW && vaseP.y > 0.0 && vaseP.y < 0.6) {
+                // Base white
+                vec3 vCol = vec3(0.9, 0.95, 0.95);
+                
+                // Blue landscape/patterns
+                float vPat = noise(vaseP * vec2(15.0, 30.0) + vec2(0.0, sin(vaseP.x*5.0)));
+                if (vPat > 0.55 || (fract(vaseP.y * 15.0) < 0.2 && vaseP.y > 0.45)) {
+                    vCol = mix(vec3(0.1, 0.2, 0.5), vec3(0.2, 0.3, 0.7), hash12(floor(vaseP*15.0)));
+                }
+                
+                // Shading (rounded cylinder)
+                vCol *= 0.6 + 0.4 * cos(vaseP.x / vW * 1.57);
+                col = vCol;
+            }
+            
+            // 2. White Benches (Bottom Right)
+            for(int i=0; i<3; i++) {
+                vec2 benchP = p - vec2(0.3 + float(i)*0.25, -0.75);
+                // Seat & Backrest
+                if (sdBox(benchP - vec2(0.0, 0.05), vec2(0.1, 0.02)) < 0.0 || 
+                    sdBox(benchP - vec2(0.0, 0.1), vec2(0.1, 0.03)) < 0.0) {
+                    col = vec3(0.85); // White stone
+                    col *= 0.9 + 0.1 * noise(benchP * 100.0);
+                    col *= 0.7 + 0.3 * smoothstep(0.0, 0.01, p.y - -0.75); // shading
+                }
+                // Legs
+                if (sdBox(benchP - vec2(-0.08, -0.05), vec2(0.01, 0.05)) < 0.0 ||
+                    sdBox(benchP - vec2(0.08, -0.05), vec2(0.01, 0.05)) < 0.0) {
+                    col = vec3(0.7);
+                }
+            }
+
+            // 3. Hanging Ragged Fabric (Top Center)
+            if (p.y > 0.2 && p.x > 0.0 && p.x < 0.4) {
+                // Vertical wavy strips
+                float stripId = floor(p.x * 20.0 + sin(p.y * 5.0));
+                float stripX = fract(p.x * 20.0 + sin(p.y * 5.0));
+                
+                if (stripX > 0.2 && stripX < 0.8) {
+                    // Ragged ends (cut alpha based on Y and noise)
+                    float rag = p.y + noise(p * vec2(10.0, 50.0)) * 0.5 - 0.7;
+                    if (rag > 0.0) {
+                        vec3 fabCol = vec3(0.6, 0.6, 0.65); // Greyish dirty fabric
+                        fabCol *= 0.8 + 0.2 * noise(p * 50.0);
+                        // Edge darkness
+                        fabCol *= mix(0.5, 1.0, smoothstep(0.2, 0.5, stripX) * smoothstep(0.8, 0.5, stripX));
+                        col = fabCol;
+                    }
+                }
+            }
+            
+            // 4. Metal Frame Awning (Top Left)
+            if (sdSegment(p, vec2(-1.0, 0.6), vec2(0.2, 0.9)) < 0.008 ||
+                sdSegment(p, vec2(-0.8, 0.4), vec2(0.0, 0.7)) < 0.008) {
+                col = vec3(0.4); // Dark grey metal
+            }
+
+            // --- GLOBAL TRIPPY OVERLAY ---
+            vec2 trippyP = p * 1.5 + vec2(sin(iTime*0.3), cos(iTime*0.4)) * 0.1;
+            col += 0.02 * vec3(
+                sin(trippyP.x * 5.0 + iTime * 2.0),
+                sin(trippyP.y * 6.0 + iTime * 2.5),
+                sin((trippyP.x - trippyP.y) * 5.0 + iTime * 3.0)
+            );
+
+            // Vignette
+            col *= smoothstep(1.5, 0.2, length(p));
+
+            gl_FragColor = vec4(col, 1.0);
+        }
+    </script>
+    <script>
+        function main() {
+            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
+            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
+            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            function render(t) {
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        } window.onload = main;
+    </script>
+</body>
+</html>

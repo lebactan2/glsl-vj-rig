@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shader: IMG_1721</title>
+    <style>body {{ margin: 0; overflow: hidden; background-color: #000; }} canvas {{ display: block; width: 100vw; height: 100vh; }}</style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float; uniform vec2 iResolution; uniform float iTime;
+        
+void main() {
+    vec2 uv = gl_FragCoord.xy / iResolution.xy;
+    vec2 p = uv * 2.0 - 1.0;
+    p.x *= iResolution.x / iResolution.y;
+    
+    // Background wall
+    vec3 col = vec3(0.9, 0.88, 0.85);
+    float siding = fract(p.y * 30.0);
+    if (siding > 0.9) col *= 0.9;
+    
+    // Bottom stone area
+    if (p.y < -0.6) {
+        col = vec3(0.2, 0.18, 0.15); 
+        vec2 stoneP = fract(p * vec2(10.0, 5.0) + vec2(sin(p.y*10.0), 0.0)) - 0.5;
+        if (length(stoneP) < 0.4) col = vec3(0.3, 0.25, 0.2);
+    }
+    // Top dark trim
+    else if (p.y > 0.8) {
+        col = vec3(0.1, 0.08, 0.05); 
+        if (fract(p.x * 20.0 + iTime) < 0.3) col = vec3(0.05); 
+    }
+    
+    #define segment(p, a, b) length(p - a - (b - a) * clamp(dot(p - a, b - a) / dot(b - a, b - a), 0.0, 1.0))
+
+    // Strep Text
+    if (p.y > 0.5 && p.x > 0.3) {
+        vec2 tp = p - vec2(0.5, 0.55);
+        float dText = 1.0;
+        // S
+        dText = min(dText, segment(tp, vec2(0.05, 0.1), vec2(0.0, 0.1)));
+        dText = min(dText, segment(tp, vec2(0.0, 0.1), vec2(0.0, 0.05)));
+        dText = min(dText, segment(tp, vec2(0.0, 0.05), vec2(0.05, 0.05)));
+        dText = min(dText, segment(tp, vec2(0.05, 0.05), vec2(0.05, 0.0)));
+        dText = min(dText, segment(tp, vec2(0.05, 0.0), vec2(0.0, 0.0)));
+        // t
+        dText = min(dText, segment(tp, vec2(0.1, 0.15), vec2(0.1, 0.0)));
+        dText = min(dText, segment(tp, vec2(0.08, 0.08), vec2(0.12, 0.08)));
+        // r
+        dText = min(dText, segment(tp, vec2(0.18, 0.0), vec2(0.18, 0.1)));
+        dText = min(dText, segment(tp, vec2(0.18, 0.08), vec2(0.22, 0.1)));
+        // e
+        dText = min(dText, abs(length(tp - vec2(0.3, 0.05)) - 0.04));
+        dText = min(dText, segment(tp, vec2(0.26, 0.05), vec2(0.34, 0.05)));
+        // p
+        dText = min(dText, segment(tp, vec2(0.4, -0.1), vec2(0.4, 0.1)));
+        dText = min(dText, abs(length(tp - vec2(0.45, 0.05)) - 0.04));
+        
+        if (dText < 0.01) col = vec3(0.1);
+    }
+    
+    // The Cartoon Character
+    vec2 cP = p - vec2(-0.3, 0.1);
+    
+    // Solid body
+    float body = segment(cP, vec2(-0.05, 0.2), vec2(-0.05, -0.3));
+    body = min(body, segment(cP, vec2(-0.05, 0.2), vec2(0.15, 0.2)));
+    body = min(body, segment(cP, vec2(0.15, 0.2), vec2(0.15, -0.3)));
+    body = min(body, segment(cP, vec2(-0.05, -0.3), vec2(0.15, -0.3)));
+    // Filled body
+    if (cP.x > -0.05 && cP.x < 0.15 && cP.y > -0.3 && cP.y < 0.2) col = vec3(0.9, 0.4, 0.4); // Red shirt
+    if (body < 0.01) col = vec3(0.1); // Outline
+    
+    // Head shape
+    float headMask = length(max(abs(cP - vec2(0.05, 0.35)) - vec2(0.15, 0.12), 0.0));
+    if (headMask < 0.05) col = vec3(1.0, 0.8, 0.7); // Skin color
+    if (abs(headMask - 0.05) < 0.01) col = vec3(0.1);
+    
+    // Eyes
+    float e1 = length(cP - vec2(0.0, 0.4));
+    if (e1 < 0.04) col = vec3(1.0);
+    if (abs(e1 - 0.04) < 0.01) col = vec3(0.1);
+    if (e1 < 0.015) col = vec3(0.1);
+    
+    vec2 eye2P = cP - vec2(0.12, 0.4);
+    eye2P.y += sin(iTime*3.0)*0.02; // floating eye
+    float e2 = length(eye2P);
+    if (e2 < 0.04) col = vec3(1.0);
+    if (abs(e2 - 0.04) < 0.01) col = vec3(0.1);
+    if (e2 < 0.015) col = vec3(0.1);
+
+    // Mouth
+    if (length(cP - vec2(0.05, 0.28)) < 0.05 && cP.y < 0.28) col = vec3(0.1);
+
+    // Arms
+    float armL = segment(cP, vec2(-0.05, 0.1), vec2(-0.25, 0.1 + sin(iTime*4.0)*0.1));
+    if (armL < 0.02) col = vec3(0.9, 0.4, 0.4);
+    if (abs(armL - 0.02) < 0.01) col = vec3(0.1);
+
+    float armR = segment(cP, vec2(0.15, 0.1), vec2(0.3, 0.15));
+    if (armR < 0.02) col = vec3(0.9, 0.4, 0.4);
+    if (abs(armR - 0.02) < 0.01) col = vec3(0.1);
+
+    gl_FragColor = vec4(col, 1.0);
+}
+
+
+    </script>
+    <script>
+        function main() {
+            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
+            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            
+            if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+                console.error("Link error: " + gl.getProgramInfoLog(prog));
+                console.error("FS Log: " + gl.getShaderInfoLog(fs));
+            }
+
+            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
+            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            function render(t) {
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        } window.onload = main;
+    </script>
+</body>
+</html>

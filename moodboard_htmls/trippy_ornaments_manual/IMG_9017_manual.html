@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shader: IMG_9017 (Manual)</title>
+    <style>body { margin: 0; overflow: hidden; background-color: #000; } canvas { display: block; width: 100vw; height: 100vh; }</style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float; uniform vec2 iResolution; uniform float iTime;
+
+        float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+        float noise(vec2 p) {
+            vec2 i = floor(p); vec2 f = fract(p);
+            f = f * f * (3.0 - 2.0 * f);
+            return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x),
+                       mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+        }
+
+        mat2 rot(float a) { float s = sin(a), c = cos(a); return mat2(c, -s, s, c); }
+
+        float sdBox(vec2 p, vec2 b) {
+            vec2 d = abs(p) - b;
+            return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+        }
+        
+        float sdCircle(vec2 p, float r) { return length(p) - r; }
+        
+        float sdSegment(vec2 p, vec2 a, vec2 b) {
+            vec2 pa = p-a, ba = b-a;
+            float h = clamp(dot(pa,ba)/dot(ba,ba), 0.0, 1.0);
+            return length(pa - ba*h);
+        }
+
+        void main() {
+            vec2 uv = gl_FragCoord.xy / iResolution.xy;
+            vec2 p = uv * 2.0 - 1.0;
+            p.x *= iResolution.x / iResolution.y;
+
+            vec3 col = vec3(0.0);
+
+            // --- BACKGROUND ENVIRONMENT ---
+            
+            // 1. Mud/Dirt Ground
+            col = vec3(0.4, 0.3, 0.2); // Dirt base
+            col *= 0.8 + 0.3 * noise(p * 20.0);
+            // Puddles/wet mud
+            float puddles = smoothstep(0.4, 0.6, noise(p * 15.0 + vec2(10.0)));
+            if (p.y < -0.2) col = mix(col, vec3(0.5, 0.45, 0.4), puddles * 0.5);
+
+            // 2. Distant Greenhouses (Top Right)
+            if (p.x > 0.4 && p.y > 0.2) {
+                vec2 ghP1 = p - vec2(0.8, 0.4);
+                // Dome shape: box with very rounded top
+                float dGh1 = max(sdBox(ghP1, vec2(0.4, 0.3)), sdCircle(ghP1 - vec2(0.0, 0.1), 0.4));
+                
+                vec2 ghP2 = p - vec2(1.3, 0.5);
+                float dGh2 = max(sdBox(ghP2, vec2(0.4, 0.3)), sdCircle(ghP2 - vec2(0.0, 0.1), 0.4));
+                
+                if (dGh1 < 0.0 || dGh2 < 0.0) {
+                    col = vec3(0.9, 0.95, 0.9); // White plastic
+                    col *= 0.9 + 0.1 * noise(p * 50.0);
+                    // Support hoops
+                    float hoops = fract(p.x * 20.0);
+                    if (hoops < 0.1) col *= 0.85;
+                    // Shadow at base
+                    if (p.y < 0.3) col *= mix(0.7, 1.0, smoothstep(0.2, 0.3, p.y));
+                }
+            }
+
+            // 3. Trees/Foliage (Top Left)
+            if (p.x < -0.6 && p.y > 0.2) {
+                float leaves = noise(p * 15.0);
+                if (leaves > 0.4 && length(p - vec2(-0.8, 0.6)) < 0.5) {
+                    col = vec3(0.1, 0.3, 0.15); // Dark green
+                    col *= 0.7 + 0.3 * noise(p * 40.0);
+                    // Add some leaf highlights
+                    if (noise(p * 80.0) > 0.7) col += vec3(0.1, 0.2, 0.0);
+                }
+            }
+
+            // --- RIGHT SHACK ---
+            vec2 shackP = p - vec2(0.65, -0.15);
+            // Shack Body
+            if (sdBox(shackP, vec2(0.25, 0.25)) < 0.0) {
+                col = vec3(0.4, 0.4, 0.45); // Grey metal
+                // Corrugated texture
+                col *= 0.8 + 0.2 * sin(shackP.x * 250.0);
+                // Rust
+                float rust = noise(shackP * 30.0);
+                if (rust > 0.5) col = mix(col, vec3(0.4, 0.2, 0.1), (rust - 0.5) * 2.0);
+                // Dark doorway
+                if (sdBox(shackP - vec2(-0.05, -0.15), vec2(0.08, 0.15)) < 0.0) col = vec3(0.05);
+                // Patched wall (Green)
+                if (sdBox(shackP - vec2(-0.1, 0.05), vec2(0.05, 0.1)) < 0.0) col = vec3(0.2, 0.3, 0.2) * (0.8+0.2*sin(shackP.x*250.0));
+            }
+            // Shack Roof
+            vec2 sRoofP = shackP - vec2(0.0, 0.25);
+            sRoofP.x -= sRoofP.y * 0.5; // Skew
+            if (sdBox(sRoofP, vec2(0.3, 0.06)) < 0.0) {
+                col = vec3(0.3, 0.4, 0.35); // Faded green
+                col *= 0.8 + 0.2 * sin(sRoofP.x * 200.0); // Corrugated
+                // Right part is rusty brown
+                if (sRoofP.x > 0.1) col = vec3(0.4, 0.2, 0.15) * (0.8+0.2*sin(sRoofP.x*200.0));
+            }
+
+            // --- MAIN HOUSE (Center) ---
+            vec2 hP = p - vec2(0.0, -0.1);
+            
+            // Wall shape (Perspective taper)
+            float taper = 1.0 + hP.y * 0.1;
+            vec2 wallP = vec2(hP.x / taper, hP.y);
+            
+            float dHouse = sdBox(wallP, vec2(0.35, 0.5));
+            
+            if (dHouse < 0.0) {
+                // Base Grey Metal
+                col = vec3(0.45, 0.48, 0.5);
+                
+                // Corrugated lines (vertical)
+                float corrugation = sin(wallP.x * 300.0);
+                col *= 0.85 + 0.15 * corrugation;
+                
+                // Panel lines (horizontal & vertical cuts)
+                if (fract(wallP.y * 4.0) < 0.02) col *= 0.6;
+                if (fract(wallP.x * 5.0) < 0.02) col *= 0.6;
+                
+                // Rust & Weathering
+                float rust = noise(wallP * vec2(20.0, 50.0));
+                float heavyRust = smoothstep(0.6, 0.9, noise(wallP * 10.0));
+                
+                col = mix(col, vec3(0.35, 0.2, 0.15), smoothstep(0.4, 0.8, rust) * 0.5); // light rust
+                col = mix(col, vec3(0.25, 0.1, 0.05), heavyRust); // dark rust patches
+                
+                // Left extension (Darker/shadowed)
+                if (wallP.x < -0.15) {
+                    col *= 0.6; // Shadow
+                    // Green patch
+                    if (wallP.y < -0.1 && wallP.y > -0.4 && wallP.x > -0.3) {
+                        col = vec3(0.15, 0.25, 0.15) * (0.8+0.2*corrugation);
+                    }
+                    // Dark door
+                    if (sdBox(wallP - vec2(-0.25, -0.3), vec2(0.08, 0.2)) < 0.0) col = vec3(0.1);
+                }
+                
+                // WINDOWS (White frames with grids)
+                // Function to draw a window
+                #define WINDOW(wx, wy) \
+                    if (sdBox(wallP - vec2(wx, wy), vec2(0.04, 0.08)) < 0.0) { \
+                        col = vec3(0.1, 0.1, 0.15); /* Dark glass */ \
+                        vec2 wp = wallP - vec2(wx, wy); \
+                        /* White Frame & Mullions */ \
+                        if (abs(wp.x) > 0.03 || abs(wp.y) > 0.07 || abs(wp.x) < 0.005 || abs(wp.y) < 0.005) { \
+                            col = vec3(0.9, 0.95, 0.9); \
+                            /* Shadow under window */ \
+                            if (wp.y < -0.07) col *= 0.6; \
+                        } else { \
+                            /* Glass reflection */ \
+                            col += vec3(0.2) * smoothstep(0.0, 0.01, wp.x + wp.y); \
+                        } \
+                    }
+                
+                WINDOW(0.1, 0.3)
+                WINDOW(0.25, 0.35) // slightly offset
+                WINDOW(0.22, 0.0)
+                WINDOW(0.05, -0.2)
+                
+                // Wooden Pole leaning on house
+                vec2 poleP = wallP - vec2(-0.05, 0.0);
+                poleP *= rot(-0.2);
+                if (sdBox(poleP, vec2(0.01, 0.4)) < 0.0 && wallP.y > -0.4) {
+                    col = vec3(0.5, 0.3, 0.15); // Wood
+                    col *= 0.7 + 0.3 * noise(poleP * 100.0);
+                    // Drop shadow from pole onto wall
+                } else if (sdBox(poleP - vec2(0.01, -0.01), vec2(0.01, 0.4)) < 0.0 && wallP.y > -0.4) {
+                    col *= 0.6;
+                }
+            }
+
+            // Main House Roof
+            vec2 mRoofP = p - vec2(-0.05, 0.55);
+            mRoofP.x -= mRoofP.y * 0.8; // Skew
+            float dMRoof = sdBox(mRoofP, vec2(0.45, 0.12));
+            
+            // Roof shadow on wall
+            if (dHouse < 0.0 && dMRoof > 0.0 && dMRoof < 0.05 && p.y < 0.55) {
+                col *= mix(0.5, 1.0, smoothstep(0.0, 0.05, dMRoof));
+            }
+
+            if (dMRoof < 0.0) {
+                col = vec3(0.25, 0.45, 0.35); // Faded green
+                // Perspective corrugation
+                float rCorrugation = sin((mRoofP.x + mRoofP.y*0.8) * 150.0);
+                col *= 0.85 + 0.15 * rCorrugation;
+                
+                // Edge highlight
+                if (mRoofP.y < -0.11) col = vec3(0.7); // white trim
+                if (mRoofP.y > 0.11) col = vec3(0.4, 0.6, 0.5); // top highlight
+            }
+
+            // Power / Cables
+            float cable1 = sdSegment(p, vec2(-0.6, 0.1), vec2(0.3, -0.1));
+            float cable2 = sdSegment(p, vec2(0.3, -0.1), vec2(0.8, -0.05));
+            if (cable1 < 0.003 || cable2 < 0.003) col = vec3(0.1);
+
+            // --- FOREGROUND GREENHOUSE (Bottom Left) ---
+            // Large skewed triangle/polygon for the roof
+            float fgGh = p.x - p.y * -1.5 + 1.2;
+            if (fgGh > 0.0 && p.y < -0.3) {
+                vec3 ghCol = vec3(0.85, 0.9, 0.9); // Translucent white plastic
+                ghCol *= 0.9 + 0.1 * noise(p * 30.0);
+                
+                // Add some structural lines
+                if (fract(p.x * 5.0 + p.y * 3.0) < 0.05) ghCol = vec3(0.95);
+                
+                // Dirt/moss near the bottom edge
+                float dirt = smoothstep(0.0, 0.2, noise(p * 20.0));
+                ghCol = mix(ghCol, vec3(0.3, 0.3, 0.2), dirt * smoothstep(-0.5, -1.0, p.y) * 0.5);
+                
+                // Mix with background for translucency effect
+                col = mix(col, ghCol, 0.9);
+                
+                // Strong edge highlight
+                if (fgGh < 0.02) col = vec3(1.0);
+            }
+
+            // --- GLOBAL TRIPPY OVERLAY ---
+            vec2 trippyP = p * 1.5 + vec2(sin(iTime*0.3), cos(iTime*0.4)) * 0.1;
+            col += 0.02 * vec3(
+                sin(trippyP.x * 5.0 + iTime * 2.0),
+                sin(trippyP.y * 6.0 + iTime * 2.5),
+                sin((trippyP.x - trippyP.y) * 5.0 + iTime * 3.0)
+            );
+
+            // Vignette
+            col *= smoothstep(1.5, 0.2, length(p));
+
+            gl_FragColor = vec4(col, 1.0);
+        }
+    </script>
+    <script>
+        function main() {
+            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
+            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
+            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            function render(t) {
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        } window.onload = main;
+    </script>
+</body>
+</html>

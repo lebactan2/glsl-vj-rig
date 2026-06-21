@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shader: IMG_5762</title>
+    <style>body { margin: 0; overflow: hidden; background-color: #000; } canvas { display: block; width: 100vw; height: 100vh; }</style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float; uniform vec2 iResolution; uniform float iTime;
+
+uniform sampler2D iChannel0;
+uniform vec2 iImageResolution;
+
+mat2 rot(float a) {
+    float s = sin(a);
+    float c = cos(a);
+    return mat2(c, -s, s, c);
+}
+
+vec2 coverUv(vec2 uv, vec2 canvas, vec2 image) {
+    float canvasAspect = canvas.x / canvas.y;
+    float imageAspect = image.x / image.y;
+    vec2 scale = canvasAspect > imageAspect
+        ? vec2(1.0, canvasAspect / imageAspect)
+        : vec2(imageAspect / canvasAspect, 1.0);
+    return (uv - 0.5) * scale + 0.5;
+}
+
+float luma(vec3 c) {
+    return dot(c, vec3(0.2126, 0.7152, 0.0722));
+}
+
+void main() {
+    vec2 uv = gl_FragCoord.xy / iResolution.xy;
+    vec2 texUv = coverUv(uv, iResolution, iImageResolution);
+    vec2 p = uv * 2.0 - 1.0;
+    p.x *= iResolution.x / iResolution.y;
+
+    float t = iTime * 0.2578;
+    vec2 photoP = texUv - 0.5;
+    float r = length(p);
+    float a = atan(p.y, p.x);
+    float segments = 8.0000;
+    float slice = 6.2831853 / segments;
+    float ma = abs(mod(a + slice * 0.5 + sin(t) * 0.025, slice) - slice * 0.5);
+    vec2 k = vec2(cos(ma), sin(ma)) * r;
+    k += 0.035 * vec2(sin(k.y * 8.0 + t * 2.2), cos(k.x * 7.0 - t * 1.8));
+
+    float ringWave = sin(r * 10.0000 - t * 3.0);
+    float petals = cos(ma * 16.0000 + r * 7.4605 + sin(t + r * 2.0));
+    float lattice = sin((k.x + k.y) * 21.3354) *
+                    sin((k.x - k.y) * 25.2397);
+    float bead = smoothstep(0.86, 0.99, cos(ma * 23.0000 - t * 2.4)) *
+                 smoothstep(0.035, 0.0, abs(fract(r * 7.9079 - t * 0.18) - 0.5));
+
+    vec2 warp = vec2(
+        sin(k.y * 8.4824 + t * 1.8 + petals),
+        cos(k.x * 9.5199 - t * 1.6 + ringWave)
+    ) * 0.0137;
+    vec2 sampleUv = clamp(texUv + warp * smoothstep(1.35, 0.05, r), 0.001, 0.999);
+    vec3 photo = texture2D(iChannel0, sampleUv).rgb;
+    vec3 photoSoft = texture2D(iChannel0, clamp(texUv + warp * 2.5, 0.001, 0.999)).rgb;
+
+    vec3 c1 = vec3(0.3882, 0.4863, 0.4627);
+    vec3 c2 = vec3(0.4196, 0.5255, 0.4941);
+    vec3 c3 = vec3(0.6902, 0.7725, 0.8588);
+    vec3 c4 = vec3(0.7294, 0.8235, 0.9137);
+    vec3 c5 = vec3(0.6235, 0.6745, 0.7333);
+
+    vec3 patternColor = mix(c1, c2, smoothstep(-0.55, 0.70, ringWave + petals * 0.34));
+    patternColor = mix(patternColor, c4, smoothstep(0.15, 0.92, lattice));
+    float mask = 0.10 + smoothstep(0.78, 0.98, abs(lattice)) * 0.18;
+
+    float liquid = sin(k.x * 10.0 + sin(k.y * 6.0 + t) * 2.0 + t * 1.7);
+    float islands = smoothstep(0.16, 0.86, liquid + petals * 0.38);
+    float rim = smoothstep(0.045, 0.0, abs(liquid + petals * 0.38 - 0.22));
+    patternColor = mix(patternColor, c3, islands * 0.72);
+    patternColor = mix(patternColor, c5, rim * 0.65);
+    mask = max(mask, islands * 0.46 + rim * 0.32);
+
+    mask = max(mask, bead * 0.42);
+
+    float edge = length(photo - photoSoft) * 0.6030;
+    mask *= smoothstep(1.28, 0.02, r);
+    mask *= 0.65 + smoothstep(0.05, 0.38, edge + abs(luma(photo) - 0.5210) * 0.35);
+
+    vec3 tintedPhoto = mix(photo.bgr, photo, 0.5811);
+    vec3 col = mix(tintedPhoto, patternColor, clamp(mask * 0.2282, 0.0, 0.42));
+    col += c5 * bead * 0.1041;
+    col += vec3(1.0, 0.95, 0.82) * smoothstep(0.96, 1.0, sin(r * 42.0 - t * 7.0 + petals)) * 0.035;
+    col = mix(col, col * (0.74 + 0.26 * smoothstep(1.45, 0.02, length(photoP) * 2.0)), 0.55);
+
+    gl_FragColor = vec4(pow(clamp(col, 0.0, 1.0), vec3(0.94)), 1.0);
+}
+
+    </script>
+    <script>
+        function main() {
+            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
+            if (!gl) { console.error("WebGL unavailable"); return; }
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
+            if (!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) { console.error("FS compile error: " + gl.getShaderInfoLog(fs)); }
+            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) { console.error("Link error: " + gl.getProgramInfoLog(prog)); console.error("FS Log: " + gl.getShaderInfoLog(fs)); }
+            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
+            const imageResolution = gl.getUniformLocation(prog, "iImageResolution"); const channel = gl.getUniformLocation(prog, "iChannel0");
+            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            const texture = gl.createTexture();
+            const image = new Image();
+            image.onload = () => {
+                gl.bindTexture(gl.TEXTURE_2D, texture);
+                gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+                requestAnimationFrame(render);
+            };
+            image.onerror = () => console.error("Could not load source texture for IMG_5762");
+            image.src = "assets/IMG_5762.jpg";
+            function render(t) {
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
+                gl.uniform2f(imageResolution, image.naturalWidth || 1, image.naturalHeight || 1);
+                gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, texture); gl.uniform1i(channel, 0);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+            }
+        } window.onload = main;
+    </script>
+</body>
+</html>

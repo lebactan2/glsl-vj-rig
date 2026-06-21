@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Metal Gate</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+    </style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    
+    <script id="vertex-shader" type="x-shader/x-vertex">
+        attribute vec2 position;
+        void main() {
+            gl_Position = vec4(position, 0.0, 1.0);
+        }
+    </script>
+    
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float;
+        uniform vec2 iResolution;
+        uniform float iTime;
+
+        void main() {
+            vec2 uv = gl_FragCoord.xy / iResolution.xy;
+            vec2 p = uv * 2.0 - 1.0;
+            p.x *= iResolution.x / iResolution.y;
+            
+            vec3 col = vec3(0.0);
+            
+            // Proportions: center gate, side tiles
+            float gateWidth = 1.0; // from -1.0 to 1.0 is gate, outside is tiles
+            
+            if (abs(p.x) > gateWidth) {
+                // Background tiles (orange/brown)
+                vec2 tileUV = uv * vec2(8.0, 12.0); // scale
+                vec2 cell = fract(tileUV);
+                vec2 id = floor(tileUV);
+                
+                // Beveled edges for tiles
+                float edge = smoothstep(0.0, 0.05, cell.x) * smoothstep(1.0, 0.95, cell.x) *
+                             smoothstep(0.0, 0.05, cell.y) * smoothstep(1.0, 0.95, cell.y);
+                
+                // Color variation
+                float noise = fract(sin(dot(id, vec2(12.9898, 78.233))) * 43758.5453);
+                vec3 baseCol = mix(vec3(0.7, 0.35, 0.2), vec3(0.85, 0.5, 0.3), noise);
+                
+                // Apply bevel/shadow
+                col = mix(vec3(0.1), baseCol, edge);
+            } else {
+                // Inside the gate area
+                // Dark background
+                col = vec3(0.05, 0.05, 0.06);
+                
+                // The metal gate structure
+                float metal = 0.0;
+                
+                // Main vertical dividers
+                float div0 = step(abs(p.x), 0.02); // Center line
+                float divL1 = step(abs(p.x + 0.6), 0.02);
+                float divR1 = step(abs(p.x - 0.6), 0.02);
+                float divL2 = step(abs(p.x + 1.0), 0.04); // Left edge frame
+                float divR2 = step(abs(p.x - 1.0), 0.04); // Right edge frame
+                
+                metal = max(metal, max(max(div0, divL1), max(divR1, max(divL2, divR2))));
+                
+                // Central horizontal grid
+                if (abs(p.x) < 0.6) {
+                    float hBars = step(abs(fract(p.y * 15.0) - 0.5), 0.2); // thick horizontal bars
+                    float vBars = step(abs(fract(p.x * 6.0) - 0.5), 0.1);  // thinner vertical crossbars
+                    
+                    // The gate has closely spaced horizontal bars, and some vertical ones behind
+                    metal = max(metal, hBars);
+                    // Let's add vertical bars but make them appear behind horizontally
+                    if (vBars > 0.5 && hBars < 0.5) {
+                        metal = max(metal, 0.8); // slightly darker to show depth
+                    }
+                }
+                
+                // Side decorative panels
+                if (abs(p.x) >= 0.6 && abs(p.x) < 1.0) {
+                    // Local coords for panel
+                    vec2 panelP = vec2(abs(p.x) - 0.8, p.y); // center is at x=0.8 or -0.8
+                    
+                    // Fine mesh background
+                    float mesh = step(0.8, sin(panelP.x * 250.0) * sin(panelP.y * 250.0));
+                    if (mesh > 0.5 && metal < 0.5) col = mix(col, vec3(0.3), 0.5);
+                    
+                    // Crossing arches
+                    vec2 cell = fract(panelP * vec2(1.0, 2.5)) - 0.5; // repeating vertically
+                    
+                    // Arc from bottom left to top right
+                    float arc1 = step(abs(length(cell - vec2(-0.5, 0.0)) - 0.5), 0.03);
+                    // Arc from bottom right to top left
+                    float arc2 = step(abs(length(cell - vec2(0.5, 0.0)) - 0.5), 0.03);
+                    
+                    metal = max(metal, max(arc1, arc2));
+                    
+                    // Horizontal dividers between repeating arch segments
+                    float panelHBar = step(abs(fract(panelP.y * 2.5) - 0.5), 0.02);
+                    metal = max(metal, panelHBar);
+                }
+                
+                // Metal color and shading
+                vec3 metalCol = vec3(0.5, 0.55, 0.6); // Gray metal
+                // Simple lighting (gradient)
+                metalCol *= 0.6 + 0.4 * sin(p.x * 20.0 + p.y * 20.0);
+                
+                if (metal > 0.0) {
+                    // if metal == 0.8, it's a recessed bar
+                    col = metal == 0.8 ? metalCol * 0.6 : metalCol;
+                }
+            }
+            
+            gl_FragColor = vec4(col, 1.0);
+        }
+    </script>
+    
+    <script>
+        function createShader(gl, type, source) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) return null;
+            return shader;
+        }
+        function main() {
+            const canvas = document.getElementById("glcanvas");
+            const gl = canvas.getContext("webgl");
+            if (!gl) return;
+            const vsSource = document.getElementById("vertex-shader").text;
+            const fsSource = document.getElementById("fragment-shader").text;
+            const vertexShader = createShader(gl, gl.VERTEX_SHADER, vsSource);
+            const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fsSource);
+            const shaderProgram = gl.createProgram();
+            gl.attachShader(shaderProgram, vertexShader);
+            gl.attachShader(shaderProgram, fragmentShader);
+            gl.linkProgram(shaderProgram);
+            const positionAttributeLocation = gl.getAttribLocation(shaderProgram, "position");
+            const resolutionUniformLocation = gl.getUniformLocation(shaderProgram, "iResolution");
+            const timeUniformLocation = gl.getUniformLocation(shaderProgram, "iTime");
+            const positionBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            function render(time) {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+                gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(shaderProgram);
+                gl.enableVertexAttribArray(positionAttributeLocation);
+                gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+                gl.vertexAttribPointer(positionAttributeLocation, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform2f(resolutionUniformLocation, gl.canvas.width, gl.canvas.height);
+                gl.uniform1f(timeUniformLocation, time * 0.001);
+                gl.drawArrays(gl.TRIANGLES, 0, 6);
+                requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        }
+        window.onload = main;
+    </script>
+</body>
+</html>

@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shader: IMG_1399</title>
+    <style>body {{ margin: 0; overflow: hidden; background-color: #000; }} canvas {{ display: block; width: 100vw; height: 100vh; }}</style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float; uniform vec2 iResolution; uniform float iTime;
+        
+void main() {
+    vec2 uv = gl_FragCoord.xy / iResolution.xy;
+    vec2 p = uv * 2.0 - 1.0;
+    p.x *= iResolution.x / iResolution.y;
+
+    // Background: Store interior with checkered floor
+    vec3 col = vec3(0.85, 0.85, 0.85); // Wall color
+    
+    // Top wall section (brick texture)
+    if (p.y > 0.6) {
+        col = vec3(0.9, 0.85, 0.8); 
+        float brickW = fract(p.x * 10.0);
+        float brickH = fract(p.y * 15.0);
+        // Offset alternate rows
+        if (fract(p.y * 15.0 * 0.5) > 0.5) brickW = fract(p.x * 10.0 + 0.5);
+        
+        float mortar = step(0.95, brickW) + step(0.9, brickH);
+        if (mortar > 0.0) col = vec3(0.7, 0.65, 0.6); // Mortar color
+    }
+    
+    // Clothing Racks in Background
+    if (p.y > 0.0 && p.y < 0.6) {
+        col = vec3(0.15); // Dark background depth
+        
+        // Rack structure (black metal lines)
+        float racks = step(0.98, fract(p.x * 5.0)) + step(abs(p.y - 0.4), 0.01) + step(abs(p.y - 0.1), 0.01);
+        if (racks > 0.0) col = vec3(0.05);
+        
+        // Clothes hanging on racks
+        vec2 cp = fract(p * vec2(15.0, 5.0)) - 0.5;
+        if (length(cp * vec2(0.5, 1.0)) < 0.4) {
+            // Random colors for shirts
+            float rnd = fract(floor(p.x * 15.0) * 12.3 + floor(p.y * 5.0) * 45.6);
+            if (rnd < 0.2) col = vec3(0.8, 0.2, 0.2); // Red
+            else if (rnd < 0.4) col = vec3(0.2, 0.3, 0.8); // Blue
+            else if (rnd < 0.6) col = vec3(0.9, 0.9, 0.2); // Yellow
+            else col = vec3(0.9); // White
+            
+            // Shirt folds
+            col *= 0.8 + 0.2 * sin(cp.x * 20.0);
+        }
+        
+        // Shelf with folded clothes on bottom left
+        if (p.x < -0.4 && p.y < 0.2) {
+             col = vec3(0.4, 0.4, 0.45); // Grey stacks
+             float folds = fract(p.y * 40.0);
+             if (folds < 0.1) col = vec3(0.2); // Shadow between items
+        }
+    }
+    
+    // Checkered Floor
+    if (p.y <= 0.0) {
+        // Perspective projection for floor
+        vec2 floorUV = vec2(p.x / (p.y + 0.5), 1.0 / (p.y + 0.5));
+        
+        // Black and white checkerboard
+        float checkers = step(0.5, fract(floorUV.x * 3.0)) == step(0.5, fract(floorUV.y * 3.0)) ? 1.0 : 0.0;
+        col = mix(vec3(0.1), vec3(0.9), checkers);
+        
+        // Fade floor to black in distance (depth shading)
+        col *= smoothstep(-0.2, 0.2, -p.y);
+    }
+    
+    // Main Subject (Person taking mirror selfie)
+    
+    // Torso (Striped Shirt)
+    vec2 torsoP = p - vec2(0.0, 0.0);
+    float torso = length(max(abs(torsoP) - vec2(0.25, 0.35), 0.0)) - 0.05;
+    
+    // Left Arm
+    float armL = length(max(abs(torsoP - vec2(-0.3, -0.1)) - vec2(0.06, 0.2), 0.0)) - 0.02;
+    // Right Arm (holding phone)
+    float armR1 = length(max(abs(torsoP - vec2(0.35, 0.1)) - vec2(0.05, 0.15), 0.0)) - 0.02; // Upper arm
+    float armR2 = length(max(abs(torsoP - vec2(0.2, 0.3)) - vec2(0.15, 0.04), 0.0)) - 0.02; // Lower arm crossing chest
+    
+    if (torso < 0.0 || armL < 0.0 || armR1 < 0.0 || armR2 < 0.0) {
+        
+        // Shirt Base Color (White/Light Grey)
+        col = vec3(0.9, 0.9, 0.95);
+        
+        // Vertical Stripes Pattern
+        // Project coordinates for clothing to make stripes flow
+        vec2 clothUV = torsoP;
+        if (armL < 0.0 && torso > 0.0) clothUV.x -= 0.1; // Offset stripes on arms
+        
+        // Animation: Stripes moving/flowing slightly to simulate fabric shift
+        float stripeAnim = sin(clothUV.y * 5.0 + iTime * 2.0) * 0.02;
+        
+        float stripes = step(0.5, fract((clothUV.x + stripeAnim) * 12.0));
+        
+        // Stripe color (Dark Grey/Blueish)
+        vec3 stripeCol = vec3(0.3, 0.35, 0.4);
+        col = mix(col, stripeCol, stripes);
+        
+        // Collar
+        float collarL = length(max(abs(torsoP - vec2(-0.15, 0.35)) - vec2(0.05, 0.08), 0.0));
+        float collarR = length(max(abs(torsoP - vec2(0.15, 0.35)) - vec2(0.05, 0.08), 0.0));
+        if (collarL < 0.01 || collarR < 0.01) {
+            // Solid dark grey for collar lapels
+            col = stripeCol;
+        }
+        
+        // Pocket with Snoopy Logo
+        float pocket = length(max(abs(torsoP - vec2(-0.12, 0.15)) - vec2(0.06, 0.07), 0.0));
+        if (pocket < 0.01) {
+            // Pocket Outline
+            if (pocket > 0.005) col = vec3(0.2);
+            else {
+                // Inside pocket - align stripes
+                col = mix(vec3(0.9,0.9,0.95), stripeCol, step(0.5, fract((clothUV.x + stripeAnim)*12.0)));
+                
+                // Snoopy Head abstraction
+                float snoopyHead = length(max(abs(torsoP - vec2(-0.12, 0.15)) - vec2(0.03, 0.02), 0.0)) - 0.01;
+                float snoopyEar = length(max(abs(torsoP - vec2(-0.08, 0.13)) - vec2(0.01, 0.03), 0.0)) - 0.005;
+                float snoopyNose = length(torsoP - vec2(-0.16, 0.15)) - 0.01;
+                
+                if (snoopyHead < 0.0) col = vec3(0.95); // White head
+                if (snoopyEar < 0.0 || snoopyNose < 0.0) col = vec3(0.1); // Black ear/nose
+            }
+        }
+        
+        // Center button seam
+        float seam = abs(torsoP.x - 0.02);
+        if (seam < 0.01 && torsoP.y < 0.35) {
+            col = mix(col, vec3(0.2), 0.3); // Shadow for seam
+            // Buttons
+            if (fract(torsoP.y * 5.0) < 0.1) col = vec3(0.1); // Black buttons
+        }
+        
+        // Fabric shading
+        float folds = sin(torsoP.x * 15.0 + torsoP.y * 10.0);
+        col *= 0.8 + 0.2 * smoothstep(-1.0, 1.0, folds);
+    }
+    
+    // Skin (Arms and Neck)
+    float neck = length(max(abs(torsoP - vec2(0.0, 0.4)) - vec2(0.05, 0.05), 0.0));
+    float bareArmL = length(max(abs(torsoP - vec2(-0.35, -0.35)) - vec2(0.03, 0.15), 0.0)) - 0.02; // Left forearm
+    float handL = length(max(abs(torsoP - vec2(-0.2, -0.4)) - vec2(0.05, 0.04), 0.0)) - 0.01; // Left hand doing peace sign
+    float handR = length(max(abs(torsoP - vec2(0.05, 0.35)) - vec2(0.04, 0.05), 0.0)) - 0.02; // Right hand holding phone
+    
+    if (neck < 0.02 || bareArmL < 0.0 || handL < 0.0 || handR < 0.0) {
+        col = vec3(0.9, 0.7, 0.6); // Skin tone
+        // Muscle/arm shading
+        if (bareArmL < 0.0) col *= 0.8 + 0.2 * sin(torsoP.x * 40.0);
+    }
+
+    // Shorts (Matching Striped pattern)
+    vec2 shortsP = p - vec2(0.0, -0.6);
+    float shortsL = length(max(abs(shortsP - vec2(-0.15, 0.0)) - vec2(0.1, 0.2), 0.0)) - 0.02;
+    float shortsR = length(max(abs(shortsP - vec2(0.15, 0.0)) - vec2(0.1, 0.2), 0.0)) - 0.02;
+    
+    if (shortsL < 0.0 || shortsR < 0.0) {
+        vec3 stripeCol = vec3(0.3, 0.35, 0.4);
+        
+        // Animation for shorts
+        float stripeAnim = sin(shortsP.y * 5.0 - iTime * 2.0) * 0.02;
+        float stripes = step(0.5, fract((shortsP.x + stripeAnim) * 12.0));
+        
+        col = mix(vec3(0.9, 0.9, 0.95), stripeCol, stripes);
+        
+        // Crotch shadow
+        if (abs(shortsP.x) < 0.05 && shortsP.y > -0.1) col *= 0.5;
+        // Leg folds
+        col *= 0.8 + 0.2 * sin(shortsP.x * 20.0);
+    }
+    
+    // Bare Legs
+    float legL = length(max(abs(shortsP - vec2(-0.15, -0.3)) - vec2(0.04, 0.1), 0.0)) - 0.02;
+    float legR = length(max(abs(shortsP - vec2(0.15, -0.3)) - vec2(0.04, 0.1), 0.0)) - 0.02;
+    if (legL < 0.0 || legR < 0.0) {
+        col = vec3(0.9, 0.7, 0.6); // Skin tone
+        col *= 0.7 + 0.3 * sin(shortsP.x * 40.0); // Shading
+    }
+
+    // Head
+    float head = length(p - vec2(0.0, 0.55)) - 0.12;
+    if (head < 0.0) {
+        col = vec3(0.9, 0.7, 0.6); // Skin
+        
+        // Hair (Short dark fade)
+        float hair = length(max(abs(p - vec2(0.0, 0.62)) - vec2(0.1, 0.05), 0.0)) - 0.03;
+        if (hair < 0.0) col = vec3(0.1, 0.1, 0.1);
+        
+        // Ears
+        if (abs(p.x) > 0.1 && head < -0.05) col = vec3(0.8, 0.6, 0.5);
+    }
+    
+    // Phone (covering face)
+    float phone = length(max(abs(p - vec2(0.05, 0.45)) - vec2(0.06, 0.12), 0.0)) - 0.02;
+    if (phone < 0.0) {
+        col = vec3(0.15); // Black phone case
+        // Camera lens cluster
+        float lens = length(p - vec2(0.02, 0.52)) - 0.02;
+        if (lens < 0.0) col = vec3(0.05);
+        // Reflection on phone
+        float flash = exp(-50.0 * pow(p.x - 0.05 + p.y - 0.45, 2.0));
+        col += vec3(0.5) * flash;
+    }
+
+    gl_FragColor = vec4(col, 1.0);
+}
+
+    </script>
+    <script>
+        function main() {
+            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
+            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            
+            if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+                console.error("Link error: " + gl.getProgramInfoLog(prog));
+                console.error("FS Log: " + gl.getShaderInfoLog(fs));
+            }
+
+            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
+            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            function render(t) {
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        } window.onload = main;
+    </script>
+</body>
+</html>

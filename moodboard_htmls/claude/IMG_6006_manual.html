@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shader: IMG_6006 Banh Mi Ha Noi</title>
+    <style>body { margin: 0; overflow: hidden; background-color: #000; } canvas { display: block; width: 100vw; height: 100vh; }</style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float;
+        uniform vec2 iResolution;
+        uniform float iTime;
+
+        // TIMESCALES:
+        // t * 0.01  ultra-slow building drift
+        // t * 0.08  slow rain / traffic
+        // t * 0.5   medium neon flicker envelope
+        // t * 6.0   fast buzz modulation
+
+        // =================== UTILITIES ===================
+        float hash(vec2 p) {
+            p = fract(p * vec2(127.1, 311.7));
+            p += dot(p, p + 19.19);
+            return fract(p.x * p.y);
+        }
+        float hash1(float x) { return fract(sin(x * 127.391) * 43758.5453); }
+        vec2 hash2(vec2 p) { return vec2(hash(p), hash(p + vec2(31.7, 91.3))); }
+
+        float noise(vec2 p) {
+            vec2 i = floor(p); vec2 f = fract(p);
+            vec2 u = f * f * (3.0 - 2.0 * f);
+            return mix(mix(hash(i), hash(i+vec2(1,0)), u.x),
+                       mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), u.x), u.y);
+        }
+        float fbm(vec2 p) {
+            float v = 0.0; float a = 0.5;
+            for(int i = 0; i < 6; i++) {
+                v += a * noise(p);
+                p = p * 2.3 + vec2(1.7, 9.2);
+                a *= 0.5;
+            }
+            return v;
+        }
+        vec3 hsv2rgb(vec3 c) {
+            vec3 p = abs(fract(c.xxx + vec3(1.0, 2.0/3.0, 1.0/3.0)) * 6.0 - 3.0);
+            return c.z * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), c.y);
+        }
+        vec2 warp(vec2 p, float t) {
+            return p + 0.4 * vec2(fbm(p * 2.0 + t * 0.1), fbm(p * 2.0 + 3.7 + t * 0.09));
+        }
+        float sdBox(vec2 p, vec2 b) {
+            vec2 d = abs(p) - b;
+            return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+        }
+        float sdLine(vec2 p, vec2 a, vec2 b) {
+            vec2 pa = p-a, ba = b-a;
+            return length(pa - ba * clamp(dot(pa,ba)/dot(ba,ba), 0.0, 1.0));
+        }
+        float sdCircle(vec2 p, float r) { return length(p) - r; }
+
+        // =================== NEON BUZZ ===================
+        float neonBuzz(float t) {
+            // Base brightness with high-frequency buzz
+            float buzz = 0.93 + 0.07 * sin(t * 6.0 * 6.283) * sin(t * 17.3);
+            // Occasional static interruption every ~6 seconds
+            float tmod = mod(t, 6.3);
+            float staticHit = smoothstep(0.0, 0.05, tmod) * (1.0 - smoothstep(0.05, 0.12, tmod));
+            buzz *= 1.0 - staticHit * (0.5 + 0.5 * hash(vec2(floor(t * 20.0), 1.0)));
+            // Rare full-off flicker
+            float offCycle = smoothstep(5.8, 5.85, tmod) * (1.0 - smoothstep(5.85, 5.95, tmod));
+            buzz *= 1.0 - offCycle;
+            return clamp(buzz, 0.0, 1.0);
+        }
+
+        // Per-letter neon variation
+        float letterGlow(float letterIdx, float t) {
+            float ph = letterIdx * 0.71 + t * 0.15;
+            return 0.88 + 0.12 * sin(ph);
+        }
+
+        // =================== GREEN AWNING SIGN ===================
+        vec3 awningSign(vec2 p, float t, float aspect) {
+            // Awning box: centered around y=0.60, x from -0.7*aspect to 0.7*aspect
+            vec2 awningP = p - vec2(0.0, 0.60);
+            float awningBox = sdBox(awningP, vec2(0.72 * aspect, 0.11));
+            float awningMask = smoothstep(0.008, -0.004, awningBox);
+
+            // Green background
+            float buzz = neonBuzz(t);
+            vec3 greenBg = vec3(0.04, 0.38, 0.10) * buzz;
+
+            // Sign hum micro-vibration
+            float hum = sin(t * 60.0) * 0.0008 + sin(t * 83.0) * 0.0005;
+            vec2 humP = awningP + vec2(hum, hum * 0.5);
+
+            // "BANH MI HA NOI" — 14 characters, simulate as glow blobs
+            vec3 textGlow = vec3(0.0);
+            float charSpacing = 0.085 * aspect;
+            float textStartX = -0.56 * aspect;
+            for(int ci = 0; ci < 14; ci++) {
+                float fci = float(ci);
+                float cxPos = textStartX + fci * charSpacing;
+                float cyPos = 0.0;
+                vec2 charP = humP - vec2(cxPos, cyPos);
+                float charBox = sdBox(charP, vec2(0.028 * aspect, 0.055));
+                float hue = 0.35 + fci * 0.008; // slightly varying green hues
+                float lg = letterGlow(fci, t) * buzz;
+                vec3 letterCol = hsv2rgb(vec3(hue, 0.6, 1.0)) * lg;
+                textGlow += letterCol * exp(-charBox * 18.0) * 0.6;
+                textGlow += letterCol * smoothstep(0.003, -0.001, charBox) * 0.4;
+            }
+
+            // Gold border/trim
+            float borderMask = smoothstep(0.012, 0.002, abs(awningBox) - 0.005);
+            vec3 goldTrim = vec3(0.95, 0.82, 0.15) * borderMask * 0.8;
+
+            return (greenBg + textGlow + goldTrim) * awningMask;
+        }
+
+        // =================== RED LUNAR BANNER ===================
+        vec3 lunarBanner(vec2 p, float t, float aspect) {
+            vec2 bP = p - vec2(0.0, 0.44);
+            float bannerBox = sdBox(bP, vec2(0.65 * aspect, 0.065));
+            float bannerMask = smoothstep(0.006, -0.003, bannerBox);
+
+            vec3 redBg = vec3(0.82, 0.08, 0.06);
+
+            // Gold decoration: diamond shapes
+            vec3 goldDec = vec3(0.0);
+            for(int di = 0; di < 8; di++) {
+                float fdi = float(di);
+                float dx = -0.55 * aspect + fdi * 0.16 * aspect;
+                vec2 diamondP = bP - vec2(dx, 0.0);
+                float diamond = abs(diamondP.x) + abs(diamondP.y) * 2.0 - 0.018;
+                goldDec += vec3(0.95, 0.82, 0.12) * smoothstep(0.006, -0.002, diamond);
+            }
+
+            // Hanging lanterns (3, swinging)
+            vec3 lanterns = vec3(0.0);
+            for(int li = 0; li < 3; li++) {
+                float fli = float(li);
+                float lx = -0.3 * aspect + fli * 0.3 * aspect;
+                float swing = sin(t * 0.7 + fli * 1.2) * 0.025;
+                vec2 lCtr = vec2(lx + swing, 0.38);
+                // Lantern body (circle)
+                float lanternBody = sdCircle(p - lCtr, 0.018);
+                float lanternMask = smoothstep(0.006, -0.002, lanternBody);
+                // Tassel
+                float tasselDist = sdLine(p, lCtr + vec2(0.0, 0.018), lCtr + vec2(sin(t*1.1+fli)*0.008, 0.045));
+                vec3 lanternCol = hsv2rgb(vec3(0.02, 0.95, 0.95));
+                lanterns += lanternCol * (lanternMask + exp(-tasselDist * 35.0) * 0.5);
+                // Glow
+                lanterns += lanternCol * exp(-length(p - lCtr) * 12.0) * 0.25;
+            }
+
+            return (redBg + goldDec) * bannerMask + lanterns;
+        }
+
+        // =================== BUILDING ===================
+        vec3 building(vec2 p, float t, float aspect) {
+            // White facade
+            float buildingBox = sdBox(p - vec2(0.0, 0.2), vec2(0.82 * aspect, 0.85));
+            float buildingMask = smoothstep(0.01, -0.01, buildingBox);
+            vec3 wallCol = vec3(0.88, 0.87, 0.84);
+            // Wall staining
+            float stain = fbm(warp(p * 3.0, t * 0.01)) * 0.06;
+            wallCol -= stain;
+
+            // Upper floor windows with silhouettes
+            vec3 windowCol = vec3(0.0);
+            for(int wi = 0; wi < 6; wi++) {
+                float fwi = float(wi);
+                float wx = -0.55 * aspect + fwi * 0.22 * aspect;
+                float wyBase = 0.72;
+                for(int wj = 0; wj < 2; wj++) {
+                    float wy = wyBase + float(wj) * 0.14;
+                    vec2 winP = p - vec2(wx, wy);
+                    float win = sdBox(winP, vec2(0.06 * aspect, 0.045));
+                    float lit = hash1(fwi * 7.3 + float(wj));
+                    vec3 winColor = lit > 0.4 ? vec3(0.92, 0.85, 0.62) : vec3(0.12, 0.10, 0.08);
+                    windowCol += winColor * smoothstep(0.005, -0.003, win);
+                    // Silhouette figure moving behind curtain
+                    if(lit > 0.4) {
+                        float figX = sin(t * (0.15 + lit * 0.12) + fwi * 2.1) * 0.03;
+                        vec2 figP = winP - vec2(figX, 0.0);
+                        float figShape = sdBox(figP, vec2(0.008 * aspect, 0.028));
+                        windowCol -= vec3(0.25) * smoothstep(0.004, -0.002, figShape)
+                                     * smoothstep(0.005, -0.003, win);
+                    }
+                }
+            }
+
+            // Rain streaks running down facade
+            vec3 rainCol = vec3(0.0);
+            for(int ri = 0; ri < 12; ri++) {
+                float fri = float(ri);
+                float rx = -0.7 * aspect + fri * 0.13 * aspect + hash1(fri * 3.7) * 0.05 * aspect;
+                float rspd = 0.3 + hash1(fri * 5.1) * 0.2;
+                float ry = mod(p.y - t * rspd + hash1(fri * 2.3), 1.8) - 0.9;
+                float rLen = 0.04 + hash1(fri * 7.3) * 0.06;
+                float rDist = sdLine(p, vec2(rx, ry), vec2(rx - 0.003, ry - rLen));
+                rainCol += vec3(0.70, 0.72, 0.78) * exp(-rDist * 45.0) * 0.18 * buildingMask;
+            }
+
+            return wallCol * buildingMask + windowCol + rainCol;
+        }
+
+        // =================== STEAM WISPS ===================
+        vec3 steam(vec2 p, float t) {
+            vec3 col = vec3(0.0);
+            // 3 steam wisps rising from behind counter (around y=0.50, lower part of building)
+            for(int si = 0; si < 3; si++) {
+                float fsi = float(si);
+                float sx = -0.15 + fsi * 0.15;
+                float rise = mod(t * 0.12 + fsi * 0.33, 1.0);
+                float sy = 0.45 + rise * 0.25;
+                float wispX = sx + sin(t * 0.8 + fsi * 2.1 + rise * 3.14) * 0.025 * rise;
+                vec2 wispP = p - vec2(wispX, sy);
+                float wispR = 0.015 + rise * 0.022;
+                float wispD = length(wispP) - wispR;
+                float opacity = (1.0 - rise) * 0.25;
+                col += vec3(0.85, 0.88, 0.90) * exp(-wispD * 20.0) * opacity;
+            }
+            return col;
+        }
+
+        // =================== CAR TRAFFIC ===================
+        vec3 traffic(vec2 p, float t, float aspect) {
+            vec3 col = vec3(0.0);
+            // Car 1: going right
+            float c1x = mod(t * 0.14 - 1.2, 2.8) - 1.4;
+            vec2 c1P = p - vec2(c1x * aspect, 0.26);
+            float c1Body = sdBox(c1P, vec2(0.085 * aspect, 0.038));
+            col += vec3(0.20, 0.19, 0.18) * smoothstep(0.006, -0.003, c1Body);
+            // Headlights (going right = rear lights red)
+            float rl1 = length(c1P - vec2(-0.088 * aspect, 0.0)) - 0.010;
+            col += vec3(0.85, 0.1, 0.08) * exp(-rl1 * 25.0) * 0.5;
+
+            // Car 2: going left (white SUV-ish)
+            float c2x = mod(-t * 0.10 + 0.8, 2.8) - 1.4;
+            vec2 c2P = p - vec2(c2x * aspect, 0.27);
+            float c2Body = sdBox(c2P, vec2(0.10 * aspect, 0.042));
+            col += vec3(0.78, 0.77, 0.75) * smoothstep(0.007, -0.003, c2Body);
+            // Headlights (going left = front lights white)
+            float hl2 = length(c2P - vec2(-0.104 * aspect, 0.0)) - 0.008;
+            col += vec3(0.95, 0.92, 0.80) * exp(-hl2 * 28.0) * 0.6;
+
+            // Car 3: parked (white SUV reference)
+            vec2 c3P = p - vec2(0.35 * aspect, 0.27);
+            float c3Body = sdBox(c3P, vec2(0.12 * aspect, 0.045));
+            col += vec3(0.82, 0.81, 0.79) * smoothstep(0.008, -0.004, c3Body);
+
+            return col;
+        }
+
+        // =================== WET PAVEMENT REFLECTION ===================
+        vec3 wetPavement(vec2 p, float t, float aspect) {
+            // Only below street level (uv.y < 0.32)
+            // Reflect sign and banner with wobble
+            float ripple = sin(p.x * 14.0 + t * 2.5) * 0.008
+                         + sin(p.x * 7.0 - t * 1.8) * 0.006;
+            // Green sign reflection
+            float reflY_sign = 2.0 * 0.30 - (p.y + ripple);  // flip around street level
+            vec2 reflP_sign = vec2(p.x, reflY_sign);
+            float signRefl = sdBox(reflP_sign - vec2(0.0, 0.60), vec2(0.72 * aspect, 0.11));
+            vec3 greenRefl = vec3(0.04, 0.38, 0.10) * neonBuzz(t) * exp(-signRefl * 8.0) * 0.45;
+
+            // Red banner reflection
+            float reflY_ban = 2.0 * 0.30 - (p.y + ripple * 1.3);
+            vec2 reflP_ban = vec2(p.x, reflY_ban);
+            float banRefl = sdBox(reflP_ban - vec2(0.0, 0.44), vec2(0.65 * aspect, 0.065));
+            vec3 redRefl = vec3(0.82, 0.08, 0.06) * exp(-banRefl * 8.0) * 0.35;
+
+            // Pavement color
+            vec3 pavCol = vec3(0.22, 0.21, 0.20);
+            float wetSheen = noise(p * 6.0 + t * 0.02) * 0.08;
+            pavCol += wetSheen;
+
+            return pavCol + greenRefl + redRefl;
+        }
+
+        // =================== RAIN STREAKS (foreground) ===================
+        vec3 rain(vec2 p, float t) {
+            vec3 col = vec3(0.0);
+            for(int ri = 0; ri < 18; ri++) {
+                float fri = float(ri);
+                float rx = -1.0 + hash1(fri * 4.1) * 2.0;
+                float angle = -0.08; // slight angle
+                float rspd = 0.35 + hash1(fri * 7.2) * 0.20;
+                float ry = mod(p.y - t * rspd + hash1(fri * 2.9), 2.2) - 1.1;
+                float rLen = 0.03 + hash1(fri * 6.3) * 0.04;
+                vec2 ra = vec2(rx + angle * ry * 0.5, ry);
+                vec2 rb = vec2(rx + angle * (ry - rLen) * 0.5, ry - rLen);
+                float rd = sdLine(p, ra, rb);
+                col += vec3(0.65, 0.68, 0.74) * exp(-rd * 55.0) * 0.14;
+            }
+            return col;
+        }
+
+        // =================== PARTICLES ===================
+        vec3 particles(vec2 p, float t) {
+            vec3 col = vec3(0.0);
+            for(int i = 0; i < 14; i++) {
+                float fi = float(i);
+                vec2 seed = vec2(fi * 7.31, fi * 11.73);
+                vec2 pos = hash2(seed) * 2.2 - 1.1;
+                pos.y = mod(pos.y - t * (0.06 + hash1(fi) * 0.08), 2.2) - 1.1;
+                float d = length(p - pos);
+                float flicker = 0.4 + 0.6 * sin(t * 2.0 + fi * 2.71);
+                vec3 pc = hsv2rgb(vec3(0.35 + fi * 0.04, 0.5, 0.9));
+                col += pc * exp(-d * 85.0) * flicker * 0.30;
+            }
+            return col;
+        }
+
+        // =================== MAIN ===================
+        void main() {
+            vec2 uv = gl_FragCoord.xy / iResolution.xy;
+            float aspect = iResolution.x / iResolution.y;
+            vec2 p = uv * 2.0 - 1.0;
+            p.x *= aspect;
+
+            float t = iTime;
+            vec3 col = vec3(0.0);
+
+            // ---- SKY (top 20%) ----
+            float skyMask = smoothstep(0.75, 0.82, uv.y);
+            vec3 skyCol = mix(vec3(0.48, 0.52, 0.62), vec3(0.58, 0.62, 0.72), uv.y);
+            col = mix(col, skyCol, skyMask);
+
+            // ---- BUILDING ----
+            col += building(p, t, aspect) * smoothstep(0.25, 0.30, uv.y);
+
+            // ---- STEAM ----
+            col += steam(p, t);
+
+            // ---- GREEN AWNING SIGN ----
+            {
+                vec3 signCol = awningSign(p, t, aspect);
+                // Additive neon glow around sign
+                float signDist = sdBox(p - vec2(0.0, 0.60), vec2(0.72 * aspect, 0.11));
+                vec3 neonGreen = vec3(0.04, 0.90, 0.20) * neonBuzz(t);
+                col += neonGreen * exp(-signDist * 10.0) * 0.12;
+                col += signCol;
+            }
+
+            // ---- RED LUNAR BANNER ----
+            col += lunarBanner(p, t, aspect);
+
+            // ---- TRAFFIC ----
+            float streetMask = smoothstep(0.22, 0.28, uv.y) * smoothstep(0.34, 0.30, uv.y);
+            col += traffic(p, t, aspect) * streetMask;
+
+            // ---- WET PAVEMENT ----
+            float pavMask = smoothstep(0.27, 0.22, uv.y);
+            col = mix(col, wetPavement(p, t, aspect), pavMask * 0.85);
+
+            // ---- RAIN (foreground, slight angle) ----
+            col += rain(p, t) * 0.65;
+
+            // ---- PARTICLES ----
+            col += particles(p, t) * 0.4;
+
+            // ---- ADDITIVE GLOW: green neon bleeding down ----
+            float signCenterDist = abs(p.x) * 0.5 + abs(p.y - 0.60) * 0.3;
+            col += vec3(0.04, 0.65, 0.12) * exp(-signCenterDist * 4.0) * neonBuzz(t) * 0.06;
+
+            // ---- FILM GRAIN ----
+            float grain = (hash(uv * 900.0 + t) - 0.5) * 0.038;
+            col += grain;
+
+            // ---- CHROMATIC ABERRATION (green channel dominant) ----
+            vec2 caDir = normalize(p + 0.001);
+            float caAmt = 0.007;
+            col.r += (hash((uv + caDir * caAmt * 1.5) * 860.0 + t) - 0.5) * 0.009;
+            col.b += (hash((uv - caDir * caAmt * 1.2) * 930.0 + t) - 0.5) * 0.007;
+            // Green channel gets minimal shift — it's dominant
+            float edgeCA = pow(length(p) / (length(vec2(aspect, 1.0)) * 0.7), 1.5);
+            col.r = mix(col.r, col.r - edgeCA * 0.022, 0.5);
+            col.b = mix(col.b, col.b - edgeCA * 0.018, 0.5);
+
+            // ---- TONE MAP ----
+            col = pow(clamp(col, 0.0, 1.0), vec3(0.85));
+            gl_FragColor = vec4(col, 1.0);
+        }
+    </script>
+    <script>
+        function main() {
+            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
+            if (!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) { console.error("FS error:", gl.getShaderInfoLog(fs)); }
+            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
+            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            function render(t) {
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        } window.onload = main;
+    </script>
+</body>
+</html>

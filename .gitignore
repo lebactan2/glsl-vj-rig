@@ -1,0 +1,17 @@
+# dependencies
+node_modules/
+
+# python caches
+__pycache__/
+*.pyc
+
+# generated / heavy artifacts
+screenshots_backup/
+vj/verify_screenshot.png
+
+# rembg foreground mattes (regenerate via vj/generate_mattes.py)
+*.matte.png
+
+# os
+Thumbs.db
+.DS_Store

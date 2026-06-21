@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shader: IMG_0188</title>
+    <style>body { margin: 0; overflow: hidden; background-color: #000; } canvas { display: block; width: 100vw; height: 100vh; }</style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float; uniform vec2 iResolution; uniform float iTime;
+
+        float hash(vec2 p) {
+            p = fract(p * vec2(127.1, 311.7));
+            p += dot(p, p + 17.5);
+            return fract(p.x * p.y);
+        }
+        float hash1(float n) { return fract(sin(n) * 43758.5453); }
+
+        float noise(vec2 p) {
+            vec2 i = floor(p); vec2 f = fract(p);
+            vec2 u = f * f * (3.0 - 2.0 * f);
+            return mix(mix(hash(i), hash(i+vec2(1,0)), u.x),
+                       mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), u.x), u.y);
+        }
+
+        float fbm(vec2 p) {
+            float v = 0.0; float a = 0.5;
+            for (int i = 0; i < 5; i++) { v += a * noise(p); p = p * 2.1 + vec2(1.7, 9.2); a *= 0.5; }
+            return v;
+        }
+
+        vec2 domainWarp(vec2 p, float t) {
+            float s = 0.6;
+            return p + s * vec2(fbm(p + t*0.12), fbm(p + vec2(3.7, 1.9) + t*0.1));
+        }
+
+        vec3 hsv2rgb(vec3 c) {
+            vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
+            vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+            return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+        }
+
+        float sdBox(vec2 p, vec2 b) {
+            vec2 d = abs(p) - b;
+            return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+        }
+        float sdCircle(vec2 p, float r) { return length(p) - r; }
+        float sdSegment(vec2 p, vec2 a, vec2 b) {
+            vec2 pa = p-a, ba = b-a;
+            float h = clamp(dot(pa,ba)/dot(ba,ba), 0.0, 1.0);
+            return length(pa - ba*h);
+        }
+
+        // Diamond lattice gate with ripple propagation
+        float diamondLattice(vec2 uv, float t) {
+            // Ripple from center: wave propagating outward
+            float rippleDist = length(uv - vec2(0.5, 0.28));
+            float ripple = sin(rippleDist * 28.0 - t * 2.2) * 0.008;
+            // Heat shimmer
+            float shimmerX = sin(uv.y * 40.0 + t*1.5) * 0.003;
+            float shimmerY = cos(uv.x * 35.0 + t*1.2) * 0.002;
+            vec2 su = uv + vec2(shimmerX + ripple, shimmerY + ripple);
+
+            float spacing = 0.055;
+            float lineW = 0.005;
+            float d1 = mod(su.x + su.y, spacing);
+            d1 = min(d1, spacing - d1);
+            float d2 = mod(su.x - su.y, spacing);
+            d2 = min(d2, spacing - d2);
+
+            float gate = 1.0 - smoothstep(lineW*0.5, lineW, min(d1, d2));
+            // Metal brightness varies with ripple wave
+            float metalWave = sin(rippleDist * 20.0 - t * 2.0) * 0.2 + 0.8;
+            float metal = sin((uv.x+uv.y)*60.0 + t*4.0)*0.3 + 0.7;
+            metal *= sin((uv.x-uv.y)*50.0 - t*3.0)*0.2 + 0.8;
+            return gate * metal * metalWave;
+        }
+
+        // Square grid railing
+        float squareGrid(vec2 uv, float t) {
+            float spacing = 0.045;
+            float lineW = 0.004;
+            float gx = mod(uv.x, spacing); gx = min(gx, spacing - gx);
+            float gy = mod(uv.y, spacing); gy = min(gy, spacing - gy);
+            float hLine = 1.0 - smoothstep(lineW*0.5, lineW, gy);
+            float vLine = 1.0 - smoothstep(lineW*0.5, lineW, gx);
+            return max(hLine, vLine);
+        }
+
+        // Teal wall with paint chips and moss
+        vec3 tealWallColor(vec2 uv, float t) {
+            float wallHue = sin(t*0.4)*0.05;
+            vec3 base = vec3(0.2+wallHue, 0.4-wallHue*0.3, 0.38+wallHue*0.5);
+            // Stone texture via fbm
+            float stone = fbm(uv*10.0 + vec2(0.3, 0.7));
+            base += stone * 0.04;
+            // Dark paint chip spots
+            float chip1 = step(0.82, hash(floor(uv * vec2(18.0, 25.0))));
+            float chip2 = fbm(uv*20.0 + vec2(1.1, 2.3)) - 0.55;
+            base -= vec3(0.08, 0.06, 0.05) * chip1 * 0.5;
+            // Moss patches (dark green-grey spots)
+            float moss = fbm(uv*8.0 + vec2(5.0, 2.0));
+            float mossMask = step(0.72, moss);
+            base = mix(base, vec3(0.12, 0.22, 0.18), mossMask * 0.4);
+            // Color cycle between teal and blue-green
+            base = mix(base, vec3(0.12, 0.38, 0.42), sin(t*0.3)*0.5+0.5);
+            return base;
+        }
+
+        // Lens flare starburst (4-pointed)
+        float lensFlareStar(vec2 uv, vec2 center, float t) {
+            vec2 p = uv - center;
+            float angle = atan(p.y, p.x);
+            float dist = length(p);
+            // 4-pointed starburst: bright on cardinal angles
+            float starBright = pow(abs(cos(angle * 2.0)), 8.0);
+            float flare = starBright * exp(-dist * 10.0);
+            // Animate
+            flare *= 0.7 + 0.3 * sin(t * 1.4);
+            return flare;
+        }
+
+        void main() {
+            vec2 uv = gl_FragCoord.xy / iResolution.xy;
+            vec2 p = uv * 2.0 - 1.0;
+            p.x *= iResolution.x / iResolution.y;
+            float t = iTime;
+
+            // Chromatic aberration: blue channel shifted more
+            vec2 caOff = (uv - 0.5) * 0.005;
+            vec2 uvR = uv + caOff;
+            vec2 uvBl = uv - caOff * 1.5; // blue shifted more
+
+            float breath = sin(t*0.5)*0.5+0.5;
+
+            // --- DARK NIGHT BACKGROUND ---
+            vec3 col = vec3(0.05, 0.04, 0.03);
+            vec2 warpedUV = domainWarp(uv * 2.0, t * 0.08);
+            col += fbm(warpedUV * 3.0 + t*0.03) * 0.015;
+
+            // Amber streetlight bloom upper-left
+            float lDist = length(uv - vec2(0.1, 0.88));
+            float streetPulse = 0.7 + 0.3*sin(t*1.1);
+            float streetBloom = exp(-lDist*2.8) * streetPulse;
+            vec3 streetCol = vec3(1.0, 0.65, 0.2) * streetBloom * 0.7;
+            col += streetCol;
+            // Lens flare on streetlight
+            col += vec3(1.0, 0.8, 0.5) * lensFlareStar(uv, vec2(0.1, 0.88), t) * 0.5;
+
+            // Secondary dim haze upper-right
+            float rDist = length(uv - vec2(0.85, 0.75));
+            col += vec3(0.5, 0.35, 0.15) * exp(-rDist*5.0) * 0.2;
+
+            // --- RAIN ---
+            for (int ri = 0; ri < 22; ri++) {
+                float rf = float(ri);
+                float rxBase = hash1(rf * 2.1 + 0.5);
+                float rainT = fract(t * 0.5 + hash1(rf * 3.7));
+                float rainX = rxBase + (1.0-rainT) * 0.03; // slight angle
+                float rainY = rainT;
+                vec2 rainUV = uv - vec2(rainX, rainY);
+                vec2 rainDir = normalize(vec2(0.05, -1.0));
+                float along = dot(rainUV, rainDir);
+                float perp = abs(dot(rainUV, vec2(rainDir.y, -rainDir.x)));
+                float rainLen = 0.03 + hash1(rf)*0.05;
+                float rainMask = step(0.0, along)*step(along, rainLen);
+                rainMask *= 1.0 - smoothstep(0.0, 0.003, perp);
+                float rainAlpha = (0.12 + hash1(rf*9.0)*0.15) * rainMask;
+                col += vec3(0.55, 0.65, 0.8) * rainAlpha;
+            }
+
+            // --- TEAL WALL LEFT ---
+            float wallRight = 0.12;
+            float inWall = step(uv.x, wallRight);
+            vec3 tealWall = tealWallColor(uv, t);
+            col = mix(col, tealWall, inWall);
+            float wallEdge = 1.0 - smoothstep(0.09, 0.12, uv.x);
+            col += tealWall * wallEdge * 0.2 * inWall;
+            float wallBorder = 1.0 - smoothstep(0.0, 0.006, abs(uv.x - wallRight));
+            col += vec3(0.3, 0.55, 0.5) * wallBorder * 0.5;
+
+            // --- GATE: DIAMOND LATTICE (lower 55%) ---
+            float gateTop = 0.55;
+            float inGate = step(uv.y, gateTop) * step(wallRight, uv.x);
+
+            // Warm interior glimpse through gate bars (orange rectangle visible between bars)
+            float inInterior = step(0.15, uv.x)*step(uv.x, 0.88)*step(0.05, uv.y)*step(uv.y, gateTop*0.85);
+            float interiorPeek = exp(-sdBox(uv - vec2(0.5, 0.25), vec2(0.36, 0.22)) * 12.0) * 0.25;
+            vec3 interiorWarm = vec3(0.5, 0.28, 0.1) * interiorPeek;
+            col += interiorWarm * inGate;
+
+            // Neon signs barely visible through gate
+            for (int ni = 0; ni < 3; ni++) {
+                float nf = float(ni);
+                float nx = 0.25 + nf * 0.22;
+                float ny = 0.3 + hash1(nf*3.3)*0.15;
+                float neonLen = 0.04 + hash1(nf*5.5)*0.03;
+                float neonDist = abs(uv.y - ny) + max(0.0, abs(uv.x - nx) - neonLen);
+                float neonGlow = exp(-neonDist * 40.0) * 0.3;
+                vec3 neonCol = hsv2rgb(vec3(hash1(nf*7.7), 0.8, 1.0));
+                col += neonCol * neonGlow * inGate;
+            }
+
+            float lattice = diamondLattice(uv, t);
+            vec3 latticeCol = vec3(0.18, 0.16, 0.14) * 2.5 * lattice;
+            latticeCol += vec3(0.35, 0.30, 0.22) * lattice * (sin(uv.x*40.0+t*2.0)*0.3+0.3);
+            vec3 gateBg = vec3(0.04, 0.035, 0.03);
+            vec3 gateRegion = mix(gateBg, latticeCol, lattice);
+            col = mix(col, gateRegion, inGate * 0.85);
+
+            // --- UPPER SECTION: SQUARE RAILING (top 45%) ---
+            float inRail = step(gateTop, uv.y) * step(wallRight, uv.x);
+            float grid = squareGrid(uv, t);
+            vec3 railBg = vec3(0.06, 0.055, 0.05);
+            vec3 railLine = vec3(0.9, 0.88, 0.85);
+            railLine *= 0.85 + 0.15 * sin(t*1.8 + uv.x*5.0);
+            vec3 railRegion = mix(railBg, railLine, grid);
+            col = mix(col, railRegion, inRail);
+
+            // Dividing bar
+            float divBar = 1.0 - smoothstep(0.0, 0.008, abs(uv.y - gateTop));
+            col += vec3(0.25, 0.22, 0.18) * divBar;
+
+            // --- CAR SILHOUETTE at very bottom ---
+            vec2 carP = uv - vec2(0.55, 0.06);
+            float carBody = sdBox(carP, vec2(0.35, 0.06));
+            float carMask = 1.0 - smoothstep(0.0, 0.015, carBody);
+            col = mix(col, vec3(0.03, 0.025, 0.02), carMask);
+            float wheel1 = sdCircle(uv - vec2(0.32, 0.0), 0.048);
+            float wheel2 = sdCircle(uv - vec2(0.78, 0.0), 0.048);
+            float wheelMask = 1.0 - smoothstep(0.0, 0.01, min(wheel1, wheel2));
+            col = mix(col, vec3(0.03, 0.025, 0.02), wheelMask * step(uv.y, 0.12));
+
+            // --- PUDDLE REFLECTIONS at bottom ---
+            float puddleY = 0.07;
+            float inPuddle = step(uv.y, puddleY);
+            if (inPuddle > 0.5) {
+                // Reflected teal wall and amber light
+                float rippleP = sin(uv.x * 40.0 + t*2.0)*0.006 + sin(uv.x*22.0-t*1.5)*0.004;
+                vec2 refUV = vec2(uv.x + rippleP, puddleY*2.0 - uv.y + 0.05);
+                float tealReflect = step(refUV.x, wallRight);
+                vec3 puddleCol = mix(vec3(0.04, 0.08, 0.1), tealWallColor(refUV, t) * 0.5, tealReflect);
+                // Amber light reflection
+                float amberRef = exp(-length(refUV - vec2(0.1, 0.88))*3.0)*0.5;
+                puddleCol += vec3(0.9, 0.55, 0.15) * amberRef;
+                col = mix(col, puddleCol, inPuddle * 0.8);
+            }
+
+            // --- BOKEH DEPTH-OF-FIELD: 15 out-of-focus light blobs ---
+            for (int bi = 0; bi < 15; bi++) {
+                float bf = float(bi);
+                float bx = hash1(bf * 1.3 + 7.0);
+                float by = hash1(bf * 2.7 + 3.0);
+                float bs = 0.02 + hash1(bf*4.1)*0.04;
+                float bd = length(uv - vec2(bx, by));
+                float bokeh = exp(-bd*bd / (bs*bs)) * 0.08;
+                vec3 bokehCol = hsv2rgb(vec3(hash1(bf*8.9)*0.25+0.05, 0.5, 1.0));
+                col += bokehCol * bokeh * (1.0 - inGate*0.7);
+            }
+
+            // Gate diagonal shimmer
+            float diagShimmer = sin((uv.x+uv.y)*25.0 + t*5.0)*0.015;
+            col += vec3(0.4, 0.3, 0.1) * diagShimmer * inGate * lattice;
+
+            // Chromatic aberration at edges
+            float edgeDist = length(uv - 0.5);
+            float caStrength = smoothstep(0.25, 0.8, edgeDist);
+            col.r += noise(uvR * 12.0 + t) * 0.02 * caStrength;
+            col.b += noise(uvBl * 12.0 + t) * 0.02 * caStrength;
+
+            // Film grain
+            float grain = noise(uv * 800.0 + t * 1.3) * 0.025;
+            col += grain - 0.0125;
+
+            // Particle dust motes
+            for (int pi = 0; pi < 12; pi++) {
+                float pf = float(pi);
+                float px = fract(hash1(pf*1.9) + t*0.01);
+                float py = fract(hash1(pf*3.1) + t*0.008);
+                float pb = 0.4 + 0.6*sin(t*1.2 + pf*1.5);
+                col += vec3(0.8, 0.7, 0.5) * exp(-length(uv - vec2(px,py))*250.0) * pb * 0.06;
+            }
+
+            vec3 breathTint = mix(vec3(0.0, 0.01, 0.02), vec3(0.02, 0.01, 0.0), breath);
+            col += breathTint;
+
+            float vig = 1.0 - smoothstep(0.35, 1.2, length(uv - 0.5) * 1.6);
+            col *= vig;
+
+            col = pow(clamp(col, 0.0, 1.0), vec3(0.85));
+            gl_FragColor = vec4(col, 1.0);
+        }
+    </script>
+    <script>
+        function main() {
+            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
+            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
+            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            function render(t) {
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        } window.onload = main;
+    </script>
+</body>
+</html>

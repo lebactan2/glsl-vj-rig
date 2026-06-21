@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shader: IMG_6693</title>
+    <style>body {{ margin: 0; overflow: hidden; background-color: #000; }} canvas {{ display: block; width: 100vw; height: 100vh; }}</style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float; uniform vec2 iResolution; uniform float iTime;
+        
+void main() {
+    vec2 uv = gl_FragCoord.xy / iResolution.xy;
+    vec2 p = uv * 2.0 - 1.0;
+    p.x *= iResolution.x / iResolution.y;
+    
+    vec3 col = vec3(0.0);
+    
+    // --- Background: Shelves in a Store ---
+    col = vec3(0.85, 0.85, 0.85); // Light walls/shelves
+    
+    vec2 sp = p;
+    float shelfY = fract(sp.y * 3.0); 
+    float shelfX = fract(sp.x * 2.0); 
+    
+    if (shelfY < 0.05 || shelfX < 0.05) {
+        col = vec3(0.9); 
+    } else {
+        vec2 cellId = floor(vec2(sp.x * 2.0, sp.y * 3.0));
+        // Shifting colors on shelves animation
+        float rand = fract(sin(dot(cellId, vec2(12.9898, 78.233))) * 43758.5453 + iTime * 0.2);
+        
+        if (rand < 0.3) col = vec3(0.9, 0.8, 0.2); 
+        else if (rand < 0.5) col = vec3(0.8, 0.2, 0.2); 
+        else if (rand < 0.7) col = vec3(0.2, 0.6, 0.3); 
+        else if (rand < 0.8) col = vec3(0.3, 0.3, 0.3); 
+        else col = vec3(0.7); 
+        
+        col *= 0.8 + 0.2 * fract(sin(p.x * 50.0 + p.y * 50.0 + iTime)*100.0);
+        col *= 0.6 + 0.4 * shelfY; 
+    }
+    
+    if (p.x > 0.6 && p.y > -0.5 && p.y < 0.5) {
+        col = vec3(0.5, 0.5, 0.55); 
+        if (abs(p.x - 0.8) < 0.02) col = vec3(0.9, 0.4, 0.1); 
+    }
+
+    // Breathing animation for figure
+    float breath = sin(iTime * 2.0) * 0.01;
+    vec2 fp = p;
+    fp.y -= breath;
+
+    vec3 shirtBlue = vec3(0.15, 0.25, 0.7);
+    vec3 pantsBlue = vec3(0.2, 0.3, 0.4);
+    vec3 silhouetteBlack = vec3(0.0);
+    
+    bool isFigure = false;
+    
+    float dHead = length(fp - vec2(0.0, 0.65)) - 0.18;
+    if (dHead < 0.0) {
+        col = silhouetteBlack;
+        isFigure = true;
+    }
+    
+    if (abs(fp.x) < 0.1 && fp.y > 0.4 && fp.y < 0.5) {
+        col = shirtBlue * 0.8; 
+        isFigure = true;
+    }
+    
+    float dTorso = max(abs(fp.x) - 0.3 - breath, abs(fp.y - 0.05) - 0.45);
+    float torsoWidth = 0.3 + breath - (fp.y - 0.05) * -0.05;
+    if (fp.y < 0.5 && fp.y > -0.4 && abs(fp.x) < torsoWidth) {
+        col = shirtBlue;
+        isFigure = true;
+        
+        if (abs(fp.x) < 0.01) col *= 0.8;
+        if (fract(fp.y * 5.0) < 0.1 && abs(fp.x) < 0.015) col = vec3(0.1);
+        
+        if (abs(abs(fp.x) - 0.15) < 0.08 && fp.y > 0.15 && fp.y < 0.3) {
+            col *= 0.9; 
+            if (fp.y > 0.26) col *= 0.95;
+            if (abs(abs(fp.x) - 0.15) < 0.01 && abs(fp.y - 0.28) < 0.01) col = vec3(0.1);
+        }
+        
+        col *= 0.8 + 0.2 * cos(fp.x * 20.0 + fp.y * 10.0 + iTime*3.0);
+    }
+    
+    float dArmLeft = max(abs(fp.x + 0.35 + breath) - 0.08, abs(fp.y - 0.0) - 0.3);
+    if (dArmLeft < 0.0 && fp.y < 0.4) {
+        col = shirtBlue * 0.9; 
+        isFigure = true;
+    }
+    float dArmRight = max(abs(fp.x - 0.35 - breath) - 0.08, abs(fp.y - 0.0) - 0.3);
+    if (dArmRight < 0.0 && fp.y < 0.4) {
+        col = shirtBlue * 0.9;
+        isFigure = true;
+    }
+    
+    if (length(fp - vec2(-0.35 - breath, -0.35)) < 0.06) {
+        col = silhouetteBlack;
+        isFigure = true;
+    }
+    if (length(fp - vec2(0.35 + breath, -0.35)) < 0.06) {
+        col = silhouetteBlack;
+        isFigure = true;
+    }
+    
+    // Pants don't breathe
+    if (p.y < -0.4 && abs(p.x) < 0.28) {
+        col = pantsBlue;
+        if (abs(p.x) < 0.02) col = vec3(0.1, 0.15, 0.2);
+        col *= 0.9 + 0.1 * fract(sin(p.x*100.0 + p.y*100.0)*10.0);
+        isFigure = true;
+    }
+
+    if (!isFigure) {
+        float shadow = length(p - vec2(0.0, 0.0)) - 0.5;
+        if (shadow < 0.0) col *= 0.8;
+    }
+
+    gl_FragColor = vec4(col, 1.0);
+}
+
+    </script>
+    <script>
+        function main() {
+            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
+            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            
+            if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+                console.error("Link error: " + gl.getProgramInfoLog(prog));
+                console.error("FS Log: " + gl.getShaderInfoLog(fs));
+            }
+
+            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
+            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            function render(t) {
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        } window.onload = main;
+    </script>
+</body>
+</html>

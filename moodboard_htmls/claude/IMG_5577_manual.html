@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shader: Bamboo Mat Crane Engraving</title>
+    <style>body { margin: 0; overflow: hidden; background-color: #000; } canvas { display: block; width: 100vw; height: 100vh; }</style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float;
+        uniform vec2 iResolution;
+        uniform float iTime;
+
+        float hash(vec2 p) {
+            p = fract(p * vec2(127.1,311.7));
+            p += dot(p, p+45.32);
+            return fract(p.x*p.y);
+        }
+        float hash1(float n) { return fract(sin(n)*43758.5453); }
+
+        vec3 hsv2rgb(vec3 c) {
+            vec4 K = vec4(1.0,2.0/3.0,1.0/3.0,3.0);
+            vec3 p = abs(fract(c.xxx+K.xyz)*6.0-K.www);
+            return c.z*mix(K.xxx,clamp(p-K.xxx,0.0,1.0),c.y);
+        }
+
+        float noise(vec2 p) {
+            vec2 i=floor(p); vec2 f=fract(p);
+            f=f*f*(3.0-2.0*f);
+            float a=hash(i), b=hash(i+vec2(1,0));
+            float c2=hash(i+vec2(0,1)), d=hash(i+vec2(1,1));
+            return mix(mix(a,b,f.x),mix(c2,d,f.x),f.y);
+        }
+        float fbm(vec2 p) {
+            float v=0.0,a=0.5;
+            for(int i=0;i<6;i++){ v+=a*noise(p); p*=2.1; a*=0.5; }
+            return v;
+        }
+        float fbm3(vec2 p) {
+            float v=0.0,a=0.5;
+            for(int i=0;i<3;i++){ v+=a*noise(p); p*=2.1; a*=0.5; }
+            return v;
+        }
+        float warpFbm(vec2 p,float t){
+            vec2 q=vec2(fbm(p+t*0.1),fbm(p+3.7+t*0.09));
+            return fbm(p+0.8*q);
+        }
+
+        float sdBox(vec2 p,vec2 b){
+            vec2 d=abs(p)-b;
+            return length(max(d,0.0))+min(max(d.x,d.y),0.0);
+        }
+        float sdEllipse(vec2 p,vec2 ab){
+            // approximate
+            p=abs(p);
+            float k1=length(p/ab);
+            float k2=length(p/(ab*ab));
+            return k1*(k1-1.0)/k2;
+        }
+
+        // 2D rotation
+        vec2 rot2(vec2 p,float a){
+            float c=cos(a),s=sin(a);
+            return vec2(c*p.x-s*p.y,s*p.x+c*p.y);
+        }
+
+        // Bamboo slat SDF: horizontal band
+        float slat(vec2 p, float y0, float h) {
+            return abs(p.y - y0) - h*0.5;
+        }
+
+        // Crane body silhouette (simplified)
+        float craneSDF(vec2 p, float wingPhase) {
+            // Body: ellipse
+            float body = length(p/vec2(0.09,0.055)) - 1.0;
+            // Head + neck
+            vec2 hp = p - vec2(0.08, 0.03);
+            float head = length(hp/vec2(0.03,0.025)) - 1.0;
+            // Left wing (static)
+            vec2 lwp = rot2(p-vec2(-0.03,0.01), 0.3);
+            float lwing = sdBox(lwp, vec2(0.10,0.025));
+            // Right wing (animated)
+            float wA = sin(wingPhase)*0.45;
+            vec2 rwp = rot2(p-vec2(0.03,0.01), -0.3+wA);
+            float rwing = sdBox(rwp, vec2(0.10,0.025));
+            // Legs
+            vec2 ll = p - vec2(-0.02,-0.06);
+            float leg1 = sdBox(ll, vec2(0.006,0.04));
+            vec2 rl = p - vec2(0.02,-0.06);
+            float leg2 = sdBox(rl, vec2(0.006,0.04));
+            return min(min(min(min(body,head),lwing),rwing),min(leg1,leg2));
+        }
+
+        // Plum blossom petal (small ellipse, rotated)
+        float petalSDF(vec2 p, float angle) {
+            vec2 rp = rot2(p, angle);
+            return length(rp/vec2(0.022,0.012)) - 1.0;
+        }
+
+        // Branch segment
+        float branch(vec2 p, vec2 a, vec2 b, float w) {
+            vec2 pa=p-a, ba=b-a;
+            float h=clamp(dot(pa,ba)/dot(ba,ba),0.0,1.0);
+            return length(pa-ba*h)-w;
+        }
+
+        void main() {
+            vec2 uv = gl_FragCoord.xy/iResolution.xy;
+            vec2 p  = uv*2.0-1.0;
+            p.x    *= iResolution.x/iResolution.y;
+            float t = iTime;
+
+            // --- Dark workshop background ---
+            vec3 bgCol = vec3(0.07,0.05,0.04);
+            // Subtle workshop silhouettes via fbm blobs
+            float shelf1 = smoothstep(0.02,-0.02,sdBox(p-vec2(-0.75,0.3),vec2(0.18,0.05)));
+            float shelf2 = smoothstep(0.02,-0.02,sdBox(p-vec2(0.75,-0.1),vec2(0.15,0.05)));
+            float bag    = smoothstep(0.0,-0.02,sdBox(p-vec2(-0.8,-0.4),vec2(0.09,0.14)));
+            float fShelf = fbm(p*4.0+0.5)*0.5;
+            bgCol = mix(bgCol, vec3(0.10,0.08,0.06), (shelf1+shelf2+bag)*0.4);
+            bgCol += fbm3(p*3.0)*0.025;
+
+            vec3 col = bgCol;
+
+            // === Bamboo mat plaque ===
+            float plateMask = smoothstep(0.008,-0.008,sdBox(p, vec2(0.72,0.88)));
+
+            // --- Slats: alternating black / golden ---
+            float slatH   = 0.10; // height of each slat
+            float slatIdx = floor((p.y + 0.88) / slatH);
+            float slatFrac= fract((p.y + 0.88) / slatH);
+            bool isGold   = mod(slatIdx, 2.0) < 1.0;
+
+            // Bamboo base color
+            vec3 blackBamboo = vec3(0.08,0.06,0.04);
+            vec3 goldBamboo  = vec3(0.72,0.58,0.18);
+
+            vec3 slatCol = isGold ? goldBamboo : blackBamboo;
+
+            // Bamboo node rings: dark horizontal bands every ~0.15 per-slat
+            float nodeRing = smoothstep(0.012,0.0,abs(slatFrac - 0.5)-0.02);
+            slatCol = mix(slatCol, slatCol*0.60, nodeRing*0.7);
+
+            // Knot patches: fbm dark spots on bamboo surface
+            float knotUV = noise(p*8.0+slatIdx);
+            float knot   = smoothstep(0.6,0.7,knotUV)*0.3;
+            slatCol      = mix(slatCol, slatCol*0.55, knot*(isGold?1.0:0.5));
+
+            // Lengthwise grain lines
+            float grain = fbm(vec2(p.x*18.0, p.y*2.0+slatIdx))*0.08;
+            slatCol    += isGold ? grain*vec3(0.4,0.3,0.05) : grain*vec3(0.06,0.05,0.03);
+
+            col = mix(col, slatCol, plateMask);
+
+            // --- Rope binding at edges ---
+            float ropeW = 0.055;
+            float leftEdge  = smoothstep(ropeW,-0.0,-0.72+p.x) * step(-0.88,p.y) * step(p.y,0.88);
+            float rightEdge = smoothstep(ropeW,-0.0, 0.72-p.x) * step(-0.88,p.y) * step(p.y,0.88);
+            float topEdge   = smoothstep(ropeW,-0.0, 0.88-p.y) * step(-0.72,p.x) * step(p.x,0.72);
+            float botEdge   = smoothstep(ropeW,-0.0,-0.88+p.y) * step(-0.72,p.x) * step(p.x,0.72);
+            float edgeMask  = max(max(leftEdge,rightEdge),max(topEdge,botEdge));
+
+            // Braided rope: 3 interleaved sinusoids
+            float ropeY = p.y * 18.0;
+            float strand1 = abs(fract((ropeY + sin(p.y*14.0+t*0.5))*0.5)-0.5)*2.0;
+            float strand2 = abs(fract((ropeY + sin(p.y*14.0+t*0.5+2.094))*0.5)-0.5)*2.0;
+            float strand3 = abs(fract((ropeY + sin(p.y*14.0+t*0.5+4.189))*0.5)-0.5)*2.0;
+            float braid   = min(min(strand1,strand2),strand3);
+            vec3 ropeCol  = vec3(0.80,0.64,0.14) * (0.6+0.4*braid);
+            col = mix(col, ropeCol, edgeMask*plateMask);
+
+            // --- Central golden oval medallion ---
+            float medalR = length(p/vec2(0.28,0.36)) - 1.0;
+            float medalM = smoothstep(0.01,-0.01,medalR);
+
+            // Medallion radial glow (spotlight on it)
+            col += vec3(0.75,0.62,0.22)*exp(-max(medalR,0.0)*8.0)*0.30*plateMask;
+
+            if(medalM > 0.01) {
+                vec3 medalCol = vec3(0.68,0.55,0.16);
+                // Inner warm gold gradient
+                medalCol += (1.0-length(p/vec2(0.28,0.36)))*vec3(0.15,0.12,0.03);
+
+                // Ink-wash animation: fbm-based dark spreading
+                float inkFbm  = warpFbm(p*5.0+vec2(0.0,t*0.07), t*0.06);
+                float inkThresh = sin(t*0.20)*0.25+0.5;
+                float inkMask   = smoothstep(inkThresh, inkThresh-0.08, inkFbm);
+                vec3 inkCol = vec3(0.04,0.03,0.02);
+                medalCol = mix(medalCol, inkCol, inkMask*0.75);
+
+                // Crane silhouette at center
+                vec2 craneP = p - vec2(0.0,-0.04);
+                craneP *= 2.8;
+                float wingPhase = t*1.2;
+                float craneD = craneSDF(craneP, wingPhase);
+                float craneM2 = 1.0-smoothstep(-0.01,0.015,craneD);
+                vec3 craneFill = mix(vec3(0.08,0.06,0.04), vec3(0.85,0.75,0.30), inkMask*0.3);
+                medalCol = mix(medalCol, craneFill, craneM2);
+
+                // Additive glow at crane outline
+                medalCol += vec3(0.80,0.70,0.30)*exp(-max(craneD,0.0)*30.0)*0.18;
+
+                // Plum blossom branches
+                float br1 = branch(craneP, vec2(-0.4,0.2), vec2(-0.1,-0.1), 0.018);
+                float br2 = branch(craneP, vec2( 0.4,0.3), vec2( 0.1,-0.1), 0.018);
+                float brM = 1.0-smoothstep(-0.004,0.01,min(br1,br2));
+                medalCol = mix(medalCol, vec3(0.12,0.08,0.04), brM*0.9);
+
+                // Blossom flowers on branches (5 per side)
+                for(int i=0;i<5;i++){
+                    float fi=float(i);
+                    vec2 bPos1 = vec2(-0.4,0.2)+(-0.3+fi*0.1)*vec2(1.0,0.0)+vec2(0.0,fbm(vec2(fi,0.0))*0.15);
+                    vec2 bPos2 = vec2( 0.4,0.3)+(-0.3+fi*0.1)*vec2(-1.0,0.0)+vec2(0.0,fbm(vec2(fi,1.0))*0.15);
+                    for(int j=0;j<5;j++){
+                        float fa=float(j)*1.2566;
+                        float pd1=petalSDF(craneP-bPos1-vec2(cos(fa),sin(fa))*0.04, fa);
+                        float pd2=petalSDF(craneP-bPos2-vec2(cos(fa),sin(fa))*0.04, fa);
+                        float pm=1.0-smoothstep(-0.004,0.008,min(pd1,pd2));
+                        medalCol=mix(medalCol,vec3(0.92,0.80,0.55),pm*0.8);
+                    }
+                }
+
+                col = mix(col, medalCol, medalM);
+                // Medal edge gold rim
+                col += vec3(0.90,0.78,0.30)*exp(-abs(medalR)*18.0)*0.25;
+            }
+
+            // --- Falling blossom petals ---
+            for(int i=0;i<12;i++){
+                float fi=float(i);
+                float speed=0.08+hash1(fi*2.0)*0.06;
+                float px2  =hash1(fi*1.23)*1.6-0.8;
+                float py2  =fract(hash1(fi*3.7)+t*speed)*(-2.2)+1.1;
+                float spin =t*1.2*speed+fi;
+                float fade =sin(t*0.8+fi)*0.5+0.5;
+                // Petal as small ellipse
+                vec2 pp=rot2(p-vec2(px2,py2)-vec2(sin(t*0.8+fi)*0.06,0.0),spin);
+                float pd=length(pp/vec2(0.018,0.008))-1.0;
+                float pm=1.0-smoothstep(-0.002,0.006,pd);
+                col=mix(col,vec3(0.90,0.78,0.55),pm*fade*plateMask);
+                col+=vec3(0.85,0.70,0.40)*exp(-max(pd,0.0)*50.0)*0.08*fade;
+            }
+
+            // --- Chromatic aberration (warm gold shift) ---
+            float aberrM = smoothstep(0.06,0.0,abs(medalR));
+            col.r += fbm(uv*4.0+vec2(0.004,0.0)+t*0.07)*0.06*aberrM;
+            col.b -= fbm(uv*4.0-vec2(0.004,0.0)+t*0.07)*0.04*aberrM;
+
+            // --- Dust particles ---
+            for(int i=0;i<12;i++){
+                float fi=float(i);
+                float px3=hash1(fi*2.31)*1.4-0.7;
+                float py3=fract(hash1(fi*1.73)+t*0.04)*2.2-0.8;
+                float life2=sin(t*0.9+fi*1.1)*0.5+0.5;
+                col+=vec3(0.78,0.65,0.35)*exp(-length(p-vec2(px3,py3))*220.0)*0.03*life2;
+            }
+
+            // --- Film grain ---
+            col += (hash(uv*800.0+t)-0.5)*0.028;
+
+            col = pow(clamp(col,0.0,1.0),vec3(0.85));
+            gl_FragColor = vec4(col,1.0);
+        }
+    </script>
+    <script>
+        function main() {
+            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
+            if(!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) console.error(gl.getShaderInfoLog(fs));
+            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
+            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            function render(t) {
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        } window.onload = main;
+    </script>
+</body>
+</html>

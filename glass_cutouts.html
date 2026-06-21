@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Glass Window with Cutouts</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+    </style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    
+    <script id="vertex-shader" type="x-shader/x-vertex">
+        attribute vec2 position;
+        void main() {
+            gl_Position = vec4(position, 0.0, 1.0);
+        }
+    </script>
+    
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float;
+        uniform vec2 iResolution;
+        uniform float iTime;
+
+        // Signed distance functions
+        float sdCircle(vec2 p, float r) { return length(p) - r; }
+        float sdBox(vec2 p, vec2 b) {
+            vec2 d = abs(p) - b;
+            return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+        }
+        
+        mat2 rot(float a) {
+            float s = sin(a), c = cos(a);
+            return mat2(c, -s, s, c);
+        }
+
+        // Complex shape combinations
+        float sdCloud(vec2 p) {
+            float d = sdCircle(p, 0.25);
+            d = min(d, sdCircle(p - vec2(0.2, -0.1), 0.18));
+            d = min(d, sdCircle(p - vec2(-0.25, -0.05), 0.2));
+            d = min(d, sdCircle(p - vec2(0.15, 0.15), 0.15));
+            d = min(d, sdCircle(p - vec2(-0.1, 0.15), 0.12));
+            return d;
+        }
+
+        float sdFlower(vec2 p) {
+            float a = atan(p.y, p.x);
+            float r = length(p);
+            float petals = 0.15 + 0.05 * sin(a * 5.0);
+            return min(sdCircle(p, 0.05), r - petals); // Center and petals
+        }
+
+        float sdBird(vec2 p) {
+            // Main body
+            vec2 bp = p * rot(0.5);
+            float body = length(vec2(bp.x, bp.y * 2.0)) - 0.15;
+            
+            // Wings
+            vec2 w1p = p * rot(0.8) - vec2(0.1, 0.15);
+            float w1 = sdBox(w1p, vec2(0.2, 0.03));
+            
+            vec2 w2p = p * rot(-0.2) - vec2(-0.15, 0.1);
+            float w2 = sdBox(w2p, vec2(0.2, 0.03));
+            
+            // Tail
+            vec2 tp = p - vec2(-0.2, -0.15);
+            float tail = sdBox(tp * rot(0.5), vec2(0.1, 0.02));
+            float tail2 = sdBox(tp * rot(1.0), vec2(0.1, 0.02));
+            
+            return min(min(min(min(body, w1), w2), tail), tail2);
+        }
+
+        void main() {
+            vec2 uv = gl_FragCoord.xy / iResolution.xy;
+            vec2 p = uv * 2.0 - 1.0;
+            p.x *= iResolution.x / iResolution.y;
+            
+            // Background: Blue Glass Blocks
+            vec2 gridUV = uv * vec2(25.0, 15.0);
+            vec2 cell = fract(gridUV);
+            vec2 id = floor(gridUV);
+            
+            // Grout lines
+            float groutX = smoothstep(0.05, 0.1, cell.x) * smoothstep(0.95, 0.9, cell.x);
+            float groutY = smoothstep(0.05, 0.1, cell.y) * smoothstep(0.95, 0.9, cell.y);
+            float grout = groutX * groutY;
+            
+            // Base blue color
+            vec3 bgCol = mix(vec3(0.0, 0.3, 0.4), vec3(0.0, 0.6, 0.8), grout);
+            
+            // Add some variation per tile
+            float noise = fract(sin(dot(id, vec2(12.9898, 78.233))) * 43758.5453);
+            bgCol *= 0.8 + 0.4 * noise;
+            
+            // Cutout shapes
+            float d1 = sdCloud(p - vec2(-0.4, -0.6));
+            float d2 = sdCloud(p - vec2(0.6, -0.5));
+            
+            // Several flowers
+            float f1 = sdFlower((p - vec2(0.7, 0.3)) * rot(0.5));
+            float f2 = sdFlower((p - vec2(0.9, 0.1)) * rot(-0.3));
+            float f3 = sdFlower((p - vec2(-0.8, 0.2)) * rot(1.2));
+            
+            // Swallows/Birds
+            float b1 = sdBird((p - vec2(-0.5, 0.4)) * rot(0.2));
+            float b2 = sdBird((p - vec2(-0.2, 0.7)) * rot(-0.5));
+            float b3 = sdBird((p - vec2(0.8, 0.7)) * rot(-0.1));
+            
+            float shapes = min(min(min(min(min(min(min(d1, d2), f1), f2), f3), b1), b2), b3);
+            
+            // Drop shadow
+            vec2 sp = p - vec2(0.02, -0.02); // Shadow offset
+            float s_d1 = sdCloud(sp - vec2(-0.4, -0.6));
+            float s_d2 = sdCloud(sp - vec2(0.6, -0.5));
+            float s_f1 = sdFlower((sp - vec2(0.7, 0.3)) * rot(0.5));
+            float s_f2 = sdFlower((sp - vec2(0.9, 0.1)) * rot(-0.3));
+            float s_f3 = sdFlower((sp - vec2(-0.8, 0.2)) * rot(1.2));
+            float s_b1 = sdBird((sp - vec2(-0.5, 0.4)) * rot(0.2));
+            float s_b2 = sdBird((sp - vec2(-0.2, 0.7)) * rot(-0.5));
+            float s_b3 = sdBird((sp - vec2(0.8, 0.7)) * rot(-0.1));
+            
+            float shadows = min(min(min(min(min(min(min(s_d1, s_d2), s_f1), s_f2), s_f3), s_b1), s_b2), s_b3);
+            
+            // Apply shadow to background
+            vec3 finalCol = mix(bgCol * 0.3, bgCol, smoothstep(0.0, 0.05, shadows));
+            
+            // Apply paper cutouts
+            vec3 paperCol = vec3(0.95, 0.98, 1.0);
+            // Some texture to the paper
+            paperCol -= 0.05 * fract(sin(dot(uv, vec2(12.9898, 78.233))) * 43758.5453);
+            
+            finalCol = mix(paperCol, finalCol, smoothstep(0.0, 0.01, shapes));
+            
+            gl_FragColor = vec4(finalCol, 1.0);
+        }
+    </script>
+    
+    <script>
+        function createShader(gl, type, source) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error("An error occurred compiling the shaders: " + gl.getShaderInfoLog(shader));
+                gl.deleteShader(shader);
+                return null;
+            }
+            return shader;
+        }
+
+        function main() {
+            const canvas = document.getElementById("glcanvas");
+            const gl = canvas.getContext("webgl");
+            if (!gl) return;
+
+            const vsSource = document.getElementById("vertex-shader").text;
+            const fsSource = document.getElementById("fragment-shader").text;
+
+            const vertexShader = createShader(gl, gl.VERTEX_SHADER, vsSource);
+            const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fsSource);
+
+            const shaderProgram = gl.createProgram();
+            gl.attachShader(shaderProgram, vertexShader);
+            gl.attachShader(shaderProgram, fragmentShader);
+            gl.linkProgram(shaderProgram);
+
+            const positionAttributeLocation = gl.getAttribLocation(shaderProgram, "position");
+            const resolutionUniformLocation = gl.getUniformLocation(shaderProgram, "iResolution");
+            const timeUniformLocation = gl.getUniformLocation(shaderProgram, "iTime");
+
+            const positionBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+                -1.0, -1.0,  1.0, -1.0, -1.0,  1.0,
+                -1.0,  1.0,  1.0, -1.0,  1.0,  1.0,
+            ]), gl.STATIC_DRAW);
+
+            function render(time) {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+                gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+
+                gl.useProgram(shaderProgram);
+
+                gl.enableVertexAttribArray(positionAttributeLocation);
+                gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+                gl.vertexAttribPointer(positionAttributeLocation, 2, gl.FLOAT, false, 0, 0);
+
+                gl.uniform2f(resolutionUniformLocation, gl.canvas.width, gl.canvas.height);
+                gl.uniform1f(timeUniformLocation, time * 0.001);
+
+                gl.drawArrays(gl.TRIANGLES, 0, 6);
+                requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        }
+        window.onload = main;
+    </script>
+</body>
+</html>

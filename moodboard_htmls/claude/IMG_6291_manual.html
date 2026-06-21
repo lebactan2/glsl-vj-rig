@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shader: IMG_6291 Red Silk Brocade</title>
+    <style>body { margin: 0; overflow: hidden; background-color: #000; } canvas { display: block; width: 100vw; height: 100vh; }</style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float;
+        uniform vec2 iResolution;
+        uniform float iTime;
+
+        // TIMESCALES:
+        // t * 0.008  ultra-slow viewpoint "angle change"
+        // t * 0.04   slow sheen drift
+        // t * 0.22   medium red wave
+        // t * 1.5    fast gold thread sparkle
+
+        // =================== UTILITIES ===================
+        float hash(vec2 p) {
+            p = fract(p * vec2(127.1, 311.7));
+            p += dot(p, p + 19.19);
+            return fract(p.x * p.y);
+        }
+        float hash1(float x) { return fract(sin(x * 127.391) * 43758.5453); }
+        vec2 hash2(vec2 p) { return vec2(hash(p), hash(p + vec2(31.7, 91.3))); }
+
+        float noise(vec2 p) {
+            vec2 i = floor(p); vec2 f = fract(p);
+            vec2 u = f * f * (3.0 - 2.0 * f);
+            return mix(mix(hash(i), hash(i+vec2(1,0)), u.x),
+                       mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), u.x), u.y);
+        }
+        float fbm(vec2 p) {
+            float v = 0.0; float a = 0.5;
+            for(int i = 0; i < 6; i++) {
+                v += a * noise(p);
+                p = p * 2.3 + vec2(1.7, 9.2);
+                a *= 0.5;
+            }
+            return v;
+        }
+        vec3 hsv2rgb(vec3 c) {
+            vec3 p = abs(fract(c.xxx + vec3(1.0, 2.0/3.0, 1.0/3.0)) * 6.0 - 3.0);
+            return c.z * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), c.y);
+        }
+        vec2 warp(vec2 p, float t) {
+            return p + 0.4 * vec2(fbm(p * 2.0 + t * 0.1), fbm(p * 2.0 + 3.7 + t * 0.09));
+        }
+        float sdLine(vec2 p, vec2 a, vec2 b) {
+            vec2 pa = p-a, ba = b-a;
+            return length(pa - ba * clamp(dot(pa,ba)/dot(ba,ba), 0.0, 1.0));
+        }
+        float sdCircle(vec2 p, float r) { return length(p) - r; }
+
+        // =================== WEAVE MICROSTRUCTURE ===================
+        // Individual thread crossings
+        vec3 weaveThreads(vec2 p) {
+            // Warp threads run vertically, weft horizontally
+            float warpPeriod = 0.022;
+            float weftPeriod = 0.028;
+            float warpPhase = mod(p.x, warpPeriod) / warpPeriod; // 0..1
+            float weftPhase = mod(p.y, weftPeriod) / weftPeriod;
+
+            // Which thread is on top at each crossing?
+            vec2 crossIdx = floor(vec2(p.x / warpPeriod, p.y / weftPeriod));
+            float topThread = mod(crossIdx.x + crossIdx.y, 2.0); // 0=warp, 1=weft
+
+            // Each thread has a slight 3D rounding
+            float warpRound = 1.0 - (warpPhase * 2.0 - 1.0) * (warpPhase * 2.0 - 1.0);
+            float weftRound = 1.0 - (weftPhase * 2.0 - 1.0) * (weftPhase * 2.0 - 1.0);
+
+            // Shadow/highlight from crossing
+            float topHighlight = topThread < 0.5 ? warpRound : weftRound;
+            float botShadow    = topThread < 0.5 ? weftRound * 0.4 : warpRound * 0.4;
+
+            // Crossing point tiny shadow
+            float crossShadow = (1.0 - warpRound * 0.5) * (1.0 - weftRound * 0.5);
+            crossShadow = 1.0 - crossShadow * 0.3;
+
+            return vec3(topHighlight * 0.18, botShadow * -0.06, crossShadow);
+        }
+
+        // =================== ANISOTROPIC SILK SHEEN ===================
+        // Multiple overlapping sheen bands at different angles = moiré iridescence
+        vec3 silkSheen(vec2 p, float t) {
+            float tv = t * 0.008; // ultra-slow angle change
+            float ts = t * 0.04; // slow sheen drift
+
+            vec3 sheen = vec3(0.0);
+            // Layer 1: main diagonal sheen ~45 degrees
+            float angle1 = 0.785 + sin(tv) * 0.15;
+            vec2 sheenDir1 = vec2(cos(angle1), sin(angle1));
+            float proj1 = dot(p, sheenDir1);
+            float band1 = sin(proj1 * 6.0 + ts) * 0.5 + 0.5;
+            band1 = pow(band1, 3.0);
+            sheen += vec3(1.0, 0.85, 0.70) * band1 * 0.22;
+
+            // Layer 2: cross-sheen at ~135 degrees
+            float angle2 = 2.356 + cos(tv * 0.7) * 0.20;
+            vec2 sheenDir2 = vec2(cos(angle2), sin(angle2));
+            float proj2 = dot(p, sheenDir2);
+            float band2 = sin(proj2 * 8.5 + ts * 1.3 + 1.1) * 0.5 + 0.5;
+            band2 = pow(band2, 4.0);
+            sheen += vec3(0.90, 0.70, 1.0) * band2 * 0.14; // slight purple iridescence
+
+            // Layer 3: gentle horizontal sheen
+            float band3 = sin(p.x * 4.0 + ts * 0.6 + 2.3) * 0.5 + 0.5;
+            band3 = pow(band3, 5.0);
+            sheen += vec3(1.0, 0.95, 0.75) * band3 * 0.10;
+
+            // Layer 4: fine moiré from warp×weft interference
+            float moire = sin(p.x * 45.0 + ts * 2.0) * sin(p.y * 45.0 + ts * 1.7);
+            sheen += vec3(1.0, 0.8, 0.6) * max(moire, 0.0) * 0.08;
+
+            return sheen;
+        }
+
+        // =================== FLORAL MEDALLION ===================
+        float floralMedallion(vec2 p, float scale) {
+            vec2 sp = p / scale;
+            // Outer ring
+            float ring = abs(length(sp) - 1.0) - 0.08;
+            // Petals: 8-fold symmetry
+            float petals = 0.0;
+            for(int k = 0; k < 8; k++) {
+                float angle = float(k) * 0.7854; // pi/4
+                vec2 petalDir = vec2(cos(angle), sin(angle));
+                float proj = dot(sp, petalDir);
+                float perp = length(sp - petalDir * proj);
+                float petalShape = length(sp - petalDir * 0.8) - 0.22;
+                petals = min(petals + 0.0, petalShape); // accumulate
+                if(k == 0) petals = petalShape;
+                else petals = min(petals, petalShape);
+            }
+            // Inner circle
+            float inner = length(sp) - 0.28;
+            return min(min(ring, petals), inner);
+        }
+
+        // =================== DIAMOND LATTICE SECONDARY PATTERN ===================
+        float diamondLattice(vec2 p) {
+            // Rotated grid at 45 degrees
+            vec2 rp = vec2(p.x + p.y, p.x - p.y) * 0.707;
+            float gx = mod(rp.x * 4.5, 1.0) - 0.5;
+            float gy = mod(rp.y * 4.5, 1.0) - 0.5;
+            float diamond = abs(gx) + abs(gy);
+            return abs(diamond - 0.38) - 0.03; // ring shape per cell
+        }
+
+        // =================== GOLD VINE CONNECTORS ===================
+        float goldVines(vec2 p, float t) {
+            float minD = 1e9;
+            // Sinusoidal vines connecting medallions
+            for(int vi = 0; vi < 4; vi++) {
+                float fvi = float(vi);
+                float vineY = -0.75 + fvi * 0.5;
+                for(int vj = 0; vj < 20; vj++) {
+                    float fvj = float(vj);
+                    float t0 = fvj / 19.0;
+                    float t1 = (fvj + 1.0) / 19.0;
+                    float x0 = mix(-1.2, 1.2, t0);
+                    float x1 = mix(-1.2, 1.2, t1);
+                    float y0 = vineY + sin(t0 * 6.2831 * 2.0) * 0.12;
+                    float y1 = vineY + sin(t1 * 6.2831 * 2.0) * 0.12;
+                    float d = sdLine(p, vec2(x0, y0), vec2(x1, y1));
+                    minD = min(minD, d);
+                }
+            }
+            return minD;
+        }
+
+        // =================== GOLD THREAD SPARKLE ===================
+        vec3 goldThreadSparkle(vec2 p, float t) {
+            vec3 col = vec3(0.0);
+            float ts = t * 1.5; // fast sparkle
+            for(int i = 0; i < 20; i++) {
+                float fi = float(i);
+                vec2 tPos = hash2(vec2(fi * 3.71, fi * 7.13)) * 2.4 - 1.2;
+                float interval = 2.5 + hash1(fi * 5.1) * 4.0;
+                float phase = mod(ts + fi * 1.3, interval) / interval;
+                float sparkle = exp(-abs(phase - 0.5) * 12.0) * 0.8;
+                float d = length(p - tPos);
+                // Gold thread color
+                vec3 gCol = vec3(0.95, 0.82, 0.35) + vec3(0.05, 0.1, 0.0) * hash1(fi * 2.3);
+                col += gCol * exp(-d * 28.0) * sparkle;
+                // Tiny highlight dot
+                col += vec3(1.0, 0.95, 0.75) * exp(-d * 80.0) * sparkle * 0.5;
+            }
+            return col;
+        }
+
+        // =================== CURSIVE SCRIPT HIGHLIGHT ===================
+        // Simulates traveling highlight along calligraphic strokes
+        vec3 scriptHighlight(vec2 p, float t) {
+            vec3 col = vec3(0.0);
+            // Simulate 3 cursive stroke paths using sinusoidal parametric curves
+            for(int ci = 0; ci < 3; ci++) {
+                float fci = float(ci);
+                float charOffX = -0.4 + fci * 0.4;
+                float charOffY = 0.0;
+                // Traveling highlight phase
+                float phase = mod(t * 0.22 + fci * 0.7, 1.0);
+                // Parametric stroke: 12 segments
+                float minD = 1e9;
+                float highlightD = 1e9;
+                for(int si = 0; si < 12; si++) {
+                    float st = float(si) / 11.0;
+                    float st2 = (float(si) + 1.0) / 11.0;
+                    // Sinusoidal cursive path
+                    vec2 pa = vec2(charOffX + st * 0.22,  charOffY + sin(st * 9.42 + fci * 2.1) * 0.06);
+                    vec2 pb = vec2(charOffX + st2 * 0.22, charOffY + sin(st2 * 9.42 + fci * 2.1) * 0.06);
+                    float d = sdLine(p, pa, pb);
+                    minD = min(minD, d);
+                    // Distance to highlight point
+                    vec2 highlightPt = mix(pa, pb, 0.5);
+                    float expectedPhase = st / 11.0;
+                    float phaseWeight = exp(-abs(phase - expectedPhase) * 12.0);
+                    highlightD = min(highlightD, d + (1.0 - phaseWeight) * 0.08);
+                }
+                // Gold stroke
+                col += vec3(0.90, 0.76, 0.25) * exp(-minD * 25.0) * 0.35;
+                // Traveling highlight
+                col += vec3(1.0, 0.95, 0.80) * exp(-highlightD * 40.0) * 0.55;
+            }
+            return col;
+        }
+
+        // =================== WATER DROPLETS ===================
+        vec3 waterDroplets(vec2 p, float t) {
+            vec3 col = vec3(0.0);
+            for(int di = 0; di < 5; di++) {
+                float fdi = float(di);
+                vec2 dPos = hash2(vec2(fdi * 5.3, fdi * 8.1)) * 2.0 - 1.0;
+                float dropInterval = 6.0 + hash1(fdi * 2.7) * 5.0;
+                float dropPhase = mod(t * 0.4 + fdi * 1.9, dropInterval) / dropInterval;
+                // Landing (0..0.1) then fading (0.1..1.0)
+                float landPhase = smoothstep(0.0, 0.08, dropPhase) * (1.0 - smoothstep(0.08, 0.35, dropPhase));
+                float r = 0.04 + dropPhase * 0.06;
+                float d = sdCircle(p - dPos, r);
+                // Darkening where droplet lands (water darkens silk)
+                col -= vec3(0.12, 0.04, 0.03) * exp(-d * 12.0) * landPhase;
+                // Bright edge ring
+                col += vec3(0.35, 0.15, 0.10) * exp(-abs(d) * 25.0) * landPhase * 0.5;
+            }
+            return col;
+        }
+
+        // =================== PARTICLES ===================
+        vec3 particles(vec2 p, float t) {
+            vec3 col = vec3(0.0);
+            for(int i = 0; i < 14; i++) {
+                float fi = float(i);
+                vec2 pos = hash2(vec2(fi * 7.31, fi * 11.73)) * 2.4 - 1.2;
+                pos.y = mod(pos.y + t * 0.03, 2.4) - 1.2;
+                pos.x += sin(t * 0.3 + fi) * 0.02;
+                float d = length(p - pos);
+                float flicker = 0.5 + 0.5 * sin(t * 1.5 + fi * 3.1);
+                vec3 pc = hsv2rgb(vec3(0.05 + fi * 0.02, 0.85, 0.95)); // gold-red particles
+                col += pc * exp(-d * 95.0) * flicker * 0.25;
+            }
+            return col;
+        }
+
+        // =================== MAIN ===================
+        void main() {
+            vec2 uv = gl_FragCoord.xy / iResolution.xy;
+            float aspect = iResolution.x / iResolution.y;
+            vec2 p = uv * 2.0 - 1.0;
+            p.x *= aspect;
+
+            float t = iTime;
+            vec3 col = vec3(0.0);
+
+            // =================== BASE SILK FABRIC ===================
+            // Red color: slow diagonal wave between crimson and rose
+            float redWave = sin(p.x * 1.5 + p.y * 1.0 + t * 0.22) * 0.5 + 0.5;
+            vec3 crimson = vec3(0.72, 0.04, 0.06);
+            vec3 rose    = vec3(0.88, 0.10, 0.12);
+            vec3 baseRed = mix(crimson, rose, redWave);
+
+            // Domain-warp the fabric for organic feel
+            vec2 wp = warp(p * 3.0, t * 0.008);
+            float fabricVar = fbm(wp * 2.0) * 0.06;
+            baseRed += fabricVar * vec3(0.8, 0.2, 0.2);
+
+            // =================== DIAMOND SECONDARY LATTICE ===================
+            float diamondDist = diamondLattice(p);
+            float diamondMask = exp(-abs(diamondDist) * 35.0) * 0.18;
+            vec3 diamondCol = vec3(0.55, 0.02, 0.02); // dark red diamond
+            baseRed = mix(baseRed, diamondCol, diamondMask * 0.55);
+
+            // =================== WEAVE MICROSTRUCTURE ===================
+            vec3 weave = weaveThreads(p);
+            baseRed += weave.r * vec3(0.5, 0.3, 0.3);
+            baseRed += weave.g * vec3(1.0, 0.5, 0.5); // note: g is negative, so subtracts
+            // (weave.z is crossShadow multiplier)
+            baseRed *= (0.88 + weave.z * 0.12);
+
+            col = baseRed;
+
+            // =================== FLORAL MEDALLIONS ===================
+            // 4 main medallions arranged in a grid
+            for(int mi = 0; mi < 4; mi++) {
+                float fmi = float(mi);
+                float mx = (mod(fmi, 2.0) - 0.5) * 1.0 * aspect;
+                float my = (floor(fmi / 2.0) - 0.5) * 0.85;
+                vec2 mPos = p - vec2(mx, my);
+                float floral = floralMedallion(mPos, 0.28);
+                float floralMask = exp(-abs(floral) * 22.0) * 0.65;
+                // Gold medallion
+                vec3 goldCol = vec3(0.85, 0.70, 0.20) + vec3(0.1, 0.1, 0.0) * noise(mPos * 8.0);
+                col = mix(col, goldCol, smoothstep(0.015, -0.005, floral) * 0.75);
+                col += goldCol * floralMask * 0.3;
+                // Additive glow
+                col += goldCol * exp(-length(mPos) * 3.5) * 0.04;
+            }
+
+            // =================== GOLD VINES ===================
+            {
+                float vineDist = goldVines(p, t);
+                float vineMask = exp(-vineDist * 30.0) * 0.55;
+                vec3 vineGold = vec3(0.80, 0.65, 0.18);
+                col += vineGold * vineMask;
+                col += vineGold * exp(-vineDist * 12.0) * 0.20;
+            }
+
+            // =================== CURSIVE SCRIPT ===================
+            col += scriptHighlight(p * 0.85, t);
+
+            // =================== ANISOTROPIC SHEEN ===================
+            col += silkSheen(p, t);
+
+            // =================== GOLD THREAD SPARKLE ===================
+            col += goldThreadSparkle(p, t);
+
+            // =================== WATER DROPLETS ===================
+            col += waterDroplets(p, t);
+
+            // =================== PARTICLES (fabric dust) ===================
+            col += particles(p, t) * 0.5;
+
+            // =================== ADDITIVE GLOW (warm gold/red ambient) ===================
+            col += vec3(0.35, 0.08, 0.02) * exp(-length(p) * 1.2) * 0.08;
+
+            // =================== FILM GRAIN (coarser — fabric texture) ===================
+            float grainScale = 650.0;
+            float grain = (hash(uv * grainScale + t) - 0.5) * 0.055;
+            grain += (hash(uv * grainScale * 0.5 + t + 1.7) - 0.5) * 0.030;
+            col += grain;
+
+            // =================== CHROMATIC ABERRATION (warm gold/red) ===================
+            vec2 caDir = normalize(p + 0.001);
+            float caAmt = 0.006;
+            // Warm CA: red shifts out, blue shifts in slightly
+            col.r += (hash((uv + caDir * caAmt * 1.4) * 840.0 + t) - 0.5) * 0.012;
+            col.b += (hash((uv - caDir * caAmt * 0.8) * 960.0 + t) - 0.5) * 0.006;
+            float edgeCA = pow(clamp(length(p) / (length(vec2(aspect, 1.0)) * 0.65), 0.0, 1.0), 1.8);
+            col.r = col.r + edgeCA * 0.020;
+            col.g = col.g + edgeCA * 0.010;
+            col.b = col.b - edgeCA * 0.012;
+
+            // =================== TONE MAP ===================
+            col = pow(clamp(col, 0.0, 1.0), vec3(0.85));
+            gl_FragColor = vec4(col, 1.0);
+        }
+    </script>
+    <script>
+        function main() {
+            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
+            if (!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) { console.error("FS error:", gl.getShaderInfoLog(fs)); }
+            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
+            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            function render(t) {
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        } window.onload = main;
+    </script>
+</body>
+</html>

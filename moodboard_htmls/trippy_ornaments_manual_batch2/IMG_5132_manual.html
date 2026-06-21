@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shader: IMG_5132 (Manual)</title>
+    <style>body { margin: 0; overflow: hidden; background-color: #000; } canvas { display: block; width: 100vw; height: 100vh; }</style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float; uniform vec2 iResolution; uniform float iTime;
+
+        float hash(float n) { return fract(sin(n) * 43758.5453123); }
+        float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+        vec2 hash2(vec2 p) {
+            p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
+            return -1.0 + 2.0 * fract(sin(p) * 43758.5453123);
+        }
+        
+        float noise(vec2 p) {
+            vec2 i = floor(p); vec2 f = fract(p);
+            f = f * f * (3.0 - 2.0 * f);
+            return mix(mix(dot(hash2(i + vec2(0.0, 0.0)), f - vec2(0.0, 0.0)),
+                           dot(hash2(i + vec2(1.0, 0.0)), f - vec2(1.0, 0.0)), f.x),
+                       mix(dot(hash2(i + vec2(0.0, 1.0)), f - vec2(0.0, 1.0)),
+                           dot(hash2(i + vec2(1.0, 1.0)), f - vec2(1.0, 1.0)), f.x), f.y);
+        }
+
+        mat2 rot(float a) { float s = sin(a), c = cos(a); return mat2(c, -s, s, c); }
+
+        float sdBox(vec2 p, vec2 b) {
+            vec2 d = abs(p) - b;
+            return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+        }
+
+        float sdCircle(vec2 p, float r) { return length(p) - r; }
+        
+        float sdSegment(vec2 p, vec2 a, vec2 b) {
+            vec2 pa = p-a, ba = b-a;
+            float h = clamp(dot(pa,ba)/dot(ba,ba), 0.0, 1.0);
+            return length(pa - ba*h);
+        }
+        
+        float sdEllipse(vec2 p, vec2 ab) {
+            p = abs(p); if (p.x > p.y) { p = p.yx; ab = ab.yx; }
+            float l = ab.y*ab.y - ab.x*ab.x;
+            float m = ab.x*p.x/l, m2 = m*m;
+            float n = ab.y*p.y/l, n2 = n*n;
+            float c = (m2 + n2 - 1.0)/3.0, c3 = c*c*c;
+            float q = c3 + m2*n2*2.0;
+            float d = c3 + m2*n2;
+            float g = m + m*n2;
+            float co;
+            if (d < 0.0) {
+                float h = acos(q/c3)/3.0;
+                float s = cos(h);
+                float t = sin(h)*sqrt(3.0);
+                float rx = sqrt( -c*(s + t + 2.0) + m2 );
+                float ry = sqrt( -c*(s - t + 2.0) + m2 );
+                co = (ry + sign(l)*rx + abs(g)/(rx*ry) - m)/2.0;
+            } else {
+                float h = 2.0*m*n*sqrt(d);
+                float s = sign(q+h)*pow(abs(q+h), 1.0/3.0);
+                float u = sign(q-h)*pow(abs(q-h), 1.0/3.0);
+                float rx = -s - u - c*4.0 + 2.0*m2;
+                float ry = (s - u)*sqrt(3.0);
+                float rm = sqrt( rx*rx + ry*ry );
+                co = (rm - rx)/2.0;
+            }
+            vec2 r = ab * vec2(co, sqrt(1.0-co*co));
+            return length(r-p) * sign(p.y-r.y);
+        }
+
+        void main() {
+            vec2 uv = gl_FragCoord.xy / iResolution.xy;
+            vec2 p = uv * 2.0 - 1.0;
+            p.x *= iResolution.x / iResolution.y;
+
+            vec3 col = vec3(0.0);
+
+            // --- BACKGROUND WALL ---
+            col = vec3(0.92, 0.93, 0.95); // slightly off-white wall
+            col *= 1.0 - 0.2 * length(p); // subtle vignette
+            
+            // Wall texture
+            col *= 0.98 + 0.02 * noise(p * 50.0);
+
+            // --- WOODEN TABLE ---
+            if (p.y < -0.7) {
+                // Table perspective
+                vec2 tableP = p;
+                tableP.x /= (tableP.y + 1.2);
+                
+                col = vec3(0.4, 0.25, 0.15); // rich brown wood
+                float grain = noise(vec2(tableP.x * 20.0, p.y * 5.0 + noise(p * 2.0)*2.0));
+                col *= 0.8 + 0.3 * grain;
+                
+                // Shadow under the vase
+                col *= smoothstep(0.05, 0.3, length(p - vec2(-0.35, -0.7)));
+                
+                // Table edge
+                if (abs(p.y - -0.7) < 0.01) col = vec3(0.2, 0.1, 0.05);
+            }
+
+            // --- VASE (Fluted Dark Green Cylinder) ---
+            vec2 vaseP = p - vec2(-0.35, -0.2); // Position
+            
+            // Base cylinder shape
+            float dVase = sdBox(vaseP, vec2(0.18, 0.5));
+            
+            // Fluted top edge
+            if (vaseP.y > 0.45 && vaseP.y < 0.55) {
+                float lipW = 0.18 + 0.02 * smoothstep(0.45, 0.5, vaseP.y);
+                dVase = sdBox(vaseP - vec2(0.0, 0.5), vec2(lipW, 0.02));
+            }
+
+            // Fluted texture (vertical grooves)
+            if (dVase < 0.0 || (vaseP.y > -0.5 && vaseP.y < 0.5 && abs(vaseP.x) < 0.18)) {
+                // Inside the vase body
+                
+                vec3 vaseCol = vec3(0.15, 0.25, 0.15); // dark olive green
+                
+                // 3D cylindrical mapping for flutes
+                float nx = vaseP.x / 0.18; // -1 to 1 across width
+                float nz = sqrt(1.0 - clamp(nx*nx, 0.0, 1.0));
+                
+                // Angle for grooves
+                float angle = asin(nx); // -pi/2 to pi/2
+                float grooves = sin(angle * 12.0); // 12 visible flutes
+                
+                // Modulate normal with grooves
+                vec3 normal = normalize(vec3(nx, 0.0, nz));
+                normal.x += grooves * 0.2 * nz;
+                normal = normalize(normal);
+                
+                // Lighting
+                vec3 lightDir = normalize(vec3(-0.8, 0.5, 0.8));
+                float diff = max(0.0, dot(normal, lightDir));
+                
+                // Base diffuse
+                vaseCol *= 0.4 + 0.6 * diff;
+                
+                // Specular highlight (glossy ceramic)
+                vec3 viewDir = vec3(0.0, 0.0, 1.0);
+                vec3 halfDir = normalize(lightDir + viewDir);
+                float spec = pow(max(0.0, dot(normal, halfDir)), 60.0);
+                
+                vaseCol += vec3(0.8, 0.9, 0.8) * spec * 0.6;
+                
+                // Edge darkening
+                vaseCol *= smoothstep(1.0, 0.8, abs(nx));
+                
+                // Inside of the lip (dark hole)
+                if (vaseP.y > 0.51 && vaseP.y < 0.55 && abs(vaseP.x) < 0.15) {
+                    vaseCol = vec3(0.05, 0.1, 0.05);
+                }
+                
+                col = vaseCol;
+            }
+
+            // --- KUMQUAT TREE (Branches, Leaves, Fruits) ---
+            vec2 treeP = p - vec2(-0.35, 0.3); // Base of tree at top of vase
+            
+            float treeD = 1000.0;
+            vec3 treeCol = vec3(0.0);
+            
+            // 1. Branches (Main stems)
+            float b1 = sdSegment(treeP, vec2(0.0, 0.0), vec2(0.0, 0.2));
+            float b2 = sdSegment(treeP, vec2(0.0, 0.1), vec2(-0.2, 0.3));
+            float b3 = sdSegment(treeP, vec2(0.0, 0.1), vec2(0.2, 0.4));
+            float b4 = sdSegment(treeP, vec2(-0.2, 0.3), vec2(-0.4, 0.5));
+            float dBranch = min(min(b1, b2), min(b3, b4));
+            
+            if (dBranch < 0.02) {
+                treeD = dBranch;
+                treeCol = vec3(0.2, 0.15, 0.1); // dark brown
+                treeCol *= 0.5 + 0.5 * noise(p * 100.0);
+            }
+
+            // 2. Leaves (Abstracted scattered ellipses)
+            // Procedural scattering using a loop
+            for(int i=0; i<30; i++) {
+                float fi = float(i);
+                
+                // Random position centered around upper left
+                vec2 lPos = vec2(
+                    (hash(fi * 1.1) - 0.5) * 1.2 - 0.2,
+                    (hash(fi * 1.2) - 0.5) * 1.0 + 0.3
+                );
+                
+                // Filter leaves to roughly form a bush shape
+                if (length(lPos - vec2(-0.2, 0.4)) < 0.6) {
+                    vec2 lp = treeP - lPos;
+                    
+                    // Random rotation for each leaf
+                    float rotA = hash(fi * 1.3) * 6.28;
+                    lp *= rot(rotA);
+                    
+                    // Leaf shape
+                    float dLeaf = sdEllipse(lp, vec2(0.08, 0.03));
+                    
+                    if (dLeaf < 0.0) {
+                        treeD = dLeaf;
+                        // Dark green, slightly varied
+                        vec3 leafC = vec3(0.1, 0.25 + hash(fi)*0.1, 0.1);
+                        
+                        // Fake 3D leaf shading (half light, half dark along center vein)
+                        if (lp.y > 0.0) leafC *= 1.2;
+                        else leafC *= 0.8;
+                        
+                        // Center vein
+                        if (abs(lp.y) < 0.003 && abs(lp.x) < 0.07) leafC = vec3(0.2, 0.4, 0.2);
+                        
+                        // Specular shine on glossy leaves
+                        if (hash(fi*1.4) > 0.5 && dLeaf > -0.01 && lp.y > 0.0) leafC += vec3(0.2);
+                        
+                        treeCol = leafC;
+                    }
+                }
+            }
+
+            // 3. Oranges/Kumquats (Bright orange spheres)
+            for(int i=0; i<25; i++) {
+                float fi = float(i);
+                
+                // Positions
+                vec2 oPos = vec2(
+                    (hash(fi * 2.1) - 0.5) * 1.1 - 0.2,
+                    (hash(fi * 2.2) - 0.5) * 0.9 + 0.3
+                );
+                
+                // Clustered
+                if (length(oPos - vec2(-0.2, 0.3)) < 0.5) {
+                    vec2 op = treeP - oPos;
+                    
+                    // Some variation in size
+                    float r = 0.035 + hash(fi * 2.3) * 0.015;
+                    float dFruit = sdCircle(op, r);
+                    
+                    if (dFruit < 0.0) {
+                        treeD = dFruit;
+                        
+                        // Spherical 3D shading
+                        float nx = op.x / r;
+                        float ny = op.y / r;
+                        float nz = sqrt(1.0 - clamp(nx*nx + ny*ny, 0.0, 1.0));
+                        vec3 n = normalize(vec3(nx, ny, nz));
+                        
+                        vec3 l = normalize(vec3(-0.5, 0.8, 0.5));
+                        float diff = max(0.0, dot(n, l));
+                        
+                        // Bright orange color
+                        vec3 fruitBase = vec3(1.0, 0.4 + hash(fi)*0.1, 0.0);
+                        vec3 fruitCol = fruitBase * (0.4 + 0.6 * diff);
+                        
+                        // Dimpled texture (orange peel)
+                        float dimples = noise(op * 200.0);
+                        fruitCol *= 0.9 + 0.1 * dimples;
+                        
+                        // Subsurface scattering fake (glow at edges)
+                        fruitCol += vec3(0.8, 0.2, 0.0) * pow(1.0 - nz, 3.0) * 0.5;
+                        
+                        // Specular dot
+                        vec3 h = normalize(l + vec3(0.0, 0.0, 1.0));
+                        float spec = pow(max(0.0, dot(n, h)), 20.0);
+                        fruitCol += vec3(0.8, 0.9, 0.8) * spec * 0.5;
+                        
+                        treeCol = fruitCol;
+                    }
+                }
+            }
+
+            // Render tree elements
+            if (treeD < 0.0) {
+                // Drop shadow onto background/vase
+                if (dVase > 0.0) {
+                    float shadowMap = min(length(treeP - vec2(-0.1, 0.4)) * 0.5, 1.0); // very rough hack
+                }
+                col = treeCol;
+            } else if (treeD < 0.02) {
+                // Soft shadow for leaves on each other or background
+                col *= 0.7 + 0.3 * smoothstep(0.0, 0.02, treeD);
+            }
+
+            // Global trippy overlay to match aesthetic theme
+            vec2 trippyP = p * 1.5 + vec2(sin(iTime*0.3), cos(iTime*0.4)) * 0.1;
+            col += 0.015 * vec3(
+                sin(trippyP.x * 4.0 + iTime * 2.0),
+                sin(trippyP.y * 5.0 + iTime * 2.5),
+                sin((trippyP.x - trippyP.y) * 4.0 + iTime * 3.0)
+            );
+
+            gl_FragColor = vec4(col, 1.0);
+        }
+    </script>
+    <script>
+        function main() {
+            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
+            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
+            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            function render(t) {
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        } window.onload = main;
+    </script>
+</body>
+</html>

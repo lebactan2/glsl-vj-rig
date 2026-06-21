@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Red Book on Perforated Surface</title>
+    <style>body { margin: 0; overflow: hidden; background-color: #000; } canvas { display: block; width: 100vw; height: 100vh; }</style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float; uniform vec2 iResolution; uniform float iTime;
+        void main() {
+            vec2 uv = gl_FragCoord.xy / iResolution.xy;
+            vec2 p = uv * 2.0 - 1.0;
+            p.x *= iResolution.x / iResolution.y;
+
+            vec3 col = vec3(0.85, 0.9, 0.9); // Wall
+
+            // Floor (perforated metal)
+            if (p.y < -0.3) {
+                vec2 floorUV = vec2(p.x / (p.y + 0.6), 1.0 / (p.y + 0.6));
+                floorUV *= 6.0;
+                
+                vec2 id = floor(floorUV);
+                if (mod(id.y, 2.0) > 0.5) floorUV.x += 0.5;
+                vec2 f = fract(floorUV);
+                float hole = smoothstep(0.35, 0.25, length(f - 0.5));
+                
+                vec3 fCol = vec3(0.55, 0.6, 0.55); // grey metal
+                fCol = mix(fCol, vec3(0.1), hole);
+                
+                // Shadow from book
+                float shadow = smoothstep(-0.1, 0.4, abs(p.x - 0.1));
+                shadow *= smoothstep(-0.3, -0.6, p.y);
+                fCol *= 0.4 + 0.6 * shadow;
+                
+                col = fCol;
+            }
+
+            // Red Book Dimensions
+            float coverX = 0.3;
+            float coverY = 0.5;
+            float skew = 0.05;
+            
+            // Front Cover
+            float cover = smoothstep(0.01, 0.0, max(abs(p.x - 0.1) - coverX, abs(p.y - 0.1) - coverY));
+            
+            // White Spine (left side, slightly skewed back)
+            float skewX = p.x - (p.y - 0.1) * skew;
+            float spine = smoothstep(0.01, 0.0, max(abs(skewX + 0.25) - 0.05, abs(p.y - 0.12) - coverY));
+            
+            // Darker Red Back Cover showing behind spine
+            float backEdge = smoothstep(0.01, 0.0, max(abs(skewX + 0.28) - 0.08, abs(p.y - 0.14) - coverY));
+
+            if (backEdge > 0.5) {
+                col = vec3(0.5, 0.05, 0.1); // dark red
+            }
+            if (spine > 0.5) {
+                col = vec3(0.95);
+                col *= 0.8 + 0.2 * smoothstep(-0.3, -0.2, skewX); // lighting
+                // Spine text/decorations
+                if (mod(p.y * 10.0, 1.0) < 0.1 && abs(p.y) < 0.3) col *= 0.5;
+            }
+            if (cover > 0.5) {
+                col = vec3(0.85, 0.1, 0.2); // Bright red
+                
+                // "LAYOUT NOW" abstract typography
+                float tY1 = abs(p.y - 0.0);
+                float tX1 = abs(p.x - 0.1);
+                if (tY1 < 0.05 && tX1 < 0.2) {
+                    if (mod(p.x * 15.0, 1.0) < 0.75) col = vec3(1.0); // LAYOUT
+                }
+                float tY2 = abs(p.y + 0.1);
+                float tX2 = abs(p.x - 0.05);
+                if (tY2 < 0.05 && tX2 < 0.15) {
+                    if (mod(p.x * 15.0, 1.0) < 0.75) col = vec3(1.0); // NOW
+                }
+                
+                // Subtitle
+                if (abs(p.y + 0.18) < 0.005 && abs(p.x - 0.1) < 0.18) {
+                    col = vec3(1.0);
+                }
+            }
+
+            gl_FragColor = vec4(col, 1.0);
+        }
+    </script>
+    <script>
+        function main() {
+            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
+            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
+            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            function render(t) {
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        } window.onload = main;
+    </script>
+</body>
+</html>

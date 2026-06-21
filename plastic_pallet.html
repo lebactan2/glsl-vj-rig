@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plastic Pallet</title>
+    <style>body { margin: 0; overflow: hidden; background-color: #000; } canvas { display: block; width: 100vw; height: 100vh; }</style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float; uniform vec2 iResolution; uniform float iTime;
+        void main() {
+            vec2 uv = gl_FragCoord.xy / iResolution.xy;
+            vec2 p = uv * 3.0; // scale
+            p.x *= iResolution.x / iResolution.y;
+            
+            vec2 id = floor(p);
+            vec2 f = fract(p);
+            vec2 nF = fract(p + 0.5); // centered on intersection nodes
+            
+            // 1. Intersection nodes (Squares at corners of cells)
+            float node = step(abs(nF.x - 0.5), 0.15) * step(abs(nF.y - 0.5), 0.15);
+            float nHole = step(length(nF - 0.5), 0.04);
+            float nIndents = step(length(abs(nF - 0.5) - 0.09), 0.025);
+            
+            // 2. Main connecting beams
+            float hBeam = step(abs(f.y - 0.5), 0.1) * step(abs(nF.x - 0.5), 0.5);
+            float vBeam = step(abs(f.x - 0.5), 0.1) * step(abs(nF.y - 0.5), 0.5);
+            float beams = max(hBeam, vBeam);
+            
+            // 3. Fine grid in the empty quadrants
+            vec2 fineUV = fract(p * 12.0);
+            float fineGrid = step(fineUV.x, 0.25) + step(fineUV.y, 0.25);
+            fineGrid = clamp(fineGrid, 0.0, 1.0);
+            
+            // 4. Large rectangular holes in quadrants
+            float h1 = step(0.18, f.x) * step(f.x, 0.4) * step(0.18, f.y) * step(f.y, 0.4);
+            float h2 = step(0.6, f.x) * step(f.x, 0.82) * step(0.18, f.y) * step(f.y, 0.4);
+            float h3 = step(0.18, f.x) * step(f.x, 0.4) * step(0.6, f.y) * step(f.y, 0.82);
+            float h4 = step(0.6, f.x) * step(f.x, 0.82) * step(0.6, f.y) * step(f.y, 0.82);
+            float allBigHoles = h1 + h2 + h3 + h4;
+            
+            // Combine
+            float plastic = max(node, beams);
+            float isFineGrid = 0.0;
+            if (plastic < 0.5) {
+                if (allBigHoles < 0.5) {
+                    plastic = fineGrid;
+                    isFineGrid = plastic;
+                }
+            }
+            // Subtract center hole
+            plastic *= (1.0 - nHole);
+            
+            // Base colors
+            vec3 palletCol = vec3(0.65, 0.72, 0.2); // Bright yellow-green
+            vec3 shadowCol = vec3(0.05, 0.08, 0.02); // Deep dark holes
+            
+            vec3 col = shadowCol;
+            
+            if (plastic > 0.5) {
+                col = palletCol;
+                
+                // Bevels and details
+                if (node > 0.5 && nHole < 0.5) {
+                    // Inside node
+                    if (nIndents > 0.5) {
+                        col *= 0.4; // indent shadow
+                    } else {
+                        // Bevel around hole
+                        col *= smoothstep(0.04, 0.06, length(nF - 0.5));
+                        // Bevel around edges of node
+                        float dX = abs(abs(nF.x - 0.5) - 0.15);
+                        float dY = abs(abs(nF.y - 0.5) - 0.15);
+                        col *= smoothstep(0.0, 0.015, min(dX, dY)) * 0.3 + 0.7;
+                    }
+                } else if (beams > 0.5) {
+                    // Bevel main beams
+                    float bX = min(abs(f.y - 0.4), abs(f.y - 0.6));
+                    float bY = min(abs(f.x - 0.4), abs(f.x - 0.6));
+                    float distToEdge = beams == hBeam ? bX : bY;
+                    if (hBeam > 0.5 && vBeam > 0.5) distToEdge = min(bX, bY);
+                    col *= smoothstep(0.0, 0.02, distToEdge) * 0.4 + 0.6;
+                } else if (isFineGrid > 0.5) {
+                    // Fine grid is lower and has bevels
+                    col *= 0.75; // darker
+                    float gX = min(fineUV.x, 0.25 - fineUV.x);
+                    float gY = min(fineUV.y, 0.25 - fineUV.y);
+                    col *= smoothstep(0.0, 0.1, max(gX, gY)) * 0.5 + 0.5;
+                }
+                
+                // General plastic texture noise
+                float tex = fract(sin(dot(p*100.0, vec2(12.98, 78.23))) * 43758.54);
+                col *= 0.95 + 0.05 * tex;
+            } else {
+                // We are in the holes. Show a darker pallet underneath
+                vec2 p2 = p + vec2(0.1, -0.1);
+                vec2 f2 = fract(p2);
+                vec2 nF2 = fract(p2 + 0.5);
+                float b2 = max(step(abs(f2.y - 0.5), 0.1), step(abs(f2.x - 0.5), 0.1));
+                float n2 = step(abs(nF2.x - 0.5), 0.15) * step(abs(nF2.y - 0.5), 0.15);
+                if (max(b2, n2) > 0.5) {
+                    col = palletCol * 0.25; // Dark green in background
+                }
+            }
+            
+            gl_FragColor = vec4(col, 1.0);
+        }
+    </script>
+    <script>
+        function main() {
+            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
+            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
+            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            function render(t) {
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        } window.onload = main;
+    </script>
+</body>
+</html>

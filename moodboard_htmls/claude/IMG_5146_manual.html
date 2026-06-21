@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shader: IMG_5146</title>
+    <style>body { margin: 0; overflow: hidden; background-color: #000; } canvas { display: block; width: 100vw; height: 100vh; }</style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float; uniform vec2 iResolution; uniform float iTime;
+
+        float hash(vec2 p) {
+            p = fract(p * vec2(127.1, 311.7));
+            p += dot(p, p + 17.5);
+            return fract(p.x * p.y);
+        }
+        float hash1(float n) { return fract(sin(n) * 43758.5453); }
+
+        float noise(vec2 p) {
+            vec2 i = floor(p); vec2 f = fract(p);
+            vec2 u = f * f * (3.0 - 2.0 * f);
+            return mix(mix(hash(i), hash(i+vec2(1,0)), u.x),
+                       mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), u.x), u.y);
+        }
+
+        float fbm(vec2 p) {
+            float v = 0.0; float a = 0.5;
+            for (int i = 0; i < 5; i++) { v += a * noise(p); p = p * 2.1 + vec2(1.7, 9.2); a *= 0.5; }
+            return v;
+        }
+
+        // Domain warp for fabric flutter
+        vec2 domainWarp(vec2 p, float t) {
+            float s = 0.6;
+            return p + s * vec2(fbm(p + t*0.12), fbm(p + vec2(3.7, 1.9) + t*0.1));
+        }
+
+        vec3 hsv2rgb(vec3 c) {
+            vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
+            vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+            return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+        }
+
+        float sdBox(vec2 p, vec2 b) {
+            vec2 d = abs(p) - b;
+            return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+        }
+        float sdCircle(vec2 p, float r) { return length(p) - r; }
+        float sdSegment(vec2 p, vec2 a, vec2 b) {
+            vec2 pa = p-a, ba = b-a;
+            float h = clamp(dot(pa,ba)/dot(ba,ba), 0.0, 1.0);
+            return length(pa - ba*h);
+        }
+
+        // Thick text bar helper
+        float textBar(vec2 uv, float x, float y, float w, float h) {
+            return 1.0 - smoothstep(0.0, 0.004, sdBox(uv - vec2(x, y), vec2(w*0.5, h*0.5)));
+        }
+
+        // Main "QUAT EM DI!" text
+        float mainText(vec2 uv) {
+            float mask = 0.0;
+            float y = 0.5; float charH = 0.09; float barH = charH * 0.28;
+            // Q
+            mask = max(mask, textBar(uv, 0.072, y, 0.052, charH));
+            mask = max(mask, textBar(uv, 0.072+0.018, y-0.02, 0.018, 0.024));
+            // U
+            mask = max(mask, textBar(uv, 0.142-0.022, y, 0.01, charH));
+            mask = max(mask, textBar(uv, 0.142+0.022, y, 0.01, charH));
+            mask = max(mask, textBar(uv, 0.142, y-charH*0.5+barH*0.5, 0.026, barH));
+            // A
+            mask = max(mask, textBar(uv, 0.207, y+charH*0.4, 0.048, barH));
+            mask = max(mask, textBar(uv, 0.207, y, 0.048, barH));
+            mask = max(mask, textBar(uv, 0.207-0.022, y, 0.012, charH));
+            mask = max(mask, textBar(uv, 0.207+0.022, y, 0.012, charH));
+            // T
+            mask = max(mask, textBar(uv, 0.265, y+charH*0.4, 0.046, barH));
+            mask = max(mask, textBar(uv, 0.265, y, 0.01, charH));
+            // E
+            mask = max(mask, textBar(uv, 0.36-0.014, y, 0.01, charH));
+            mask = max(mask, textBar(uv, 0.36, y+charH*0.4, 0.038, barH));
+            mask = max(mask, textBar(uv, 0.36, y, 0.034, barH));
+            mask = max(mask, textBar(uv, 0.36, y-charH*0.4, 0.038, barH));
+            // M
+            mask = max(mask, textBar(uv, 0.425-0.022, y, 0.01, charH));
+            mask = max(mask, textBar(uv, 0.425+0.022, y, 0.01, charH));
+            mask = max(mask, textBar(uv, 0.408, y+charH*0.3, 0.01, charH*0.45));
+            mask = max(mask, textBar(uv, 0.442, y+charH*0.3, 0.01, charH*0.45));
+            // D
+            mask = max(mask, textBar(uv, 0.52-0.018, y, 0.01, charH));
+            mask = max(mask, textBar(uv, 0.52, y+charH*0.4, 0.03, barH));
+            mask = max(mask, textBar(uv, 0.52, y-charH*0.4, 0.03, barH));
+            mask = max(mask, textBar(uv, 0.536, y, 0.01, charH*0.7));
+            // I
+            mask = max(mask, textBar(uv, 0.585, y, 0.01, charH));
+            mask = max(mask, textBar(uv, 0.585, y+charH*0.4, 0.026, barH));
+            mask = max(mask, textBar(uv, 0.585, y-charH*0.4, 0.026, barH));
+            // !
+            mask = max(mask, textBar(uv, 0.635, y+0.01, 0.01, charH*0.6));
+            mask = max(mask, textBar(uv, 0.635, y-charH*0.4, 0.01, 0.018));
+            return mask;
+        }
+
+        // 5-pointed star SDF for sparkles
+        float sdStar5(vec2 p, float r) {
+            float angle = atan(p.y, p.x);
+            float dist = length(p);
+            float n = 5.0;
+            float a = mod(angle, 6.28318/n) - 3.14159/n;
+            float inner = r * 0.4;
+            float starSDF = mix(r, inner, cos(a*n)*0.5+0.5);
+            return dist - starSDF;
+        }
+
+        // Edge branch
+        float edgeBranch(vec2 uv, float side, float t) {
+            float originX = (side < 0.5) ? 0.0 : 1.0;
+            float flipX = (side < 0.5) ? 1.0 : -1.0;
+            float mask = 0.0;
+            vec2 o = vec2(originX, 0.5);
+            float branchLen = 0.22;
+            float swayMain = sin(t*0.6 + side*3.14)*0.02;
+            vec2 tip = o + vec2(flipX*branchLen, swayMain);
+            mask = max(mask, 1.0-smoothstep(0.0, 0.006, sdSegment(uv, o, tip)-0.006));
+            for (int si = 0; si < 4; si++) {
+                float sf = float(si);
+                float t2 = 0.3 + sf*0.2;
+                vec2 subO = mix(o, tip, t2);
+                float subLen = 0.08 + hash(vec2(sf, side))*0.06;
+                float subAng = sf*0.5 + 0.3 + side*1.5;
+                float sway = sin(t*0.8 + sf + side)*0.015;
+                vec2 subDir = vec2(flipX*cos(subAng+sway), sin(subAng+sway));
+                vec2 subTip = subO + subDir*subLen;
+                mask = max(mask, 1.0-smoothstep(0.0, 0.005, sdSegment(uv, subO, subTip)-0.004));
+            }
+            return mask;
+        }
+
+        float edgeFruits(vec2 uv, float side, float t) {
+            float mask = 0.0;
+            float originX = (side < 0.5) ? 0.0 : 1.0;
+            float flipX = (side < 0.5) ? 1.0 : -1.0;
+            for (int fi = 0; fi < 10; fi++) {
+                float ff = float(fi);
+                float fx = originX + flipX*(0.03 + hash(vec2(ff, side+5.0))*0.2);
+                float fy = 0.3 + hash(vec2(ff+1.0, side+5.0))*0.4;
+                float fr = 0.018 + hash(vec2(ff+2.0, side+5.0))*0.012;
+                // Pulsing internal warm glow
+                float pulse = 0.8 + 0.2*sin(t*1.6 + ff*0.9 + side*2.0);
+                float fd = sdCircle(uv - vec2(fx, fy), fr);
+                mask = max(mask, (1.0-smoothstep(0.0, 0.008, fd))*pulse);
+            }
+            return mask;
+        }
+
+        void main() {
+            vec2 uv = gl_FragCoord.xy / iResolution.xy;
+            vec2 p = uv * 2.0 - 1.0;
+            p.x *= iResolution.x / iResolution.y;
+            float t = iTime;
+
+            // Chromatic aberration (strong on edges)
+            vec2 caOff = (uv - 0.5) * 0.008;
+            vec2 uvR = uv + caOff;
+            vec2 uvBl = uv - caOff;
+
+            float breath = sin(t*0.5)*0.5+0.5;
+
+            // --- FABRIC FLUTTER: domain warp entire UV ---
+            // Low amplitude fabric flutter (simulates banner blow)
+            float warpAmp = 0.012;
+            vec2 fabricWarp = vec2(
+                sin(uv.y * 12.0 + t*1.8) * warpAmp + cos(uv.y*7.0 + t*1.2) * warpAmp*0.5,
+                sin(uv.x * 8.0 + t*1.5) * warpAmp*0.3
+            );
+            vec2 wuv = uv + fabricWarp; // warped UV for background
+
+            // Heat shimmer distortion on background
+            float heatAmp = 0.003;
+            vec2 heatWarp = vec2(sin(wuv.y*40.0 + t*3.5 + wuv.x*20.0)*heatAmp,
+                                 cos(wuv.x*35.0 + t*3.0)*heatAmp*0.7);
+            vec2 huv = wuv + heatWarp;
+
+            // --- BACKGROUND: deep red, breathing ---
+            float redBreathe = 0.82 + 0.06*sin(t*0.45);
+            vec3 col = vec3(redBreathe, 0.1 + 0.02*sin(t*0.3), 0.08);
+            // Subtle red texture via fbm
+            col += fbm(huv*5.0 + t*0.04) * vec3(0.04, 0.01, 0.01);
+
+            // Slow hue-shift wave from bottom to top (slow color wash)
+            float hueWave = fract(uv.y * 0.3 - t*0.03);
+            vec3 hueShiftAdd = hsv2rgb(vec3(hueWave, 0.6, 0.08));
+            col += hueShiftAdd;
+
+            // --- YELLOW BORDER FRAME ---
+            float borderW = 0.025;
+            float inBorderX = step(borderW, uv.x)*step(uv.x, 1.0-borderW);
+            float inBorderY = step(borderW, uv.y)*step(uv.y, 1.0-borderW);
+            float inInner = inBorderX * inBorderY;
+            float onBorder = 1.0 - inInner;
+
+            // Animated dash pattern on border
+            float dashPhase = fract(uv.x * 20.0 - t*1.5) + fract(uv.y * 20.0 - t*1.5);
+            float dashMask = step(0.5, fract(dashPhase*0.5));
+            float borderShimmer = (sin(uv.x*30.0 + t*3.0)*sin(uv.y*25.0 - t*2.5)*0.2 + 0.8) * (0.7 + dashMask*0.3);
+            vec3 borderCol = vec3(0.98, 0.88, 0.1) * borderShimmer;
+            col = mix(col, borderCol, onBorder);
+
+            // Border inner glow
+            float borderGlow = 1.0 - smoothstep(0.0, 0.06, min(
+                min(uv.x - borderW, (1.0-borderW) - uv.x),
+                min(uv.y - borderW, (1.0-borderW) - uv.y)));
+            col += vec3(0.98, 0.88, 0.05)*borderGlow*0.2*inInner;
+
+            // --- SPARKLE STARS scattered in red background ---
+            for (int si = 0; si < 14; si++) {
+                float sf = float(si);
+                float sx = 0.15 + hash1(sf*1.7)*0.7;
+                float sy = 0.15 + hash1(sf*2.3)*0.7;
+                float ssize = 0.008 + hash1(sf*3.1)*0.006;
+                // Fast twinkle
+                float stPhase = hash1(sf*5.5)*6.28;
+                float twinkle = sin(t*4.0 + stPhase)*0.5+0.5;
+                twinkle = smoothstep(0.5, 1.0, twinkle);
+                float sDist = sdStar5(uv - vec2(sx, sy), ssize);
+                float sMask = (1.0-smoothstep(0.0, 0.004, sDist)) * twinkle;
+                col += vec3(0.98, 0.92, 0.5)*sMask*0.8*inInner;
+                // Additive sparkle glow
+                col += vec3(1.0, 0.85, 0.4) * exp(-abs(sDist)*40.0)*twinkle*0.15*inInner;
+            }
+
+            // --- PHONE NUMBER TEXT (top white bars) ---
+            float phoneY = 0.88;
+            for (int pi = 0; pi < 10; pi++) {
+                float pf = float(pi);
+                float px = 0.18 + pf*0.07;
+                float pw = 0.025 + hash(vec2(pf, 99.0))*0.015;
+                float phoneBar = 1.0-smoothstep(0.0, 0.004, sdBox(uv - vec2(px, phoneY), vec2(pw, 0.02)));
+                col = mix(col, vec3(0.9, 0.9, 0.9), phoneBar*inInner);
+            }
+
+            // --- MAIN TEXT: "QUAT EM DI!" with neon buzz ---
+            // Neon buzz: HF sin flicker on glow
+            float buzzPhase = sin(t*13.7)*0.5+0.5;
+            float buzzTrigger = step(0.88, buzzPhase);
+            float buzzNoise = fract(sin(t*63.1 + 0.7)*3000.0);
+            float textNeonBuzz = mix(1.0, mix(0.3, 1.0, step(0.3, buzzNoise)), buzzTrigger);
+
+            // Heat shimmer on text UV
+            float textShimmer = sin(uv.y*40.0 + t*3.5 + uv.x*20.0)*0.008;
+            vec2 textUV = uv + vec2(textShimmer, 0.0);
+            float textMask = mainText(textUV);
+            float textGlow = (sin(t*2.0 + uv.x*8.0)*0.15 + 0.85) * textNeonBuzz;
+            vec3 yellowText = vec3(0.98, 0.88, 0.1) * textGlow;
+            // Neon glow halo around text
+            float textGlowHalo = exp(-abs(uv.y-0.5)*12.0)*textMask*0.5*textNeonBuzz;
+            col += vec3(0.98, 0.65, 0.0)*textGlowHalo*0.45;
+            col = mix(col, yellowText, textMask * inInner);
+
+            // --- SUBTEXT (white bars) ---
+            float subY = 0.32;
+            for (int si2 = 0; si2 < 14; si2++) {
+                float sf2 = float(si2);
+                float sx2 = 0.12 + sf2*0.054;
+                float sw2 = 0.018 + hash(vec2(sf2, 77.0))*0.012;
+                float subBar = 1.0-smoothstep(0.0, 0.004, sdBox(uv - vec2(sx2, subY), vec2(sw2, 0.016)));
+                col = mix(col, vec3(0.88, 0.86, 0.84), subBar*inInner);
+            }
+            float subY2 = 0.24;
+            for (int si3 = 0; si3 < 10; si3++) {
+                float sf3 = float(si3);
+                float sx3 = 0.2 + sf3*0.062;
+                float sw3 = 0.02 + hash(vec2(sf3, 55.0))*0.01;
+                float subBar2 = 1.0-smoothstep(0.0, 0.004, sdBox(uv - vec2(sx3, subY2), vec2(sw3, 0.013)));
+                col = mix(col, vec3(0.85, 0.83, 0.80), subBar2*inInner);
+            }
+
+            // --- EDGE BRANCHES AND FRUITS ---
+            float leftBranch = edgeBranch(uv, 0.0, t);
+            float rightBranch = edgeBranch(uv, 1.0, t);
+            col = mix(col, vec3(0.15, 0.10, 0.06), leftBranch);
+            col = mix(col, vec3(0.15, 0.10, 0.06), rightBranch);
+
+            float leftFruits = edgeFruits(uv, 0.0, t);
+            float rightFruits = edgeFruits(uv, 1.0, t);
+            // Pulsing internal warm glow on kumquats
+            float fruitPulse = 0.85 + 0.15*sin(t*1.5);
+            vec3 fruitCol = vec3(0.95, 0.55, 0.1) * fruitPulse;
+            col = mix(col, fruitCol, leftFruits);
+            col = mix(col, fruitCol, rightFruits);
+            // Fruit additive glow
+            col += vec3(0.95, 0.45, 0.02)*leftFruits*0.25;
+            col += vec3(0.95, 0.45, 0.02)*rightFruits*0.25;
+
+            // --- CONFETTI PARTICLE SYSTEM: 15 pieces raining down ---
+            for (int ci = 0; ci < 15; ci++) {
+                float cf = float(ci);
+                float phase = hash1(cf*1.3);
+                float confT = fract(t*0.18 + phase);
+                float cx = 0.1 + hash1(cf*2.7)*0.8;
+                float cy = 1.0 - confT; // rain from top
+                // Horizontal drift with wind
+                float cxDrift = cx + sin(confT*8.0 + cf*1.5)*0.05;
+                // Rotation
+                float cAngle = confT*10.0 + cf*2.1;
+                vec2 cp = uv - vec2(cxDrift, cy);
+                vec2 cpRot = vec2(cp.x*cos(cAngle)-cp.y*sin(cAngle), cp.x*sin(cAngle)+cp.y*cos(cAngle));
+                float cSize = 0.012 + hash1(cf*4.4)*0.008;
+                float confMask = 1.0-smoothstep(0.0, 0.006, sdBox(cpRot, vec2(cSize, cSize*0.5)));
+                float confFade = sin(confT*3.14159);
+                vec3 confCol = hsv2rgb(vec3(hash1(cf*6.1), 0.85, 1.0));
+                col += confCol*confMask*confFade*0.8*inInner;
+            }
+
+            // --- PARTICLE SYSTEM: dust motes in background ---
+            for (int pi = 0; pi < 12; pi++) {
+                float pf = float(pi);
+                float px = fract(hash1(pf*1.9) + t*0.015*(hash1(pf*3.1)-0.4));
+                float py = fract(hash1(pf*2.7) + t*0.01*(hash1(pf*5.2)-0.5));
+                float pb = 0.3+0.7*sin(t*0.8+pf*1.2);
+                col += vec3(0.98, 0.88, 0.4)*exp(-length(uv-vec2(px,py))*300.0)*pb*0.05*inInner;
+            }
+
+            // Chromatic aberration (strong on edges)
+            float edgeDist = length(uv - 0.5);
+            float caStr = smoothstep(0.2, 0.7, edgeDist);
+            col.r += noise(uvR*14.0+t)*0.025*caStr;
+            col.b += noise(uvBl*14.0+t)*0.025*caStr;
+
+            // Film grain
+            float grain = noise(uv*800.0 + t*1.9)*0.025;
+            col += grain - 0.0125;
+
+            // Overall red glow breathing
+            col += vec3(0.08, 0.0, 0.0)*breath*0.2*inInner;
+
+            col = pow(clamp(col, 0.0, 1.0), vec3(0.85));
+            gl_FragColor = vec4(col, 1.0);
+        }
+    </script>
+    <script>
+        function main() {
+            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
+            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
+            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            function render(t) {
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        } window.onload = main;
+    </script>
+</body>
+</html>
