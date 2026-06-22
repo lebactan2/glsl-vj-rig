@@ -46,6 +46,9 @@ uniform float uChannels;
 uniform float uPlayhead;
 uniform sampler2D uStepTex;   // steps x channels, .r = on(1)/off(0)
 uniform sampler2D uDensTex;   // 1 x channels, .r = active fraction 0..1
+uniform float uBass;          // audio bands of the loaded track, 0..1
+uniform float uMid;
+uniform float uTreble;
 
 float cellOn(float lane, float step){
     vec2 uv = vec2((step + 0.5) / uSteps, (lane + 0.5) / uChannels);
@@ -80,6 +83,26 @@ vec3 pat_circular(vec2 p, float inten, float age){       // voice (green)
     return c * step(r, 1.0) * inten;
 }
 
+// --- animated cement / concrete background ---
+float h21(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float vnoise(vec2 p){
+    vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
+    return mix(mix(h21(i), h21(i+vec2(1.0,0.0)), f.x),
+               mix(h21(i+vec2(0.0,1.0)), h21(i+vec2(1.0,1.0)), f.x), f.y);
+}
+float fbm(vec2 p){ float v=0.0, a=0.5; for(int i=0;i<5;i++){ v+=a*vnoise(p); p*=2.0; a*=0.5; } return v; }
+vec3 cement(vec2 uv){
+    vec2 q = uv * vec2(3.5, 5.0);
+    float drift = iTime * 0.03;
+    float n = fbm(q + drift) * 0.6 + fbm(q*2.3 - drift*0.7) * 0.4;
+    float base = 0.15 + 0.12 * n;
+    base += (h21(floor(gl_FragCoord.xy / 2.0)) - 0.5) * 0.05;          // fine aggregate
+    base *= 0.88 + 0.24 * fbm(q*0.6 + vec2(drift*0.5, -drift*0.3));    // drifting stains
+    base -= smoothstep(0.04, 0.0, abs(fbm(q*1.2 + 5.0) - 0.5)) * 0.04; // faint cracks
+    base *= 0.96 + 0.04 * sin(iTime * 0.2);                            // slow breathing
+    return vec3(base) * vec3(0.98, 0.99, 1.04);                        // cool gray
+}
+
 void main(){
     vec2 uv = gl_FragCoord.xy / iResolution.xy;
     float hitY = 0.18;
@@ -89,12 +112,9 @@ void main(){
     float lane  = floor(laneF);
     float lx    = fract(laneF);
 
-    vec3 col = vec3(0.025, 0.025, 0.04);
-    col += smoothstep(0.5, 0.0, abs(uv.y - 1.0)) * 0.0; // (noop, keeps bg flat)
-    // lane dividers + hit line
-    col += smoothstep(0.012, 0.0, min(lx, 1.0 - lx)) * 0.06;
+    vec3 col = cement(uv);                              // animated concrete (no channel dividers)
     float hit = smoothstep(0.010, 0.0, abs(uv.y - hitY));
-    col += hit * vec3(0.25, 0.30, 0.45);
+    col += hit * vec3(0.22, 0.28, 0.42);                // horizontal hit line
 
     // which step row this pixel maps to (scrolls with playhead)
     float stepPos = uPlayhead + (uv.y - hitY) / rowH;
@@ -105,23 +125,30 @@ void main(){
 
     float on = cellOn(lane, step);
     if (on > 0.5) {
-        vec2 tp = vec2(lx, cellFrac);
-        float m = 0.08;                               // gap around each tile
+        float centerY = hitY + (nf - uPlayhead) * rowH;
+        float prox = smoothstep(rowH * 1.3, 0.0, abs(centerY - hitY));
+        int pt = int(mod(lane, 3.0));
+        float band = pt == 0 ? uBass : (pt == 1 ? uMid : uTreble);
+
+        // hit tiles scale up and fill the cell; they also pump with their band
+        float grow = 1.0 + prox * 0.5 + band * 0.35;
+        vec2 tp = (vec2(lx, cellFrac) - 0.5) / grow + 0.5;
+        float m = mix(0.10, 0.015, prox);             // shrink the gap at the hit line
         vec2 qd = abs(tp - 0.5) - (0.5 - m);
-        if (max(qd.x, qd.y) < 0.0) {
+        float d = max(qd.x, qd.y);
+        if (d < 0.0) {
             vec2 p = (tp - m) / (1.0 - 2.0 * m);      // local 0..1
-            float centerY = hitY + (nf - uPlayhead) * rowH;
-            float prox = smoothstep(rowH * 1.3, 0.0, abs(centerY - hitY));
             float dens = laneDensity(lane);
-            float inten = on * (0.30 + 0.70 * prox);
             float age = iTime + nf * 0.7;
-            int pt = int(mod(lane, 3.0));
+            // brighter base so patterns read clearly + audio-reactive boost
+            float inten = on * (0.80 + 0.6 * prox) * (0.7 + 1.6 * band);
             vec3 pc;
             if (pt == 0)      pc = pat_line(p, inten, age);
             else if (pt == 1) pc = pat_mosaic(p, inten, age);
             else              pc = pat_circular(p, inten, age);
-            pc *= 0.55 + 0.9 * dens;                  // more beats -> brighter/fuller
-            pc += prox * prox * 0.5;                   // flash as it crosses the hit line
+            pc *= 0.9 + 0.5 * dens;                              // density fills the lane
+            pc += prox * prox * (0.7 + band);                    // flash across the hit line
+            pc += smoothstep(0.05, 0.0, abs(d)) * prox * vec3(0.9, 0.95, 1.0); // bright rim on the hit tile
             col = mix(col, pc, 1.0);
         }
     }
@@ -135,6 +162,8 @@ void main(){
     <button id="play">▶ play</button>
     <button id="clear">clear</button>
     <button id="add">+ channel</button>
+    <button id="loadBtn">♪ load audio</button>
+    <input type="file" id="audioFile" accept="audio/*" hidden>
     <label>BPM <input type="range" id="bpm" min="60" max="200" step="1" value="120"></label>
     <span id="bpmv">120</span>
     <span style="flex:1"></span>
@@ -229,6 +258,35 @@ function blip(type){
   }
 }
 
+// ---------- Audio-file reactivity (FFT -> per-lane bands) ----------
+let analyser = null, bins = null, audioEl = null, fileLoaded = false;
+const bands = { bass: 0, mid: 0, treble: 0 };
+function loadAudioFile(file){
+  initAudio(); if (actx) actx.resume();
+  if (!audioEl){
+    audioEl = new Audio(); audioEl.loop = true;
+    const src = actx.createMediaElementSource(audioEl);
+    analyser = actx.createAnalyser(); analyser.fftSize = 1024; analyser.smoothingTimeConstant = 0.8;
+    bins = new Uint8Array(analyser.frequencyBinCount);
+    src.connect(analyser); analyser.connect(actx.destination);
+  }
+  audioEl.src = URL.createObjectURL(file);
+  fileLoaded = true;
+  $("loadBtn").textContent = "♪ " + file.name.slice(0, 18);
+  state.playing = true; $("play").textContent = "⏸ pause";
+  audioEl.currentTime = 0; audioEl.play().catch(()=>{});
+}
+function updateBands(){
+  if (!analyser || !audioEl || audioEl.paused){
+    bands.bass *= 0.9; bands.mid *= 0.9; bands.treble *= 0.9; return;
+  }
+  analyser.getByteFrequencyData(bins);
+  const avg = (a, b) => { let s = 0; for (let i = a; i < b; i++) s += bins[i]; return s / ((b - a) * 255); };
+  bands.bass   += (avg(1, 8)    - bands.bass)   * 0.4;
+  bands.mid    += (avg(8, 40)   - bands.mid)    * 0.4;
+  bands.treble += (avg(40, 160) - bands.treble) * 0.4;
+}
+
 // ---------- Editor UI ----------
 function buildGrid(){
   const wrap = $("grid"); wrap.innerHTML = "";
@@ -273,8 +331,13 @@ const stepDur = () => 60 / state.bpm / state.stepsPerBeat;           // seconds 
 function playStop(){
   state.playing = !state.playing;
   $("play").textContent = state.playing ? "⏸ pause" : "▶ play";
-  if (state.playing){ initAudio(); if(actx) actx.resume();
-    state.startTime = performance.now()/1000 - state.playhead*stepDur(); }
+  if (state.playing){
+    initAudio(); if (actx) actx.resume();
+    if (fileLoaded && audioEl) audioEl.play().catch(()=>{});
+    else state.startTime = performance.now()/1000 - state.playhead*stepDur();
+  } else {
+    if (fileLoaded && audioEl) audioEl.pause();
+  }
 }
 
 // ---------- controls ----------
@@ -289,6 +352,8 @@ $("add").onclick = () => {
 };
 $("bpm").oninput = (e) => { state.bpm = +e.target.value; $("bpmv").textContent = e.target.value;
   if(state.playing) state.startTime = performance.now()/1000 - state.playhead*stepDur(); save(); };
+$("loadBtn").onclick = () => $("audioFile").click();
+$("audioFile").onchange = (e) => { if (e.target.files[0]) loadAudioFile(e.target.files[0]); };
 addEventListener("keydown", (e) => {
   if (e.target.tagName === "INPUT") return;
   if (e.code === "Space"){ e.preventDefault(); playStop(); }
@@ -304,14 +369,18 @@ window.__ready = true; // test hook
 (function loop(){
   const now = performance.now()/1000;
   if (state.playing){
-    state.playhead = ((now - state.startTime) / stepDur()) % state.steps;
+    if (fileLoaded && audioEl && !audioEl.paused)
+      state.playhead = (audioEl.currentTime / stepDur()) % state.steps;   // scroll synced to the track
+    else
+      state.playhead = ((now - state.startTime) / stepDur()) % state.steps;
     const cur = Math.floor(state.playhead) % state.steps;
     if (cur !== state.lastStep){
       state.lastStep = cur;
-      for (let c=0;c<state.channels;c++) if (state.grid[c*state.steps+cur]) blip(c%3);
+      if (!fileLoaded) for (let c=0;c<state.channels;c++) if (state.grid[c*state.steps+cur]) blip(c%3); // synth only without a track
       markPlayhead(cur);
     }
   }
+  updateBands();
   if (canvas.width !== innerWidth || canvas.height !== innerHeight){ canvas.width=innerWidth; canvas.height=innerHeight; }
   gl.viewport(0,0,canvas.width,canvas.height);
   gl.useProgram(prog);
@@ -322,6 +391,9 @@ window.__ready = true; // test hook
   gl.uniform1f(U("uSteps"), state.steps);
   gl.uniform1f(U("uChannels"), state.channels);
   gl.uniform1f(U("uPlayhead"), state.playhead);
+  gl.uniform1f(U("uBass"), bands.bass);
+  gl.uniform1f(U("uMid"), bands.mid);
+  gl.uniform1f(U("uTreble"), bands.treble);
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, stepTex); gl.uniform1i(U("uStepTex"), 0);
   gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, densTex); gl.uniform1i(U("uDensTex"), 1);
   gl.drawArrays(gl.TRIANGLES, 0, 6);
