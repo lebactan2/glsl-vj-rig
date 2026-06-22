@@ -18,6 +18,8 @@
   .transport { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
   .transport button { background:#1c1c22; color:#ddd; border:1px solid #3a3a44; border-radius:5px; padding:5px 10px; cursor:pointer; }
   .transport button:hover { background:#26262e; }
+  .transport select { background:#1c1c22; color:#ddd; border:1px solid #3a3a44; border-radius:5px; padding:4px; }
+  .transport input[type=range] { vertical-align:middle; }
   .transport .title { font-weight:700; color:#8cf; letter-spacing:1px; margin-right:6px; }
   .transport label { color:#999; }
   #grid { display:flex; flex-direction:column; gap:5px; }
@@ -174,6 +176,20 @@ void main(){
     <input type="file" id="audioFile" accept="audio/*" hidden>
     <label>BPM <input type="range" id="bpm" min="60" max="200" step="1" value="120"></label>
     <span id="bpmv">120</span>
+    <label>pitch <input type="range" id="transpose" min="-24" max="24" step="1" value="0" style="width:90px"></label>
+    <span id="trv">0</span>
+    <label>note <select id="notelen">
+      <option value="0.03125">1/32</option>
+      <option value="0.0625">1/16</option>
+      <option value="0.125">1/8</option>
+      <option value="0.25" selected>1/4</option>
+      <option value="0.5">1/2</option>
+      <option value="1">1</option>
+      <option value="4">4</option>
+      <option value="8">8</option>
+      <option value="16">16</option>
+      <option value="32">32</option>
+    </select></label>
     <span style="flex:1"></span>
     <span class="hint"><kbd>Space</kbd> play · <kbd>H</kbd> hide</span>
   </div>
@@ -195,6 +211,8 @@ const state = {
 };
 state.grid = new Uint8Array(state.channels * state.steps);
 let pulses2d = new Float32Array(state.channels * state.steps);   // per-step pulse, decays each frame
+let transpose = 0;       // semitone pitch transpose for synth notes
+let noteLen = 0.25;      // note length in whole-notes (0.25 = quarter note)
 
 // ---------- WebGL ----------
 const canvas = $("glcanvas");
@@ -235,24 +253,41 @@ function initAudio(){
   const n = actx.sampleRate * 0.2; noiseBuf = actx.createBuffer(1, n, actx.sampleRate);
   const d = noiseBuf.getChannelData(0); for(let i=0;i<n;i++) d[i] = Math.random()*2-1;
 }
+const freqT = (base) => base * Math.pow(2, transpose / 12);            // pitch transpose
+const noteDurSec = () => Math.max(0.04, noteLen * 4 * 60 / state.bpm); // note length in seconds
 function blip(type){
   if (!actx) return;
   const t = actx.currentTime, g = actx.createGain(); g.connect(actx.destination);
-  if (type === 0){
+  const dur = noteDurSec();
+  if (type === 0){ // drums — noise (unpitched), short
     const src = actx.createBufferSource(); src.buffer = noiseBuf;
     const f = actx.createBiquadFilter(); f.type = "bandpass"; f.frequency.value = 1900; f.Q.value = 0.8;
     src.connect(f); f.connect(g);
-    g.gain.setValueAtTime(0.5, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
-    src.start(t); src.stop(t + 0.13);
-  } else {
+    const d = Math.min(dur, 0.2);
+    g.gain.setValueAtTime(0.5, t); g.gain.exponentialRampToValueAtTime(0.001, t + d);
+    src.start(t); src.stop(t + d + 0.02);
+  } else if (type === 3){ // seams — keyboard / piano-ish (fundamental + harmonics)
+    const d = Math.min(dur, 4.0);
+    const partials = [[1.0, 0.5, "triangle"], [2.0, 0.20, "sine"], [3.0, 0.08, "sine"]];
+    for (let i=0;i<partials.length;i++){
+      const o = actx.createOscillator(); o.type = partials[i][2];
+      o.frequency.value = freqT(523.25) * partials[i][0];   // C5 + harmonics, transposed
+      const og = actx.createGain(); og.gain.value = partials[i][1];
+      o.connect(og); og.connect(g); o.start(t); o.stop(t + d + 0.05);
+    }
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.9, t + 0.006);     // fast attack
+    g.gain.exponentialRampToValueAtTime(0.001, t + d);        // decay over note length
+  } else { // bass(1) sine, voice(2) triangle
     const o = actx.createOscillator();
     o.type = (type === 1) ? "sine" : "triangle";
-    o.frequency.value = (type === 1) ? 70 : (type === 3) ? 880 : 330;
+    o.frequency.value = freqT(type === 1 ? 70 : 330);
     o.connect(g);
+    const d = Math.min(dur, 6.0);
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(type === 3 ? 0.25 : 0.45, t + 0.005);
-    g.gain.exponentialRampToValueAtTime(0.001, t + (type === 1 ? 0.26 : type === 3 ? 0.10 : 0.18));
-    o.start(t); o.stop(t + 0.32);
+    g.gain.exponentialRampToValueAtTime(type === 1 ? 0.5 : 0.45, t + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.001, t + d);
+    o.start(t); o.stop(t + d + 0.05);
   }
 }
 
@@ -319,10 +354,11 @@ function markPlayhead(step){
 
 // ---------- persistence ----------
 function save(){ try{ localStorage.setItem("scene6687seq2", JSON.stringify({
-  steps:state.steps, channels:state.channels, names:state.names, bpm:state.bpm, grid:Array.from(state.grid) })); }catch(e){} }
+  steps:state.steps, channels:state.channels, names:state.names, bpm:state.bpm,
+  transpose, noteLen, grid:Array.from(state.grid) })); }catch(e){} }
 function load(){ try{ const d = JSON.parse(localStorage.getItem("scene6687seq2")); if(!d) return;
   state.steps=d.steps; state.channels=d.channels; state.names=d.names||DEFAULT_NAMES.slice();
-  state.bpm=d.bpm||120; state.grid=Uint8Array.from(d.grid);
+  state.bpm=d.bpm||120; transpose=d.transpose||0; noteLen=d.noteLen||0.25; state.grid=Uint8Array.from(d.grid);
   pulses2d = new Float32Array(state.channels*state.steps); }catch(e){} }
 
 // ---------- transport ----------
@@ -351,6 +387,8 @@ $("bpm").oninput = (e) => { state.bpm = +e.target.value; $("bpmv").textContent =
   if(state.playing) state.startTime = performance.now()/1000 - state.playhead*stepDur(); save(); };
 $("loadBtn").onclick = () => $("audioFile").click();
 $("audioFile").onchange = (e) => { if (e.target.files[0]) loadAudioFile(e.target.files[0]); };
+$("transpose").oninput = (e) => { transpose = +e.target.value; $("trv").textContent = (transpose>0?"+":"") + transpose; save(); };
+$("notelen").onchange = (e) => { noteLen = +e.target.value; save(); };
 addEventListener("keydown", (e) => {
   if (e.target.tagName === "INPUT") return;
   if (e.code === "Space"){ e.preventDefault(); playStop(); }
@@ -360,8 +398,11 @@ addEventListener("keydown", (e) => {
 // ---------- boot ----------
 load();
 $("bpm").value = state.bpm; $("bpmv").textContent = state.bpm;
+$("transpose").value = transpose; $("trv").textContent = (transpose>0?"+":"") + transpose;
+$("notelen").value = String(noteLen);
 buildGrid();
 window.__ready = true;
+let lastT = performance.now()/1000;
 
 (function loop(){
   const now = performance.now()/1000;
@@ -398,7 +439,9 @@ window.__ready = true;
       markPlayhead(cur);
     }
   }
-  for (let i=0;i<pulses2d.length;i++) pulses2d[i] *= 0.86;   // relax
+  const dt = Math.min(0.1, now - lastT); lastT = now;
+  const decay = Math.pow(0.03, dt / noteDurSec());           // pulse holds for the note length
+  for (let i=0;i<pulses2d.length;i++) pulses2d[i] *= decay;  // relax
   updateBands();
   uploadPulse();
 
