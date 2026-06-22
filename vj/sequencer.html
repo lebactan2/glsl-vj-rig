@@ -58,49 +58,50 @@ float laneDensity(float lane){
     return texture2D(uDensTex, vec2(0.5, (lane + 0.5) / uChannels)).r;
 }
 
-// --- channel patterns: (local uv 0..1, intensity, age) -> rgb ---
-vec3 pat_line(vec2 p, float inten, float age){           // drums (red)
-    float s = abs(fract(p.y * 4.0 - age * 0.6) - 0.5);
-    float line = smoothstep(0.16, 0.34, s);
-    vec3 c = mix(vec3(0.30,0.06,0.04), vec3(1.0,0.42,0.22), line);
+float h2(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+mat2 rot(float a){ float s=sin(a), c=cos(a); return mat2(c,-s,s,c); }
+
+// --- scene 6687 elements as channel patterns (local uv 0..1) ---
+vec3 pat_grate(vec2 p, float inten, float age){          // VOICE — metal grate slats (left)
+    float bars = abs(fract(p.x * 6.0) - 0.5);
+    float slat = smoothstep(0.16, 0.32, bars);
+    vec3 c = mix(vec3(0.05,0.05,0.06), vec3(0.18,0.19,0.22), slat);
+    float glint = smoothstep(0.12, 0.0, abs(fract(p.y - age*0.25) - 0.5) - 0.42);
+    c += glint * slat * vec3(0.40,0.43,0.52);
+    c += slat * 0.05 * sin(p.y*40.0 + age*3.0);
     return c * inten;
 }
-vec3 pat_mosaic(vec2 p, float inten, float age){         // bass (blue)
-    vec2 g = p * 4.0; vec2 cell = fract(g); vec2 id = floor(g);
+vec3 pat_mosaic(vec2 p, float inten, float age){         // DRUMS — mosaic tiles, extended diagonally
+    vec2 q = rot(-0.6) * (p - 0.5) + 0.5;
+    vec2 g = q * 5.0; vec2 cell = fract(g); vec2 id = floor(g);
     float e = min(min(cell.x, 1.0-cell.x), min(cell.y, 1.0-cell.y));
-    float grout = smoothstep(0.0, 0.12, e);
-    float r = fract(sin(dot(id, vec2(12.9,78.2))) * 43758.5);
-    vec3 tile = mix(vec3(0.12,0.30,0.85), vec3(0.45,0.72,1.0), r);
-    tile *= 0.7 + 0.3 * sin(age + r * 6.2831);
+    float grout = smoothstep(0.0, 0.10, e);
+    float r = h2(id);
+    vec3 tile = mix(vec3(0.60,0.52,0.32), vec3(0.92,0.84,0.58), r);
+    tile *= 0.8 + 0.2 * sin(age*1.5 + r*6.2831);
     return tile * grout * inten;
 }
-vec3 pat_circular(vec2 p, float inten, float age){       // voice (green)
-    vec2 q = p - 0.5; float r = length(q) * 2.0; float a = atan(q.y, q.x);
-    float rings  = 0.5 + 0.5 * sin(r * 11.0 - age * 2.2);
-    float petals = 0.5 + 0.5 * cos(a * 6.0 + r * 4.0);
-    float m = smoothstep(0.45, 0.95, rings * 0.6 + petals * 0.5);
-    vec3 c = mix(vec3(0.10,0.45,0.22), vec3(0.55,1.0,0.65), m);
-    return c * step(r, 1.0) * inten;
+vec3 pat_paver(vec2 p, float inten, float age){          // BASS — smooth paver band, extended vertically
+    float grain = h2(floor(p * vec2(40.0, 90.0)));
+    vec3 c = mix(vec3(0.78,0.71,0.52), vec3(0.90,0.83,0.62), grain*0.5 + 0.25);
+    float sweep = smoothstep(0.12, 0.0, abs(fract(p.y*1.2 - age*0.15) - 0.5) - 0.40); // vertical light sweep
+    c += sweep * vec3(0.16,0.15,0.10);
+    return c * inten;
 }
 
-// --- animated cement / concrete background ---
-float h21(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-float vnoise(vec2 p){
-    vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
-    return mix(mix(h21(i), h21(i+vec2(1.0,0.0)), f.x),
-               mix(h21(i+vec2(0.0,1.0)), h21(i+vec2(1.0,1.0)), f.x), f.y);
-}
-float fbm(vec2 p){ float v=0.0, a=0.5; for(int i=0;i<5;i++){ v+=a*vnoise(p); p*=2.0; a*=0.5; } return v; }
-vec3 cement(vec2 uv){
-    vec2 q = uv * vec2(3.5, 5.0);
-    float drift = iTime * 0.03;
-    float n = fbm(q + drift) * 0.6 + fbm(q*2.3 - drift*0.7) * 0.4;
-    float base = 0.15 + 0.12 * n;
-    base += (h21(floor(gl_FragCoord.xy / 2.0)) - 0.5) * 0.05;          // fine aggregate
-    base *= 0.88 + 0.24 * fbm(q*0.6 + vec2(drift*0.5, -drift*0.3));    // drifting stains
-    base -= smoothstep(0.04, 0.0, abs(fbm(q*1.2 + 5.0) - 0.5)) * 0.04; // faint cracks
-    base *= 0.96 + 0.04 * sin(iTime * 0.2);                            // slow breathing
-    return vec3(base) * vec3(0.98, 0.99, 1.04);                        // cool gray
+// --- animated granite background (scene 6687 ground) ---
+vec3 granite(vec2 uv){
+    vec2 px = gl_FragCoord.xy;
+    float fine = h2(floor(px/1.5));
+    float med = h2(floor(uv*320.0));
+    float coarse = h2(floor(uv*90.0));
+    float spec = fine*0.5 + med*0.3 + coarse*0.2;
+    vec3 c = mix(vec3(0.34,0.34,0.36), vec3(0.62,0.62,0.65), spec);
+    c += (step(0.93,med) - step(0.985,med)) * 0.16;                 // quartz flecks
+    c -= step(0.965,coarse) * 0.14;                                 // dark flecks
+    c *= 0.90 + 0.10 * sin(uv.x*2.3 - uv.y*1.7 + iTime*0.25);       // sun drift
+    c += step(0.99, h2(floor(uv*240.0) + floor(iTime*4.0))) * 0.35; // twinkle
+    return c * 0.5;                                                 // darken so tiles read on top
 }
 
 void main(){
@@ -112,7 +113,7 @@ void main(){
     float lane  = floor(laneF);
     float lx    = fract(laneF);
 
-    vec3 col = cement(uv);                              // animated concrete (no channel dividers)
+    vec3 col = granite(uv);                            // animated granite ground (no channel dividers)
     float hit = smoothstep(0.010, 0.0, abs(uv.y - hitY));
     col += hit * vec3(0.22, 0.28, 0.42);                // horizontal hit line
 
@@ -128,7 +129,7 @@ void main(){
         float centerY = hitY + (nf - uPlayhead) * rowH;
         float prox = smoothstep(rowH * 1.3, 0.0, abs(centerY - hitY));
         int pt = int(mod(lane, 3.0));
-        float band = pt == 0 ? uBass : (pt == 1 ? uMid : uTreble);
+        float band = pt == 0 ? uMid : (pt == 1 ? uTreble : uBass); // voice/drums/bass
 
         // hit tiles scale up and fill the cell; they also pump with their band
         float grow = 1.0 + prox * 0.5 + band * 0.35;
@@ -143,9 +144,9 @@ void main(){
             // brighter base so patterns read clearly + audio-reactive boost
             float inten = on * (0.80 + 0.6 * prox) * (0.7 + 1.6 * band);
             vec3 pc;
-            if (pt == 0)      pc = pat_line(p, inten, age);
-            else if (pt == 1) pc = pat_mosaic(p, inten, age);
-            else              pc = pat_circular(p, inten, age);
+            if (pt == 0)      pc = pat_grate(p, inten, age);   // voice
+            else if (pt == 1) pc = pat_mosaic(p, inten, age);  // drums
+            else              pc = pat_paver(p, inten, age);    // bass
             pc *= 0.9 + 0.5 * dens;                              // density fills the lane
             pc += prox * prox * (0.7 + band);                    // flash across the hit line
             pc += smoothstep(0.05, 0.0, abs(d)) * prox * vec3(0.9, 0.95, 1.0); // bright rim on the hit tile
@@ -173,9 +174,10 @@ void main(){
 </div>
 
 <script>
-const PAT = ["line (drums)", "mosaic (bass)", "circular (voice)"];
-const PAT_COLOR = ["#ff6a38", "#4aa0ff", "#66ff9c"];
-const DEFAULT_NAMES = ["Drums", "Bass", "Voice"];
+const PAT = ["grate (voice)", "mosaic (drums)", "paver (bass)"];   // scene 6687 elements
+const PAT_COLOR = ["#aab2c0", "#e3d28f", "#cdbb86"];               // metal / mosaic / paver
+const DEFAULT_NAMES = ["Voice", "Drums", "Bass"];
+const SYNTH = [2, 0, 1];   // lane -> blip voice: voice=triangle, drums=noise, bass=sine
 const $ = (id) => document.getElementById(id);
 
 const state = {
@@ -376,7 +378,7 @@ window.__ready = true; // test hook
     const cur = Math.floor(state.playhead) % state.steps;
     if (cur !== state.lastStep){
       state.lastStep = cur;
-      if (!fileLoaded) for (let c=0;c<state.channels;c++) if (state.grid[c*state.steps+cur]) blip(c%3); // synth only without a track
+      if (!fileLoaded) for (let c=0;c<state.channels;c++) if (state.grid[c*state.steps+cur]) blip(SYNTH[c%3]); // synth only without a track
       markPlayhead(cur);
     }
   }
