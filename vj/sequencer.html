@@ -124,19 +124,19 @@ void main(){
         float edgeShade = 0.86 + 0.14 * smoothstep(0.0, 0.10, min(cellT, 1.0-cellT));
         col = paverCol(uv) * bright * edgeShade * (1.0 + uBass*0.4);
     }
-    // DRUMS (row 1) — mosaic block (centre), divided into 16 rings FROM THE CENTRE
+    // DRUMS (row 1) — mosaic block (centre), divided into 16 RECTANGULAR rings, inside -> outside
     vec2 c0 = vec2(0.58, 0.40); float ang = -0.32;
-    if (boxMask(uv, c0, vec2(0.30,0.33), ang) > 0.5){
+    vec2 hsz = vec2(0.30, 0.33);
+    if (boxMask(uv, c0, hsz, ang) > 0.5){
         vec2 local = rot(ang) * (uv - c0);
-        float rmax = 0.33;
-        float r = length(local);
-        float rn = clamp(r / rmax, 0.0, 1.0);
-        float seg = floor(rn * uSteps);
+        vec2 an = abs(local) / hsz;                  // per-axis 0..1 -> concentric rectangles
+        float rn = max(an.x, an.y);                  // rectangular ring coord (no corner distortion)
+        float seg = floor(clamp(rn, 0.0, 0.999) * uSteps);
         float p = pulseAt(1.0, seg);
         float cRn = (seg + 0.5) / uSteps;
         float rnW = (rn - cRn) / (1.0 + p * 1.0) + cRn;            // zoom the hit ring to 200%
-        vec2 wlocal = local * (rnW * rmax / max(r, 1e-4));
-        col = mosaicLocal(wlocal) * (1.0 + p*0.9) * (1.0 + uTreble*0.4);
+        float f = rn > 1e-4 ? rnW / rn : 1.0;        // uniform scale keeps the rectangle shape
+        col = mosaicLocal(local * f) * (1.0 + p*0.9) * (1.0 + uTreble*0.4);
     }
     // VOICE (row 0) — metal grate (left), divided HORIZONTALLY; a hit shows as a shadow band
     float edge = 0.30 - uv.y * 0.05;
@@ -259,6 +259,7 @@ function blip(type){
 // ---------- Audio-file reactivity ----------
 let analyser = null, bins = null, audioEl = null, fileLoaded = false;
 const bands = { bass: 0, mid: 0, treble: 0 };
+const env = { bass: 0, mid: 0, treble: 0 };   // slow running average per band (for onset detection)
 function loadAudioFile(file){
   initAudio(); if (actx) actx.resume();
   if (!audioEl){
@@ -280,6 +281,9 @@ function updateBands(){
   bands.bass   += (avg(1,8)    - bands.bass)   * 0.4;
   bands.mid    += (avg(8,40)   - bands.mid)    * 0.4;
   bands.treble += (avg(40,160) - bands.treble) * 0.4;
+  env.bass   += (bands.bass   - env.bass)   * 0.04;   // slow envelope
+  env.mid    += (bands.mid    - env.mid)    * 0.04;
+  env.treble += (bands.treble - env.treble) * 0.04;
 }
 
 // ---------- Editor UI ----------
@@ -370,12 +374,16 @@ window.__ready = true;
     if (cur !== state.lastStep){
       state.lastStep = cur;
       if (fileLoaded){
-        // auto-fill this step column from live audio analysis (per-channel bands)
-        const lvl = (bands.bass + bands.mid + bands.treble) / 3.0;
-        const vals = [bands.mid, bands.treble, bands.bass, lvl];   // voice, drums, bass, seams
-        const thr  = [0.15, 0.13, 0.18, 0.18];
+        // fill a step only on a band ONSET (a spike above its running average), so each
+        // channel reacts to its own content instead of every channel firing on loud songs
+        const onset = (b, e, floor) => (b > e * 1.4 + 0.02 && b > floor) ? 1 : 0;
+        const voice = onset(bands.mid,    env.mid,    0.08);   // mids
+        const drums = onset(bands.treble, env.treble, 0.06);   // highs
+        const bass  = onset(bands.bass,   env.bass,   0.10);   // lows
+        const seams = (bass && drums) ? 1 : 0;                 // only on a full-spectrum hit
+        const fills = [voice, drums, bass, seams];
         for (let c=0;c<state.channels;c++){
-          const on = vals[c%NP] > thr[c%NP] ? 1 : 0;
+          const on = fills[c%NP];
           state.grid[c*state.steps+cur] = on;
           if (on) pulses2d[c*state.steps+cur] = 1.0;
           const cell = document.querySelector(`.cell[data-c="${c}"][data-s="${cur}"]`);
