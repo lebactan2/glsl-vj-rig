@@ -36,21 +36,18 @@
 <body>
 <canvas id="glcanvas"></canvas>
 
-<!-- ===== Scene 6687 composition; elements pulse on beats (inline for file://) ===== -->
+<!-- ===== Scene 6687 composition; each element is stepped, hit steps scale 120% ===== -->
 <script type="x-shader/x-fragment" id="fs">
 precision highp float;
 uniform vec2 iResolution;
 uniform float iTime;
-uniform float uBass;          // audio bands of the loaded track, 0..1
-uniform float uMid;
-uniform float uTreble;
-uniform float uPulseVoice;    // beat pulses (decaying), 0..1
-uniform float uPulseDrums;
-uniform float uPulseBass;
+uniform float uBass, uMid, uTreble;   // audio bands 0..1
+uniform float uSteps;                 // steps per lane
+uniform float uChannels;              // rows in the pulse texture
+uniform sampler2D uPulseTex;          // steps x channels, .r = per-step pulse 0..1
 
 float h2(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 mat2 rot(float a){ float s=sin(a), c=cos(a); return mat2(c,-s,s,c); }
-vec2 scaleAround(vec2 p, vec2 c, float s){ return (p - c) / s + c; }
 float boxMask(vec2 p, vec2 c, vec2 h, float ang){
     vec2 d = rot(ang) * (p - c); vec2 q = abs(d) - h; return step(max(q.x, q.y), 0.0);
 }
@@ -58,34 +55,40 @@ float boxEdge(vec2 p, vec2 c, vec2 h, float ang){
     vec2 d = abs(rot(ang) * (p - c)) - h;
     return abs(length(max(d, 0.0)) + min(max(d.x, d.y), 0.0));
 }
+float pulseAt(float ch, float seg){
+    return texture2D(uPulseTex, vec2((seg + 0.5) / uSteps, (ch + 0.5) / uChannels)).r;
+}
+// warp a 0..1 along-lane coordinate so the hit step zooms to 120% around its centre
+float stepWarp(float t, float ch, out float bright){
+    float seg = floor(t * uSteps);
+    float p = pulseAt(ch, seg);
+    float cT = (seg + 0.5) / uSteps;
+    bright = 1.0 + p * 0.9;
+    return (t - cT) / (1.0 + p * 0.20) + cT;   // 1.0 -> 1.2 magnification at p=1
+}
 
-// ---- scene 6687 elements (keep original placement / arrangement) ----
-vec3 granite(vec2 uv){                                  // ground
+vec3 granite(vec2 uv){
     vec2 px = gl_FragCoord.xy;
-    float fine = h2(floor(px/1.5));
-    float med = h2(floor(uv*320.0));
-    float coarse = h2(floor(uv*90.0));
+    float fine = h2(floor(px/1.5)), med = h2(floor(uv*320.0)), coarse = h2(floor(uv*90.0));
     float spec = fine*0.5 + med*0.3 + coarse*0.2;
     vec3 c = mix(vec3(0.42,0.42,0.45), vec3(0.76,0.76,0.80), spec);
     c += (step(0.93,med) - step(0.985,med)) * 0.20;
     c -= step(0.965,coarse) * 0.16;
     c *= 0.92 + 0.10 * sin(uv.x*2.3 - uv.y*1.7 + iTime*0.25);
-    c += step(0.99, h2(floor(uv*240.0) + floor(iTime*4.0))) * 0.45;   // twinkle
+    c += step(0.99, h2(floor(uv*240.0) + floor(iTime*4.0))) * 0.45;
     return c;
 }
-vec3 grateCol(vec2 uv, float edge){                     // VOICE — metal grate (left)
+vec3 grateCol(vec2 uv, float edge){
     float sx = uv.x / edge;
     float bars = abs(fract(sx * 15.0) - 0.5);
     float slat = smoothstep(0.16, 0.30, bars);
     vec3 c = mix(vec3(0.05,0.05,0.06), vec3(0.20,0.21,0.25), slat);
-    float glint = smoothstep(0.10, 0.0, abs(fract(uv.y - iTime*0.18) - 0.5) - 0.4);
-    c += glint * slat * vec3(0.45,0.48,0.58);
+    c += smoothstep(0.10, 0.0, abs(fract(uv.y - iTime*0.18) - 0.5) - 0.4) * slat * vec3(0.45,0.48,0.58);
     c += slat * 0.05 * sin(uv.y*80.0 + iTime*3.0);
     c -= (1.0 - slat) * 0.03;
     return c;
 }
-vec3 mosaicCol(vec2 uv, vec2 c0, float ang){            // DRUMS — diagonal mosaic block (center)
-    vec2 local = rot(ang) * (uv - c0);
+vec3 mosaicLocal(vec2 local){
     vec2 g = local * vec2(34.0, 38.0);
     vec2 cell = fract(g); vec2 id = floor(g);
     float e = min(min(cell.x,1.0-cell.x), min(cell.y,1.0-cell.y));
@@ -95,14 +98,14 @@ vec3 mosaicCol(vec2 uv, vec2 c0, float ang){            // DRUMS — diagonal mo
     tile *= 0.9 + 0.1 * sin(iTime*1.5 + r*6.2831 + id.x*0.6 + id.y*0.9);
     return mix(vec3(0.32,0.29,0.25), tile, grout);
 }
-vec3 paverCol(vec2 uv){                                 // BASS — smooth paver bands (upper-right)
+vec3 paverCol(vec2 uv){
     float grain = h2(floor(gl_FragCoord.xy/2.0));
     vec3 c = mix(vec3(0.82,0.74,0.54), vec3(0.95,0.88,0.66), grain*0.6 + 0.2);
     float sweep = dot(uv, vec2(0.7,-0.7));
     c += smoothstep(0.06, 0.0, abs(fract(sweep*1.2 - iTime*0.12) - 0.5) - 0.46) * vec3(0.18,0.16,0.10);
     return c;
 }
-vec3 satb(vec3 c, float s, float b){                    // saturation + brightness
+vec3 satb(vec3 c, float s, float b){
     float l = dot(c, vec3(0.299, 0.587, 0.114));
     return clamp(mix(vec3(l), c, s) * b, 0.0, 1.0);
 }
@@ -111,39 +114,44 @@ void main(){
     vec2 uv = gl_FragCoord.xy / iResolution.xy;
     vec3 col = granite(uv);
 
-    // BASS — paver bands (upper-right); scale up only when its beat hits
-    {
-        float s = 1.0 + uPulseBass * 0.20;
-        vec2 a = scaleAround(uv, vec2(0.78,0.82), s);
-        vec2 b = scaleAround(uv, vec2(0.86,0.50), s);
-        float m = max(boxMask(a, vec2(0.78,0.82), vec2(0.24,0.11), -0.32),
-                      boxMask(b, vec2(0.86,0.50), vec2(0.13,0.22), -0.32));
-        if (m > 0.5) col = paverCol(scaleAround(uv, vec2(0.82,0.66), s)) * (1.0 + uPulseBass*0.9 + uBass*0.6);
+    // BASS (row 2) — paver bands (upper-right), stepped along x
+    float pm = max(boxMask(uv, vec2(0.78,0.82), vec2(0.24,0.11), -0.32),
+                   boxMask(uv, vec2(0.86,0.50), vec2(0.13,0.22), -0.32));
+    if (pm > 0.5){
+        float t = clamp((uv.x - 0.52) / 0.46, 0.0, 1.0);
+        float bright; float tw = stepWarp(t, 2.0, bright);
+        float cellT = fract(tw * uSteps);
+        float edgeShade = 0.86 + 0.14 * smoothstep(0.0, 0.10, min(cellT, 1.0-cellT));
+        col = paverCol(uv) * bright * edgeShade * (1.0 + uBass*0.4);
     }
-    // DRUMS — mosaic block (center)
-    {
-        float s = 1.0 + uPulseDrums * 0.20;
-        vec2 c0 = vec2(0.58, 0.40);
-        vec2 su = scaleAround(uv, c0, s);
-        if (boxMask(su, c0, vec2(0.30,0.33), -0.32) > 0.5)
-            col = mosaicCol(su, c0, -0.32) * (1.0 + uPulseDrums*0.9 + uTreble*0.6);
+    // DRUMS (row 1) — mosaic block (centre), stepped across the block width
+    vec2 c0 = vec2(0.58, 0.40); float ang = -0.32;
+    if (boxMask(uv, c0, vec2(0.30,0.33), ang) > 0.5){
+        vec2 local = rot(ang) * (uv - c0);
+        float t = clamp((local.x + 0.30) / 0.60, 0.0, 1.0);
+        float bright; float tw = stepWarp(t, 1.0, bright);
+        col = mosaicLocal(vec2(tw*0.60 - 0.30, local.y)) * bright * (1.0 + uTreble*0.4);
     }
-    // VOICE — metal grate (left); pulse widens + brightens it
-    {
-        float s = 1.0 + uPulseVoice * 0.20;
-        float edge = (0.30 - uv.y * 0.05) * s;
-        if (uv.x < edge)
-            col = grateCol(vec2(uv.x / s, uv.y), edge) * (1.0 + uPulseVoice*1.0 + uMid*0.6);
+    // VOICE (row 0) — metal grate (left), stepped across the slats
+    float edge = 0.30 - uv.y * 0.05;
+    if (uv.x < edge){
+        float t = clamp(uv.x / edge, 0.0, 1.0);
+        float bright; float tw = stepWarp(t, 0.0, bright);
+        col = grateCol(vec2(tw*edge, uv.y), edge) * bright * (1.0 + uMid*0.4);
     }
-    // seams / curb (static, completes the 6687 composition)
+    // SEAMS (row 3) — curb + block joints, stepped along x (hit steps thicken + glow)
     {
-        float seam = smoothstep(0.012, 0.0, abs(uv.x - (0.30 - uv.y*0.05) - 0.03));
-        seam = max(seam, smoothstep(0.010, 0.0, boxEdge(uv, vec2(0.58,0.40), vec2(0.30,0.33), -0.32)));
-        seam = max(seam, smoothstep(0.010, 0.0, boxEdge(uv, vec2(0.78,0.82), vec2(0.24,0.11), -0.32)));
-        col = mix(col, vec3(0.05,0.045,0.04), seam * 0.7);
+        float seg = floor(clamp(uv.x,0.0,1.0) * uSteps);
+        float p = pulseAt(3.0, seg);
+        float w = 0.010 + p * 0.020;
+        float seam = smoothstep(w, 0.0, boxEdge(uv, vec2(0.58,0.40), vec2(0.30,0.33), -0.32));
+        seam = max(seam, smoothstep(w, 0.0, boxEdge(uv, vec2(0.78,0.82), vec2(0.24,0.11), -0.32)));
+        seam = max(seam, smoothstep(w+0.004, 0.0, abs(uv.x - (0.30 - uv.y*0.05) - 0.03)));
+        vec3 sc = mix(vec3(0.05,0.045,0.04), vec3(0.95,0.82,0.45), p);
+        col = mix(col, sc, seam * (0.7 + 0.3*p));
     }
 
-    col = satb(col, 1.35, 1.12);   // more saturation + brightness, to read like 6687
+    col = satb(col, 1.35, 1.12);
     gl_FragColor = vec4(col, 1.0);
 }
 </script>
@@ -165,19 +173,20 @@ void main(){
 </div>
 
 <script>
-const PAT = ["grate (voice)", "mosaic (drums)", "paver (bass)"];   // scene 6687 elements
-const PAT_COLOR = ["#aab2c0", "#e3d28f", "#cdbb86"];               // metal / mosaic / paver
-const DEFAULT_NAMES = ["Voice", "Drums", "Bass"];
-const SYNTH = [2, 0, 1];   // lane -> blip voice: voice=triangle, drums=noise, bass=sine
+const PAT = ["grate (voice)", "mosaic (drums)", "paver (bass)", "seams (curb)"];  // scene 6687 elements
+const PAT_COLOR = ["#aab2c0", "#e3d28f", "#cdbb86", "#caa44a"];
+const DEFAULT_NAMES = ["Voice", "Drums", "Bass", "Seams"];
+const SYNTH = [2, 0, 1, 3];   // voice=triangle, drums=noise, bass=sine, seams=high tick
+const NP = PAT.length;
 const $ = (id) => document.getElementById(id);
 
 const state = {
-  steps: 16, stepsPerBeat: 4, bpm: 120, channels: 3,
+  steps: 16, stepsPerBeat: 4, bpm: 120, channels: 4,
   names: DEFAULT_NAMES.slice(),
   grid: null, playing: false, startTime: 0, playhead: 0, lastStep: -1,
 };
 state.grid = new Uint8Array(state.channels * state.steps);
-const pulse = [0, 0, 0];   // per-element beat pulse (voice, drums, bass), decays each frame
+let pulses2d = new Float32Array(state.channels * state.steps);   // per-step pulse, decays each frame
 
 // ---------- WebGL ----------
 const canvas = $("glcanvas");
@@ -195,7 +204,22 @@ gl.bindBuffer(gl.ARRAY_BUFFER, quad);
 gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,1,-1,-1,1,-1,1,1,-1,1,1]), gl.STATIC_DRAW);
 const U = (n) => gl.getUniformLocation(prog, n);
 
-// ---------- Audio synth (one voice per channel) ----------
+const pulseTex = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, pulseTex);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+let pulseBytes = new Uint8Array(state.channels * state.steps);
+function uploadPulse(){
+  const n = state.channels * state.steps;
+  if (pulseBytes.length !== n) pulseBytes = new Uint8Array(n);
+  for (let i=0;i<n;i++) pulseBytes[i] = Math.max(0, Math.min(255, pulses2d[i]*255)) | 0;
+  gl.bindTexture(gl.TEXTURE_2D, pulseTex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, state.steps, state.channels, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, pulseBytes);
+}
+
+// ---------- Audio synth ----------
 let actx = null, noiseBuf = null;
 function initAudio(){
   if (actx) return;
@@ -213,16 +237,18 @@ function blip(type){
     g.gain.setValueAtTime(0.5, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
     src.start(t); src.stop(t + 0.13);
   } else {
-    const o = actx.createOscillator(); o.type = type === 1 ? "sine" : "triangle";
-    o.frequency.value = type === 1 ? 70 : 330; o.connect(g);
+    const o = actx.createOscillator();
+    o.type = (type === 1) ? "sine" : "triangle";
+    o.frequency.value = (type === 1) ? 70 : (type === 3) ? 880 : 330;
+    o.connect(g);
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(0.45, t + 0.005);
-    g.gain.exponentialRampToValueAtTime(0.001, t + (type === 1 ? 0.26 : 0.18));
+    g.gain.exponentialRampToValueAtTime(type === 3 ? 0.25 : 0.45, t + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.001, t + (type === 1 ? 0.26 : type === 3 ? 0.10 : 0.18));
     o.start(t); o.stop(t + 0.32);
   }
 }
 
-// ---------- Audio-file reactivity (FFT -> bands) ----------
+// ---------- Audio-file reactivity ----------
 let analyser = null, bins = null, audioEl = null, fileLoaded = false;
 const bands = { bass: 0, mid: 0, treble: 0 };
 function loadAudioFile(file){
@@ -234,21 +260,18 @@ function loadAudioFile(file){
     bins = new Uint8Array(analyser.frequencyBinCount);
     src.connect(analyser); analyser.connect(actx.destination);
   }
-  audioEl.src = URL.createObjectURL(file);
-  fileLoaded = true;
+  audioEl.src = URL.createObjectURL(file); fileLoaded = true;
   $("loadBtn").textContent = "♪ " + file.name.slice(0, 18);
   state.playing = true; $("play").textContent = "⏸ pause";
   audioEl.currentTime = 0; audioEl.play().catch(()=>{});
 }
 function updateBands(){
-  if (!analyser || !audioEl || audioEl.paused){
-    bands.bass *= 0.9; bands.mid *= 0.9; bands.treble *= 0.9; return;
-  }
+  if (!analyser || !audioEl || audioEl.paused){ bands.bass*=0.9; bands.mid*=0.9; bands.treble*=0.9; return; }
   analyser.getByteFrequencyData(bins);
-  const avg = (a, b) => { let s = 0; for (let i = a; i < b; i++) s += bins[i]; return s / ((b - a) * 255); };
-  bands.bass   += (avg(1, 8)    - bands.bass)   * 0.4;
-  bands.mid    += (avg(8, 40)   - bands.mid)    * 0.4;
-  bands.treble += (avg(40, 160) - bands.treble) * 0.4;
+  const avg = (a, b) => { let s=0; for (let i=a;i<b;i++) s += bins[i]; return s/((b-a)*255); };
+  bands.bass   += (avg(1,8)    - bands.bass)   * 0.4;
+  bands.mid    += (avg(8,40)   - bands.mid)    * 0.4;
+  bands.treble += (avg(40,160) - bands.treble) * 0.4;
 }
 
 // ---------- Editor UI ----------
@@ -256,15 +279,15 @@ function buildGrid(){
   const wrap = $("grid"); wrap.innerHTML = "";
   for (let c=0;c<state.channels;c++){
     const lane = document.createElement("div"); lane.className = "lane";
-    const sw = document.createElement("div"); sw.className = "swatch"; sw.style.background = PAT_COLOR[c%3];
+    const sw = document.createElement("div"); sw.className = "swatch"; sw.style.background = PAT_COLOR[c%NP];
     const nm = document.createElement("div"); nm.className = "nm";
-    nm.textContent = (state.names[c] || ("Ch "+(c+1))); nm.title = PAT[c%3];
+    nm.textContent = (state.names[c] || ("Ch "+(c+1))); nm.title = PAT[c%NP];
     const cells = document.createElement("div"); cells.className = "cells";
     cells.style.gridTemplateColumns = `repeat(${state.steps}, 1fr)`;
     for (let s=0;s<state.steps;s++){
       const cell = document.createElement("div");
       cell.className = "cell" + (s%state.stepsPerBeat===0 ? " beat" : "");
-      cell.style.color = PAT_COLOR[c%3];
+      cell.style.color = PAT_COLOR[c%NP];
       if (state.grid[c*state.steps+s]) cell.classList.add("on");
       cell.dataset.c = c; cell.dataset.s = s;
       cell.onclick = () => {
@@ -283,11 +306,12 @@ function markPlayhead(step){
 }
 
 // ---------- persistence ----------
-function save(){ try{ localStorage.setItem("scene6687seq", JSON.stringify({
+function save(){ try{ localStorage.setItem("scene6687seq2", JSON.stringify({
   steps:state.steps, channels:state.channels, names:state.names, bpm:state.bpm, grid:Array.from(state.grid) })); }catch(e){} }
-function load(){ try{ const d = JSON.parse(localStorage.getItem("scene6687seq")); if(!d) return;
+function load(){ try{ const d = JSON.parse(localStorage.getItem("scene6687seq2")); if(!d) return;
   state.steps=d.steps; state.channels=d.channels; state.names=d.names||DEFAULT_NAMES.slice();
-  state.bpm=d.bpm||120; state.grid=Uint8Array.from(d.grid); }catch(e){} }
+  state.bpm=d.bpm||120; state.grid=Uint8Array.from(d.grid);
+  pulses2d = new Float32Array(state.channels*state.steps); }catch(e){} }
 
 // ---------- transport ----------
 const stepDur = () => 60 / state.bpm / state.stepsPerBeat;
@@ -298,9 +322,7 @@ function playStop(){
     initAudio(); if (actx) actx.resume();
     if (fileLoaded && audioEl) audioEl.play().catch(()=>{});
     else state.startTime = performance.now()/1000 - state.playhead*stepDur();
-  } else {
-    if (fileLoaded && audioEl) audioEl.pause();
-  }
+  } else { if (fileLoaded && audioEl) audioEl.pause(); }
 }
 
 // ---------- controls ----------
@@ -308,8 +330,8 @@ $("play").onclick = playStop;
 $("clear").onclick = () => { state.grid.fill(0); buildGrid(); save(); };
 $("add").onclick = () => {
   if (state.channels >= 8) return;
-  const ng = new Uint8Array((state.channels+1)*state.steps);
-  ng.set(state.grid); state.grid = ng;
+  const ng = new Uint8Array((state.channels+1)*state.steps); ng.set(state.grid); state.grid = ng;
+  pulses2d = new Float32Array((state.channels+1)*state.steps);
   state.names.push("Ch " + (state.channels+1)); state.channels++;
   buildGrid(); save();
 };
@@ -327,7 +349,7 @@ addEventListener("keydown", (e) => {
 load();
 $("bpm").value = state.bpm; $("bpmv").textContent = state.bpm;
 buildGrid();
-window.__ready = true; // test hook
+window.__ready = true;
 
 (function loop(){
   const now = performance.now()/1000;
@@ -340,14 +362,15 @@ window.__ready = true; // test hook
     if (cur !== state.lastStep){
       state.lastStep = cur;
       for (let c=0;c<state.channels;c++) if (state.grid[c*state.steps+cur]){
-        pulse[c%3] = 1.0;                                   // beat hit -> element scales up
-        if (!fileLoaded) blip(SYNTH[c%3]);
+        pulses2d[c*state.steps+cur] = 1.0;            // this step is hit -> it scales up
+        if (!fileLoaded) blip(SYNTH[c%NP]);
       }
       markPlayhead(cur);
     }
   }
-  for (let i=0;i<3;i++) pulse[i] *= 0.88;                    // relax between hits
+  for (let i=0;i<pulses2d.length;i++) pulses2d[i] *= 0.86;   // relax
   updateBands();
+  uploadPulse();
 
   if (canvas.width !== innerWidth || canvas.height !== innerHeight){ canvas.width=innerWidth; canvas.height=innerHeight; }
   gl.viewport(0,0,canvas.width,canvas.height);
@@ -359,9 +382,9 @@ window.__ready = true; // test hook
   gl.uniform1f(U("uBass"), bands.bass);
   gl.uniform1f(U("uMid"), bands.mid);
   gl.uniform1f(U("uTreble"), bands.treble);
-  gl.uniform1f(U("uPulseVoice"), pulse[0]);
-  gl.uniform1f(U("uPulseDrums"), pulse[1]);
-  gl.uniform1f(U("uPulseBass"), pulse[2]);
+  gl.uniform1f(U("uSteps"), state.steps);
+  gl.uniform1f(U("uChannels"), state.channels);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, pulseTex); gl.uniform1i(U("uPulseTex"), 0);
   gl.drawArrays(gl.TRIANGLES, 0, 6);
   requestAnimationFrame(loop);
 })();
