@@ -20,6 +20,9 @@
   .transport button:hover { background:#26262e; }
   .transport select { background:#1c1c22; color:#ddd; border:1px solid #3a3a44; border-radius:5px; padding:4px; }
   .transport input[type=range] { vertical-align:middle; }
+  .transport button.on { background:#caa23a; color:#111; border-color:#caa23a; font-weight:700; }
+  .lane .pit { width:38px; background:#1c1c22; color:#ddd; border:1px solid #3a3a44; border-radius:4px; padding:2px; }
+  .lane select.nlen { background:#1c1c22; color:#ddd; border:1px solid #3a3a44; border-radius:4px; padding:2px; font-size:10px; }
   .transport .title { font-weight:700; color:#8cf; letter-spacing:1px; margin-right:6px; }
   .transport label { color:#999; }
   #grid { display:flex; flex-direction:column; gap:5px; }
@@ -47,8 +50,12 @@ uniform float uBass, uMid, uTreble;   // audio bands 0..1
 uniform float uSteps;                 // steps per lane
 uniform float uChannels;              // rows in the pulse texture
 uniform sampler2D uPulseTex;          // steps x channels, .r = per-step pulse 0..1
+uniform float uEnSnare, uEnOpen;      // channel energies (snare row 4, open-hat row 5)
 
 float h2(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float vn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
+    return mix(mix(h2(i),h2(i+vec2(1.0,0.0)),f.x), mix(h2(i+vec2(0.0,1.0)),h2(i+vec2(1.0,1.0)),f.x), f.y); }
+float fbm2(vec2 p){ float v=0.0,a=0.5; for(int i=0;i<4;i++){ v+=a*vn(p); p*=2.0; a*=0.5; } return v; }
 mat2 rot(float a){ float s=sin(a), c=cos(a); return mat2(c,-s,s,c); }
 float boxMask(vec2 p, vec2 c, vec2 h, float ang){
     vec2 d = rot(ang) * (p - c); vec2 q = abs(d) - h; return step(max(q.x, q.y), 0.0);
@@ -161,6 +168,42 @@ void main(){
         col = mix(col, sc, seam * (0.7 + 0.3*p));
     }
 
+    // SNARE (row 4) — tree shadows running around the screen edge
+    if (uChannels > 4.5){
+        float d = min(min(uv.x, 1.0-uv.x), min(uv.y, 1.0-uv.y));
+        float fringe = smoothstep(0.20, 0.0, d);
+        vec2 q = uv - 0.5; float a = atan(q.y, q.x);
+        float foliage = fbm2(vec2(a * 3.0 + iTime * 0.6, d * 9.0));
+        float trav = 0.5 + 0.5 * sin(a * 3.0 - iTime * 2.0);     // runs around the edge
+        float shade = fringe * (0.20 + 0.65 * uEnSnare) * (0.4 + 0.6 * foliage) * (0.55 + 0.45 * trav);
+        col *= 1.0 - clamp(shade, 0.0, 0.85);
+    }
+    // OPEN HAT (row 5) — falling leaves particle system
+    if (uChannels > 5.5){
+        for (int i=0;i<40;i++){
+            float fi = float(i);
+            vec2 hsh = vec2(h2(vec2(fi,1.0)), h2(vec2(fi,2.0)));
+            float sp = 0.05 + hsh.y * 0.12;
+            float py = 1.0 - fract(hsh.x * 7.0 + iTime * sp);     // falls from the top
+            float px = hsh.x + 0.04 * sin(iTime * 1.5 + fi);
+            vec2 lp = (uv - vec2(px, py)) * vec2(1.0, 1.6);
+            float leaf = smoothstep(0.026, 0.0, length(lp));
+            vec3 lc = mix(vec3(0.45,0.62,0.20), vec3(0.72,0.42,0.12), hsh.y);
+            col = mix(col, lc, leaf * (0.20 + 0.80 * uEnOpen));
+        }
+    }
+    // HI HAT (row 6) — dog poops appear randomly; each step = a poop, fades over its note
+    if (uChannels > 6.5){
+        for (int s=0;s<32;s++){
+            if (float(s) >= uSteps) break;
+            float p = pulseAt(6.0, float(s));
+            if (p < 0.02) continue;
+            vec2 pos = vec2(h2(vec2(float(s),5.0)), h2(vec2(float(s),9.0)));
+            float blob = smoothstep(0.038, 0.0, length((uv - pos) * vec2(1.0,1.3)));
+            col = mix(col, vec3(0.32,0.20,0.09), blob * clamp(p, 0.0, 1.0));
+        }
+    }
+
     col = satb(col, 1.22, 1.0);
     gl_FragColor = vec4(col, 1.0);
 }
@@ -176,32 +219,24 @@ void main(){
     <input type="file" id="audioFile" accept="audio/*" hidden>
     <label>BPM <input type="range" id="bpm" min="60" max="200" step="1" value="120"></label>
     <span id="bpmv">120</span>
-    <label>pitch <input type="range" id="transpose" min="-24" max="24" step="1" value="0" style="width:90px"></label>
-    <span id="trv">0</span>
-    <label>note <select id="notelen">
-      <option value="0.03125">1/32</option>
-      <option value="0.0625">1/16</option>
-      <option value="0.125">1/8</option>
-      <option value="0.25" selected>1/4</option>
-      <option value="0.5">1/2</option>
-      <option value="1">1</option>
-      <option value="4">4</option>
-      <option value="8">8</option>
-      <option value="16">16</option>
-      <option value="32">32</option>
-    </select></label>
+    <label>filter <input type="range" id="filter" min="-100" max="100" step="1" value="0" style="width:90px"></label>
+    <button id="echo">echo</button>
     <span style="flex:1"></span>
-    <span class="hint"><kbd>Space</kbd> play · <kbd>H</kbd> hide</span>
+    <span class="hint"><kbd>Space</kbd> play · <kbd>H</kbd> hide · pitch/note per lane →</span>
   </div>
   <div id="grid"></div>
 </div>
 
 <script>
-const PAT = ["grate (voice)", "mosaic (drums)", "paver (bass)", "seams (curb)"];  // scene 6687 elements
-const PAT_COLOR = ["#aab2c0", "#e3d28f", "#cdbb86", "#caa44a"];
-const DEFAULT_NAMES = ["Voice", "Drums", "Bass", "Seams"];
-const SYNTH = [2, 0, 1, 3];   // voice=triangle, drums=noise, bass=sine, seams=high tick
+const PAT = ["grate (voice)", "mosaic (drums)", "paver (bass)", "seams (curb)",
+             "tree shadow (snare)", "leaves (open hat)", "poops (hi hat)", "extra"];
+const PAT_COLOR = ["#aab2c0", "#e3d28f", "#cdbb86", "#caa44a", "#3b5e3b", "#6f9b3a", "#7a5230", "#888888"];
+const FULL_NAMES = ["Voice", "Drums", "Bass", "Seams", "Snare", "Open hat", "Hi hat", "Ch 8"];
+const DEFAULT_NAMES = FULL_NAMES.slice(0, 4);
+// per-channel synth voice: 2=triangle 0=noise(mid) 1=sine 3=keyboard 4=snare 5=open-hat 6=hi-hat
+const SYNTH = [2, 0, 1, 3, 4, 5, 6, 3];
 const NP = PAT.length;
+const NOTE_OPTS = [["1/32",0.03125],["1/16",0.0625],["1/8",0.125],["1/4",0.25],["1/2",0.5],["1",1],["4",4],["8",8],["16",16],["32",32]];
 const $ = (id) => document.getElementById(id);
 
 const state = {
@@ -211,8 +246,9 @@ const state = {
 };
 state.grid = new Uint8Array(state.channels * state.steps);
 let pulses2d = new Float32Array(state.channels * state.steps);   // per-step pulse, decays each frame
-let transpose = 0;       // semitone pitch transpose for synth notes
-let noteLen = 0.25;      // note length in whole-notes (0.25 = quarter note)
+state.pitch = Array.from({length: state.channels}, () => 0);     // per-channel semitone transpose
+state.noteLen = Array.from({length: state.channels}, () => 0.25);// per-channel note length (whole-notes)
+let echoOn = false, fxFilter = 0;
 
 // ---------- WebGL ----------
 const canvas = $("glcanvas");
@@ -246,48 +282,68 @@ function uploadPulse(){
 }
 
 // ---------- Audio synth ----------
-let actx = null, noiseBuf = null;
+let actx = null, noiseBuf = null, master = null, fxFilterNode = null, fxDelay = null, fxDelayMix = null;
 function initAudio(){
   if (actx) return;
   actx = new (window.AudioContext || window.webkitAudioContext)();
-  const n = actx.sampleRate * 0.2; noiseBuf = actx.createBuffer(1, n, actx.sampleRate);
+  const n = actx.sampleRate * 0.3; noiseBuf = actx.createBuffer(1, n, actx.sampleRate);
   const d = noiseBuf.getChannelData(0); for(let i=0;i<n;i++) d[i] = Math.random()*2-1;
+  // ---- DDJ-style master FX: colour filter + beat echo ----
+  master = actx.createGain();
+  fxFilterNode = actx.createBiquadFilter(); fxFilterNode.type = "allpass"; fxFilterNode.frequency.value = 20000; fxFilterNode.Q.value = 1.0;
+  fxDelay = actx.createDelay(2.0); fxDelay.delayTime.value = 0.3;
+  const fb = actx.createGain(); fb.gain.value = 0.36;
+  fxDelayMix = actx.createGain(); fxDelayMix.gain.value = 0.0;
+  master.connect(fxFilterNode); fxFilterNode.connect(actx.destination);
+  fxFilterNode.connect(fxDelay); fxDelay.connect(fb); fb.connect(fxDelay); fxDelay.connect(fxDelayMix); fxDelayMix.connect(actx.destination);
+  applyFilter(fxFilter); applyEcho(echoOn);
 }
-const freqT = (base) => base * Math.pow(2, transpose / 12);            // pitch transpose
-const noteDurSec = () => Math.max(0.04, noteLen * 4 * 60 / state.bpm); // note length in seconds
-function blip(type){
+function applyFilter(v){            // v in -1..1 : <0 low-pass, >0 high-pass, ~0 bypass
+  if (!fxFilterNode) return;
+  if (Math.abs(v) < 0.03){ fxFilterNode.type = "allpass"; fxFilterNode.frequency.value = 20000; return; }
+  if (v < 0){ fxFilterNode.type = "lowpass";  fxFilterNode.frequency.value = 200 * Math.pow(100, 1.0 + v); }
+  else      { fxFilterNode.type = "highpass"; fxFilterNode.frequency.value = 20  * Math.pow(300, v); }
+}
+function applyEcho(on){
+  if (!fxDelay) return;
+  fxDelay.delayTime.value = 60 / state.bpm / 2;   // 1/8-note echo
+  fxDelayMix.gain.setTargetAtTime(on ? 0.4 : 0.0, actx.currentTime, 0.05);
+}
+function blip(ch){
   if (!actx) return;
-  const t = actx.currentTime, g = actx.createGain(); g.connect(actx.destination);
-  const dur = noteDurSec();
-  if (type === 0){ // drums — noise (unpitched), short
+  const type = SYNTH[ch % NP];
+  const semi = state.pitch[ch] || 0;
+  const ft = (base) => base * Math.pow(2, semi / 12);
+  const dur = Math.max(0.04, (state.noteLen[ch] || 0.25) * 4 * 60 / state.bpm);
+  const t = actx.currentTime, g = actx.createGain(); g.connect(master);
+  const noise = (cut, q, gain, d) => {
     const src = actx.createBufferSource(); src.buffer = noiseBuf;
-    const f = actx.createBiquadFilter(); f.type = "bandpass"; f.frequency.value = 1900; f.Q.value = 0.8;
+    const f = actx.createBiquadFilter(); f.type = "bandpass"; f.frequency.value = cut; f.Q.value = q;
     src.connect(f); f.connect(g);
-    const d = Math.min(dur, 0.2);
-    g.gain.setValueAtTime(0.5, t); g.gain.exponentialRampToValueAtTime(0.001, t + d);
+    g.gain.setValueAtTime(gain, t); g.gain.exponentialRampToValueAtTime(0.001, t + d);
     src.start(t); src.stop(t + d + 0.02);
-  } else if (type === 3){ // seams — keyboard / piano-ish (fundamental + harmonics)
+  };
+  if (type === 0) noise(1900, 0.8, 0.5, Math.min(dur, 0.2));                 // drums
+  else if (type === 4){                                                     // snare: noise body + tone
+    noise(1500, 0.5, 0.45, Math.min(dur, 0.25));
+    const o = actx.createOscillator(); o.type="triangle"; o.frequency.value=ft(200); const og=actx.createGain();
+    og.gain.setValueAtTime(0.25,t); og.gain.exponentialRampToValueAtTime(0.001,t+0.12); o.connect(og); og.connect(master); o.start(t); o.stop(t+0.14);
+  }
+  else if (type === 5) noise(7000, 1.2, 0.30, Math.min(dur, 0.35));         // open hat (longer, bright)
+  else if (type === 6) noise(9000, 1.5, 0.25, Math.min(dur, 0.06));         // hi hat (short, bright)
+  else if (type === 3){                                                     // seams: keyboard
     const d = Math.min(dur, 4.0);
-    const partials = [[1.0, 0.5, "triangle"], [2.0, 0.20, "sine"], [3.0, 0.08, "sine"]];
-    for (let i=0;i<partials.length;i++){
-      const o = actx.createOscillator(); o.type = partials[i][2];
-      o.frequency.value = freqT(523.25) * partials[i][0];   // C5 + harmonics, transposed
-      const og = actx.createGain(); og.gain.value = partials[i][1];
-      o.connect(og); og.connect(g); o.start(t); o.stop(t + d + 0.05);
-    }
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(0.9, t + 0.006);     // fast attack
-    g.gain.exponentialRampToValueAtTime(0.001, t + d);        // decay over note length
-  } else { // bass(1) sine, voice(2) triangle
-    const o = actx.createOscillator();
-    o.type = (type === 1) ? "sine" : "triangle";
-    o.frequency.value = freqT(type === 1 ? 70 : 330);
-    o.connect(g);
+    const partials = [[1.0,0.5,"triangle"],[2.0,0.20,"sine"],[3.0,0.08,"sine"]];
+    for (let i=0;i<partials.length;i++){ const o=actx.createOscillator(); o.type=partials[i][2];
+      o.frequency.value=ft(523.25)*partials[i][0]; const og=actx.createGain(); og.gain.value=partials[i][1];
+      o.connect(og); og.connect(g); o.start(t); o.stop(t+d+0.05); }
+    g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.9,t+0.006); g.gain.exponentialRampToValueAtTime(0.001,t+d);
+  }
+  else {                                                                    // bass(1) sine, voice(2) triangle
+    const o = actx.createOscillator(); o.type = (type===1)?"sine":"triangle"; o.frequency.value = ft(type===1?70:330); o.connect(g);
     const d = Math.min(dur, 6.0);
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(type === 1 ? 0.5 : 0.45, t + 0.005);
-    g.gain.exponentialRampToValueAtTime(0.001, t + d);
-    o.start(t); o.stop(t + d + 0.05);
+    g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(type===1?0.5:0.45,t+0.005); g.gain.exponentialRampToValueAtTime(0.001,t+d);
+    o.start(t); o.stop(t+d+0.05);
   }
 }
 
@@ -302,7 +358,7 @@ function loadAudioFile(file){
     const src = actx.createMediaElementSource(audioEl);
     analyser = actx.createAnalyser(); analyser.fftSize = 1024; analyser.smoothingTimeConstant = 0.8;
     bins = new Uint8Array(analyser.frequencyBinCount);
-    src.connect(analyser); analyser.connect(actx.destination);
+    src.connect(analyser); analyser.connect(master);   // through master FX
   }
   audioEl.src = URL.createObjectURL(file); fileLoaded = true;
   $("loadBtn").textContent = "♪ " + file.name.slice(0, 18);
@@ -329,6 +385,13 @@ function buildGrid(){
     const sw = document.createElement("div"); sw.className = "swatch"; sw.style.background = PAT_COLOR[c%NP];
     const nm = document.createElement("div"); nm.className = "nm";
     nm.textContent = (state.names[c] || ("Ch "+(c+1))); nm.title = PAT[c%NP];
+    // per-channel pitch (semitones) + note length
+    const pit = document.createElement("input"); pit.type = "number"; pit.className = "pit";
+    pit.min = -24; pit.max = 24; pit.value = state.pitch[c] || 0; pit.title = "pitch (semitones)";
+    pit.onchange = () => { state.pitch[c] = +pit.value || 0; save(); };
+    const nsel = document.createElement("select"); nsel.className = "nlen"; nsel.title = "note length";
+    NOTE_OPTS.forEach(([lab,val]) => { const o=document.createElement("option"); o.value=val; o.textContent=lab; if (Math.abs(val-(state.noteLen[c]||0.25))<1e-6) o.selected=true; nsel.appendChild(o); });
+    nsel.onchange = () => { state.noteLen[c] = +nsel.value; save(); };
     const cells = document.createElement("div"); cells.className = "cells";
     cells.style.gridTemplateColumns = `repeat(${state.steps}, 1fr)`;
     for (let s=0;s<state.steps;s++){
@@ -343,7 +406,7 @@ function buildGrid(){
       };
       cells.appendChild(cell);
     }
-    lane.appendChild(sw); lane.appendChild(nm); lane.appendChild(cells); wrap.appendChild(lane);
+    lane.appendChild(sw); lane.appendChild(nm); lane.appendChild(pit); lane.appendChild(nsel); lane.appendChild(cells); wrap.appendChild(lane);
   }
 }
 function markPlayhead(step){
@@ -353,12 +416,15 @@ function markPlayhead(step){
 }
 
 // ---------- persistence ----------
-function save(){ try{ localStorage.setItem("scene6687seq2", JSON.stringify({
+function save(){ try{ localStorage.setItem("scene6687seq3", JSON.stringify({
   steps:state.steps, channels:state.channels, names:state.names, bpm:state.bpm,
-  transpose, noteLen, grid:Array.from(state.grid) })); }catch(e){} }
-function load(){ try{ const d = JSON.parse(localStorage.getItem("scene6687seq2")); if(!d) return;
-  state.steps=d.steps; state.channels=d.channels; state.names=d.names||DEFAULT_NAMES.slice();
-  state.bpm=d.bpm||120; transpose=d.transpose||0; noteLen=d.noteLen||0.25; state.grid=Uint8Array.from(d.grid);
+  pitch:state.pitch, noteLen:state.noteLen, fxFilter, echoOn, grid:Array.from(state.grid) })); }catch(e){} }
+function load(){ try{ const d = JSON.parse(localStorage.getItem("scene6687seq3")); if(!d) return;
+  state.steps=d.steps; state.channels=d.channels; state.names=d.names||FULL_NAMES.slice(0,state.channels);
+  state.bpm=d.bpm||120; state.grid=Uint8Array.from(d.grid);
+  state.pitch=d.pitch||Array.from({length:state.channels},()=>0);
+  state.noteLen=d.noteLen||Array.from({length:state.channels},()=>0.25);
+  fxFilter=d.fxFilter||0; echoOn=!!d.echoOn;
   pulses2d = new Float32Array(state.channels*state.steps); }catch(e){} }
 
 // ---------- transport ----------
@@ -380,15 +446,17 @@ $("add").onclick = () => {
   if (state.channels >= 8) return;
   const ng = new Uint8Array((state.channels+1)*state.steps); ng.set(state.grid); state.grid = ng;
   pulses2d = new Float32Array((state.channels+1)*state.steps);
-  state.names.push("Ch " + (state.channels+1)); state.channels++;
+  state.names.push(FULL_NAMES[state.channels] || ("Ch " + (state.channels+1)));
+  state.pitch.push(0); state.noteLen.push(0.25);
+  state.channels++;
   buildGrid(); save();
 };
 $("bpm").oninput = (e) => { state.bpm = +e.target.value; $("bpmv").textContent = e.target.value;
   if(state.playing) state.startTime = performance.now()/1000 - state.playhead*stepDur(); save(); };
 $("loadBtn").onclick = () => $("audioFile").click();
 $("audioFile").onchange = (e) => { if (e.target.files[0]) loadAudioFile(e.target.files[0]); };
-$("transpose").oninput = (e) => { transpose = +e.target.value; $("trv").textContent = (transpose>0?"+":"") + transpose; save(); };
-$("notelen").onchange = (e) => { noteLen = +e.target.value; save(); };
+$("filter").oninput = (e) => { fxFilter = +e.target.value/100; applyFilter(fxFilter); save(); };
+$("echo").onclick = () => { echoOn = !echoOn; $("echo").classList.toggle("on", echoOn); initAudio(); applyEcho(echoOn); save(); };
 addEventListener("keydown", (e) => {
   if (e.target.tagName === "INPUT") return;
   if (e.code === "Space"){ e.preventDefault(); playStop(); }
@@ -398,8 +466,8 @@ addEventListener("keydown", (e) => {
 // ---------- boot ----------
 load();
 $("bpm").value = state.bpm; $("bpmv").textContent = state.bpm;
-$("transpose").value = transpose; $("trv").textContent = (transpose>0?"+":"") + transpose;
-$("notelen").value = String(noteLen);
+$("filter").value = Math.round(fxFilter*100);
+$("echo").classList.toggle("on", echoOn);
 buildGrid();
 window.__ready = true;
 let lastT = performance.now()/1000;
@@ -433,17 +501,21 @@ let lastT = performance.now()/1000;
       } else {
         for (let c=0;c<state.channels;c++) if (state.grid[c*state.steps+cur]){
           pulses2d[c*state.steps+cur] = 1.0;          // this step is hit -> it scales up
-          blip(SYNTH[c%NP]);
+          blip(c);                                    // per-channel pitch + note
         }
       }
       markPlayhead(cur);
     }
   }
   const dt = Math.min(0.1, now - lastT); lastT = now;
-  const decay = Math.pow(0.03, dt / noteDurSec());           // pulse holds for the note length
-  for (let i=0;i<pulses2d.length;i++) pulses2d[i] *= decay;  // relax
+  for (let c=0;c<state.channels;c++){                         // per-channel pulse decay by note length
+    const ds = Math.max(0.05, (state.noteLen[c]||0.25) * 4 * 60 / state.bpm);
+    const decay = Math.pow(0.03, dt / ds);
+    for (let s=0;s<state.steps;s++) pulses2d[c*state.steps+s] *= decay;
+  }
   updateBands();
   uploadPulse();
+  const energy = (row) => { if (row >= state.channels) return 0; let m=0; for (let s=0;s<state.steps;s++) m=Math.max(m, pulses2d[row*state.steps+s]); return m; };
 
   if (canvas.width !== innerWidth || canvas.height !== innerHeight){ canvas.width=innerWidth; canvas.height=innerHeight; }
   gl.viewport(0,0,canvas.width,canvas.height);
@@ -457,6 +529,8 @@ let lastT = performance.now()/1000;
   gl.uniform1f(U("uTreble"), bands.treble);
   gl.uniform1f(U("uSteps"), state.steps);
   gl.uniform1f(U("uChannels"), state.channels);
+  gl.uniform1f(U("uEnSnare"), energy(4));
+  gl.uniform1f(U("uEnOpen"), energy(5));
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, pulseTex); gl.uniform1i(U("uPulseTex"), 0);
   gl.drawArrays(gl.TRIANGLES, 0, 6);
   requestAnimationFrame(loop);
