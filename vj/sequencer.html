@@ -64,7 +64,7 @@ float stepWarp(float t, float ch, out float bright){
     float p = pulseAt(ch, seg);
     float cT = (seg + 0.5) / uSteps;
     bright = 1.0 + p * 0.9;
-    return (t - cT) / (1.0 + p * 0.20) + cT;   // 1.0 -> 1.2 magnification at p=1
+    return (t - cT) / (1.0 + p * 1.0) + cT;    // 1.0 -> 2.0 (200%) magnification at p=1
 }
 
 vec3 granite(vec2 uv){
@@ -124,20 +124,28 @@ void main(){
         float edgeShade = 0.86 + 0.14 * smoothstep(0.0, 0.10, min(cellT, 1.0-cellT));
         col = paverCol(uv) * bright * edgeShade * (1.0 + uBass*0.4);
     }
-    // DRUMS (row 1) — mosaic block (centre), stepped across the block width
+    // DRUMS (row 1) — mosaic block (centre), divided into 16 rings FROM THE CENTRE
     vec2 c0 = vec2(0.58, 0.40); float ang = -0.32;
     if (boxMask(uv, c0, vec2(0.30,0.33), ang) > 0.5){
         vec2 local = rot(ang) * (uv - c0);
-        float t = clamp((local.x + 0.30) / 0.60, 0.0, 1.0);
-        float bright; float tw = stepWarp(t, 1.0, bright);
-        col = mosaicLocal(vec2(tw*0.60 - 0.30, local.y)) * bright * (1.0 + uTreble*0.4);
+        float rmax = 0.33;
+        float r = length(local);
+        float rn = clamp(r / rmax, 0.0, 1.0);
+        float seg = floor(rn * uSteps);
+        float p = pulseAt(1.0, seg);
+        float cRn = (seg + 0.5) / uSteps;
+        float rnW = (rn - cRn) / (1.0 + p * 1.0) + cRn;            // zoom the hit ring to 200%
+        vec2 wlocal = local * (rnW * rmax / max(r, 1e-4));
+        col = mosaicLocal(wlocal) * (1.0 + p*0.9) * (1.0 + uTreble*0.4);
     }
-    // VOICE (row 0) — metal grate (left), stepped across the slats
+    // VOICE (row 0) — metal grate (left), divided HORIZONTALLY; a hit shows as a shadow band
     float edge = 0.30 - uv.y * 0.05;
     if (uv.x < edge){
-        float t = clamp(uv.x / edge, 0.0, 1.0);
-        float bright; float tw = stepWarp(t, 0.0, bright);
-        col = grateCol(vec2(tw*edge, uv.y), edge) * bright * (1.0 + uMid*0.4);
+        float seg = floor(uv.y * uSteps);
+        float p = pulseAt(0.0, seg);
+        float cellY = fract(uv.y * uSteps);
+        float shadow = p * (0.55 + 0.35 * sin(cellY * 3.14159));    // soft shadow across the rails
+        col = grateCol(vec2(uv.x, uv.y), edge) * (1.0 - shadow) * (1.0 + uMid*0.25);
     }
     // SEAMS (row 3) — curb + block joints, stepped along x (hit steps thicken + glow)
     {
@@ -361,9 +369,23 @@ window.__ready = true;
     const cur = Math.floor(state.playhead) % state.steps;
     if (cur !== state.lastStep){
       state.lastStep = cur;
-      for (let c=0;c<state.channels;c++) if (state.grid[c*state.steps+cur]){
-        pulses2d[c*state.steps+cur] = 1.0;            // this step is hit -> it scales up
-        if (!fileLoaded) blip(SYNTH[c%NP]);
+      if (fileLoaded){
+        // auto-fill this step column from live audio analysis (per-channel bands)
+        const lvl = (bands.bass + bands.mid + bands.treble) / 3.0;
+        const vals = [bands.mid, bands.treble, bands.bass, lvl];   // voice, drums, bass, seams
+        const thr  = [0.15, 0.13, 0.18, 0.18];
+        for (let c=0;c<state.channels;c++){
+          const on = vals[c%NP] > thr[c%NP] ? 1 : 0;
+          state.grid[c*state.steps+cur] = on;
+          if (on) pulses2d[c*state.steps+cur] = 1.0;
+          const cell = document.querySelector(`.cell[data-c="${c}"][data-s="${cur}"]`);
+          if (cell) cell.classList.toggle("on", !!on);
+        }
+      } else {
+        for (let c=0;c<state.channels;c++) if (state.grid[c*state.steps+cur]){
+          pulses2d[c*state.steps+cur] = 1.0;          // this step is hit -> it scales up
+          blip(SYNTH[c%NP]);
+        }
       }
       markPlayhead(cur);
     }
