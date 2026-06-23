@@ -51,8 +51,8 @@ uniform float uSteps;                 // steps per lane
 uniform float uChannels;              // rows in the pulse texture
 uniform sampler2D uPulseTex;          // steps x channels, .r = per-step pulse 0..1
 uniform float uEnOpen;                // open-hat (row 5) energy for leaves
-uniform sampler2D uCustom0, uCustom1, uCustom2;   // per-slot showcase graphic (voice/drums/bass)
-uniform float uHasC0, uHasC1, uHasC2;             // 1 = that slot uses a showcase graphic
+uniform sampler2D uAtlas;             // separated object-layers packed 4x2; one tile per channel
+uniform float uHasLayer[8];           // 1 = that channel renders a layer instead of its built-in element
 
 float h2(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float vn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
@@ -118,22 +118,17 @@ void main(){
     // BASS (row 2) — paver bands (upper-right), stepped along x
     float pm = max(boxMask(uv, vec2(0.78,0.82), vec2(0.24,0.11), -0.32),
                    boxMask(uv, vec2(0.86,0.50), vec2(0.13,0.22), -0.32));
-    if (pm > 0.5){
+    if (pm > 0.5 && uHasLayer[2] < 0.5){
         float t = clamp((uv.x - 0.52) / 0.46, 0.0, 1.0);
         float bright; float tw = stepWarp(t, 2.0, bright);
-        float seg = floor(clamp(tw,0.0,0.999) * uSteps);
-        if (uHasC2 > 0.5){
-            col = mix(col, texture2D(uCustom2, uv).rgb, 0.9 * (0.35 + 0.65 * pulseAt(2.0, seg)));
-        } else {
-            float cellT = fract(tw * uSteps);
-            float edgeShade = 0.86 + 0.14 * smoothstep(0.0, 0.10, min(cellT, 1.0-cellT));
-            col = paverCol(uv) * bright * edgeShade * (1.0 + uBass*0.4);
-        }
+        float cellT = fract(tw * uSteps);
+        float edgeShade = 0.86 + 0.14 * smoothstep(0.0, 0.10, min(cellT, 1.0-cellT));
+        col = paverCol(uv) * bright * edgeShade * (1.0 + uBass*0.4);
     }
     // DRUMS (row 1) — navy mosaic; the hit ring lights up following the tile grid (no scaling)
     vec2 c0 = vec2(0.58, 0.40); float ang = -0.32;
     vec2 hsz = vec2(0.30, 0.33);
-    if (boxMask(uv, c0, hsz, ang) > 0.5){
+    if (boxMask(uv, c0, hsz, ang) > 0.5 && uHasLayer[1] < 0.5){
         vec2 local = rot(ang) * (uv - c0);
         vec2 g = local * vec2(34.0, 38.0);
         vec2 cell = fract(g); vec2 id = floor(g);
@@ -144,28 +139,20 @@ void main(){
         tile *= 0.9 + 0.1 * sin(iTime*1.5 + r*6.2831 + id.x*0.6 + id.y*0.9);
         float rn = max(abs(id.x) / 10.0, abs(id.y) / 12.0);                       // ring index in TILE units
         float seg = floor(clamp(rn, 0.0, 0.999) * uSteps);
-        if (uHasC1 > 0.5){
-            col = mix(col, texture2D(uCustom1, uv).rgb, 0.9 * (0.35 + 0.65 * pulseAt(1.0, seg)));
-        } else {
-            tile += pulseAt(1.0, seg) * vec3(0.35, 0.45, 0.85);                   // hit ring of tiles lights up
-            col = mix(vec3(0.06,0.07,0.13), tile, grout) * (1.0 + uTreble*0.3);
-        }
+        tile += pulseAt(1.0, seg) * vec3(0.35, 0.45, 0.85);                       // hit ring of tiles lights up
+        col = mix(vec3(0.06,0.07,0.13), tile, grout) * (1.0 + uTreble*0.3);
     }
     // VOICE (row 0) — metal grate (left), divided HORIZONTALLY; a hit shows as a shadow band
     float edge = 0.30 - uv.y * 0.05;
-    if (uv.x < edge){
+    if (uv.x < edge && uHasLayer[0] < 0.5){
         float seg = floor(uv.y * uSteps);
         float p = pulseAt(0.0, seg);
-        if (uHasC0 > 0.5){
-            col = mix(col, texture2D(uCustom0, uv).rgb, 0.9 * (0.35 + 0.65 * p));  // showcase graphic, segmented
-        } else {
-            float cellY = fract(uv.y * uSteps);
-            float shadow = p * (0.55 + 0.35 * sin(cellY * 3.14159));    // soft shadow across the rails
-            col = grateCol(vec2(uv.x, uv.y), edge) * (1.0 - shadow) * (1.0 + uMid*0.25);
-        }
+        float cellY = fract(uv.y * uSteps);
+        float shadow = p * (0.55 + 0.35 * sin(cellY * 3.14159));    // soft shadow across the rails
+        col = grateCol(vec2(uv.x, uv.y), edge) * (1.0 - shadow) * (1.0 + uMid*0.25);
     }
-    // SEAMS (row 3) — curb + block joints, stepped along x (hit steps thicken + glow)
-    {
+    // KEYBOARD (row 3) — curb + block joints, stepped along x (hit steps thicken + glow)
+    if (uHasLayer[3] < 0.5){
         float seg = floor(clamp(uv.x,0.0,1.0) * uSteps);
         float p = pulseAt(3.0, seg);
         float w = 0.010 + p * 0.020;
@@ -177,7 +164,7 @@ void main(){
     }
 
     // SNARE (row 4) — tree-leaf shadow travelling clockwise around the screen edge
-    if (uChannels > 4.5){
+    if (uChannels > 4.5 && uHasLayer[4] < 0.5){
         float dTop = 1.0 - uv.y, dBot = uv.y, dL = uv.x, dR = 1.0 - uv.x;
         float d = min(min(dTop, dBot), min(dL, dR));        // distance to nearest edge
         float fringe = smoothstep(0.30, 0.0, d);
@@ -189,11 +176,11 @@ void main(){
         float tr = fract(t + iTime * 0.06);                 // drift clockwise around the edge
         float seg = floor(tr * uSteps);
         float foliage = fbm2(vec2(t * 46.0, d * 16.0)) * 0.6 + fbm2(vec2(t * 90.0, d * 30.0)) * 0.4;
-        float canopy = smoothstep(0.42, 0.64, foliage) * fringe * pulseAt(4.0, seg);
-        col = mix(col, vec3(0.17,0.17,0.19), canopy * 0.72); // translucent gray leaf shadow
+        float canopy = smoothstep(0.34, 0.60, foliage) * fringe * pulseAt(4.0, seg);
+        col = mix(col, vec3(0.12,0.12,0.14), canopy * 0.92); // darker, more visible leaf shadow
     }
     // OPEN HAT (row 5) — falling leaves (shaped, spinning, autumn colours)
-    if (uChannels > 5.5){
+    if (uChannels > 5.5 && uHasLayer[5] < 0.5){
         float asp = iResolution.x / iResolution.y;
         for (int i=0;i<40;i++){
             float fi = float(i);
@@ -216,7 +203,7 @@ void main(){
         }
     }
     // HI HAT (row 6) — soft-serve dog poop (stacked tiers + curl tip), random scale, fades over note
-    if (uChannels > 6.5){
+    if (uChannels > 6.5 && uHasLayer[6] < 0.5){
         float asp = iResolution.x / iResolution.y;
         for (int s=0;s<32;s++){
             if (float(s) >= uSteps) break;
@@ -239,6 +226,17 @@ void main(){
             base -= 0.10 * smoothstep(-0.2, 0.06, sdf);              // edge shading
             col = mix(col, base, pm * clamp(p, 0.0, 1.0));
         }
+    }
+
+    // SEPARATED LAYERS — a channel's chosen object-layer replaces its element (opaque, no opacity)
+    for (int c = 0; c < 8; c++){
+        if (float(c) >= uChannels) break;
+        if (uHasLayer[c] < 0.5) continue;
+        float cc = mod(float(c), 4.0), rr = floor(float(c) / 4.0);
+        vec4 lc = texture2D(uAtlas, vec2((uv.x + cc) / 4.0, (uv.y + rr) / 2.0));
+        if (lc.a < 0.5) continue;                                   // object silhouette only
+        float seg = floor(clamp(uv.x, 0.0, 0.999) * uSteps);        // 16 vertical beat-segments
+        if (pulseAt(float(c), seg) > 0.5) col = lc.rgb;             // opaque where its beat is hit
     }
 
     col = satb(col, 1.22, 1.0);
@@ -264,23 +262,115 @@ void main(){
   <div id="grid"></div>
 </div>
 
+<!-- ===== separated object-layers (each outputs vec4(rgb, alpha=silhouette)); engine prepends a header ===== -->
+<script type="x-shader/x-fragment" id="layer-white_gate">
+void main(){
+  vec2 uv=gl_FragCoord.xy/iResolution.xy; vec2 p=uv*2.0-1.0; p.x*=iResolution.x/iResolution.y;
+  float a=0.0; vec2 gP=p; gP.x=abs(gP.x)-0.55;
+  if(abs(p.x)<1.0 && abs(p.y+0.05)<0.6){
+    if(abs(abs(p.x)-0.95)<0.03||abs(abs(p.y+0.05)-0.55)<0.03) a=1.0;     // frame
+    if(abs(p.x)<0.02) a=1.0;                                              // centre split
+    float d=length(gP+vec2(0.0,0.05)); float ang=atan(gP.y+0.05,gP.x);
+    if(abs(d-0.40)<0.025&&gP.y>-0.05) a=1.0;
+    if(abs(d-0.52)<0.025&&gP.y>-0.05) a=1.0;
+    if(d<0.52&&gP.y>-0.05&&fract(ang*4.0)<0.12) a=1.0;                    // sunburst rays
+    if(p.y<-0.05&&p.y>-0.5){ vec2 s=fract(p*4.0+vec2(iTime*0.2,0.0))-0.5; if(abs(length(s)-0.30)<0.05) a=1.0; }
+  }
+  gl_FragColor=vec4(mix(vec3(0.92),vec3(0.7),h2(floor(p*60.0))*0.3), a);
+}
+</script>
+<script type="x-shader/x-fragment" id="layer-arrows">
+void main(){
+  vec2 uv=gl_FragCoord.xy/iResolution.xy;
+  float y=fract(uv.y*4.0 - iTime*0.6); float x=abs(fract(uv.x*5.0)-0.5);
+  float a=smoothstep(0.05,0.0, abs(abs(x - y*0.5)-0.12));
+  gl_FragColor=vec4(vec3(1.0,0.85,0.1), a);
+}
+</script>
+<script type="x-shader/x-fragment" id="layer-rings">
+void main(){
+  vec2 uv=gl_FragCoord.xy/iResolution.xy; vec2 p=uv*2.0-1.0; p.x*=iResolution.x/iResolution.y;
+  float r=length(p); float a=smoothstep(0.05,0.0, abs(fract(r*5.0 - iTime*0.3)-0.5)-0.4)*step(r,1.3);
+  gl_FragColor=vec4(mix(vec3(0.1,0.9,0.8),vec3(0.9,0.2,0.6), fract(r*2.0)), a);
+}
+</script>
+<script type="x-shader/x-fragment" id="layer-blossom">
+void main(){
+  vec2 uv=gl_FragCoord.xy/iResolution.xy; vec2 p=uv*2.0-1.0; p.x*=iResolution.x/iResolution.y;
+  float r=length(p), ang=atan(p.y,p.x); float petal=abs(cos(ang*5.0 + iTime*0.3));
+  float a=smoothstep(0.02,0.0, r-(0.25+0.25*petal));
+  gl_FragColor=vec4(mix(vec3(1.0,0.5,0.7),vec3(1.0,0.9,0.4), petal), a);
+}
+</script>
+<script type="x-shader/x-fragment" id="layer-grid">
+void main(){
+  vec2 uv=gl_FragCoord.xy/iResolution.xy; vec2 g=fract(uv*8.0+vec2(iTime*0.1,0.0));
+  float a=smoothstep(0.06,0.0, min(min(g.x,1.0-g.x),min(g.y,1.0-g.y))-0.02);
+  gl_FragColor=vec4(vec3(0.2,1.0,0.6), a);
+}
+</script>
+<script type="x-shader/x-fragment" id="layer-waves">
+void main(){
+  vec2 uv=gl_FragCoord.xy/iResolution.xy; float w=sin(uv.x*12.0 + iTime*1.5)*0.1;
+  float a=smoothstep(0.03,0.0, abs(fract((uv.y+w)*6.0)-0.5)-0.42);
+  gl_FragColor=vec4(vec3(0.2,0.6,1.0), a);
+}
+</script>
+<script type="x-shader/x-fragment" id="layer-scales">
+void main(){
+  vec2 uv=gl_FragCoord.xy/iResolution.xy; vec2 g=uv*vec2(10.0,12.0);
+  g.x += step(1.0, mod(floor(g.y),2.0))*0.5; vec2 f=fract(g)-vec2(0.5,0.0);
+  float a=smoothstep(0.04,0.0, length(f*vec2(1.0,1.4))-0.45);
+  gl_FragColor=vec4(mix(vec3(0.2,0.5,0.9),vec3(0.6,0.9,1.0), fract(g.y*0.3)), a);
+}
+</script>
+<script type="x-shader/x-fragment" id="layer-dots">
+void main(){
+  vec2 uv=gl_FragCoord.xy/iResolution.xy; vec2 g=fract(uv*10.0)-0.5;
+  float a=smoothstep(0.04,0.0, length(g)-0.28);
+  gl_FragColor=vec4(mix(vec3(1.0,0.3,0.3),vec3(0.3,0.3,1.0), h2(floor(uv*10.0))), a);
+}
+</script>
+<script type="x-shader/x-fragment" id="layer-star">
+void main(){
+  vec2 uv=gl_FragCoord.xy/iResolution.xy; vec2 p=uv*2.0-1.0; p.x*=iResolution.x/iResolution.y;
+  float ang=atan(p.y,p.x), r=length(p); float ray=0.5+0.5*cos(ang*6.0 + iTime*0.5);
+  float a=smoothstep(0.03,0.0, r-(0.15+0.5*ray*ray));
+  gl_FragColor=vec4(vec3(1.0,0.95,0.5), a);
+}
+</script>
+<script type="x-shader/x-fragment" id="layer-spiral">
+void main(){
+  vec2 uv=gl_FragCoord.xy/iResolution.xy; vec2 p=uv*2.0-1.0; p.x*=iResolution.x/iResolution.y;
+  float ang=atan(p.y,p.x), r=length(p);
+  float a=smoothstep(0.08,0.0, abs(fract((ang/6.2831853)*3.0 + r*3.0 - iTime*0.2)-0.5)-0.4)*step(r,1.2);
+  gl_FragColor=vec4(vec3(0.8,0.4,1.0), a);
+}
+</script>
+
 <script>
-const PAT = ["grate (voice)", "mosaic (drums)", "paver (bass)", "seams (curb)",
+const PAT = ["grate (voice)", "mosaic (drums)", "paver (bass)", "keyboard (curb)",
              "tree shadow (snare)", "leaves (open hat)", "poops (hi hat)", "extra"];
 const PAT_COLOR = ["#aab2c0", "#2a3a6a", "#cdbb86", "#caa44a", "#3b5e3b", "#6f9b3a", "#7a5230", "#888888"];
-const FULL_NAMES = ["Voice", "Drums", "Bass", "Seams", "Snare", "Open hat", "Hi hat", "Ch 8"];
+const FULL_NAMES = ["Voice", "Drums", "Bass", "Keyboard", "Snare", "Open hat", "Hi hat", "Ch 8"];
 const DEFAULT_NAMES = FULL_NAMES.slice(0, 4);
 // per-channel synth voice: 2=triangle 0=noise(mid) 1=sine 3=keyboard 4=snare 5=open-hat 6=hi-hat
 const SYNTH = [2, 0, 1, 3, 4, 5, 6, 3];
 const NP = PAT.length;
 const NOTE_OPTS = [["1/32",0.03125],["1/16",0.0625],["1/8",0.125],["1/4",0.25],["1/2",0.5],["1",1],["4",4],["8",8],["16",16],["32",32]];
-// test batch of showcase shaders selectable per channel (voice/drums/bass slots)
-const BATCH = [
-  ["3714","arrows 3714"], ["0398","interior 0398"], ["0995","balcony 0995"],
-  ["1213","seascape 1213"], ["1720","white gate 1720"], ["1426","1426"],
-  ["2148","2148"], ["5538","5538"], ["7211","7211"], ["1333","raincoat 1333"],
+// separated object-layers (id -> [label, description]); selectable on every channel
+const LAYERS = [
+  ["white_gate", "White gate", "ornate white wrought-iron gate with sunburst"],
+  ["arrows",     "Arrows",     "scrolling road arrows / chevrons"],
+  ["rings",      "Rings",      "concentric neon rings"],
+  ["blossom",    "Blossom",    "five-petal flower rosette"],
+  ["grid",       "Grid",       "glowing square grid"],
+  ["waves",      "Waves",      "horizontal sine waves"],
+  ["scales",     "Scales",     "fish-scale arcs"],
+  ["dots",       "Dots",       "polka-dot field"],
+  ["star",       "Star",       "starburst rays"],
+  ["spiral",     "Spiral",     "rotating spiral arms"],
 ];
-const CUSTOM_SLOTS = 3;   // voice(0)/drums(1)/bass(2) can host a showcase graphic
 const $ = (id) => document.getElementById(id);
 
 const state = {
@@ -292,7 +382,7 @@ state.grid = new Uint8Array(state.channels * state.steps);
 let pulses2d = new Float32Array(state.channels * state.steps);   // per-step pulse, decays each frame
 state.pitch = Array.from({length: state.channels}, () => 0);     // per-channel semitone transpose
 state.noteLen = Array.from({length: state.channels}, () => 0.25);// per-channel note length (whole-notes)
-state.custom = Array.from({length: state.channels}, () => "");   // per-channel showcase shader id ("" = built-in)
+state.layer = Array.from({length: state.channels}, () => "");    // per-channel object-layer id ("" = built-in element)
 let echoOn = false, fxFilter = 0;
 
 // ---------- WebGL ----------
@@ -327,58 +417,53 @@ function uploadPulse(){
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, state.steps, state.channels, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, pulseBytes);
 }
 
-// ---------- multi-pass: render a chosen showcase shader into a slot texture ----------
-const CUSTOM_HEADER = "precision highp float;\nuniform vec2 iResolution;\nuniform float iTime;\nuniform float iBass,iMid,iTreble,iLevel,iBeat;\n";
-const customProgs = {};                 // id -> compiled program (or 'pending'/'error')
-const slotTex = [], slotFBO = [];       // one render target per custom slot
-let slotW = 0, slotH = 0;
-function makeTarget(w, h){
-  const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  const fbo = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
-  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
-  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-  return { tex, fbo };
+// ---------- multi-pass: render each channel's chosen object-layer into one atlas (4x2 tiles) ----------
+const LAYER_HEADER = "precision highp float;\nuniform vec2 iResolution;\nuniform float iTime;\nuniform float iBass,iMid,iTreble,iLevel,iBeat;\n"
+  + "float h2(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453); }\n"
+  + "mat2 rot(float a){ float s=sin(a),c=cos(a); return mat2(c,-s,s,c); }\n";
+const layerProgs = {};   // id -> compiled program (compiled from inline <script id="layer-ID">)
+function compileLayer(id){
+  if (!id || layerProgs[id]) return;
+  const el = document.getElementById("layer-" + id);
+  if (!el){ layerProgs[id] = "error"; return; }
+  try {
+    const p = gl.createProgram();
+    gl.attachShader(p, compile(gl.VERTEX_SHADER, VERT));
+    gl.attachShader(p, compile(gl.FRAGMENT_SHADER, LAYER_HEADER + "\n" + el.textContent));
+    gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+    layerProgs[id] = p;
+  } catch (e) { console.error("layer " + id, e); layerProgs[id] = "error"; }
 }
-function ensureTargets(w, h){
-  if (w === slotW && h === slotH && slotTex.length) return;
-  slotW = w; slotH = h;
-  for (let i=0;i<CUSTOM_SLOTS;i++){
-    if (slotFBO[i]) { gl.deleteFramebuffer(slotFBO[i]); gl.deleteTexture(slotTex[i]); }
-    const t = makeTarget(w, h); slotTex[i] = t.tex; slotFBO[i] = t.fbo;
-  }
-}
-function loadCustom(id){
-  if (!id || customProgs[id]) return;
-  customProgs[id] = "pending";
-  fetch("../" + id + ".glsl").then(r => r.ok ? r.text() : Promise.reject(r.status)).then(src => {
-    try {
-      const p = gl.createProgram();
-      gl.attachShader(p, compile(gl.VERTEX_SHADER, VERT));
-      gl.attachShader(p, compile(gl.FRAGMENT_SHADER, CUSTOM_HEADER + "\n" + src));
-      gl.linkProgram(p);
-      if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
-      customProgs[id] = p;
-    } catch (e) { console.error("custom shader " + id, e); customProgs[id] = "error"; }
-  }).catch(e => { console.error("fetch " + id, e); customProgs[id] = "error"; });
-}
-function renderCustomSlots(now){
-  ensureTargets(canvas.width, canvas.height);
-  for (let i=0;i<CUSTOM_SLOTS;i++){
-    const id = state.custom[i];
-    const p = id && customProgs[id];
-    if (!p || p === "pending" || p === "error") continue;
-    gl.bindFramebuffer(gl.FRAMEBUFFER, slotFBO[i]);
-    gl.viewport(0, 0, slotW, slotH);
+const ATLAS_COLS = 4, ATLAS_ROWS = 2, TILE_W = 512, TILE_H = 384;
+const atlasW = ATLAS_COLS * TILE_W, atlasH = ATLAS_ROWS * TILE_H;
+const atlasTex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, atlasTex);
+gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, atlasW, atlasH, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+const atlasFBO = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, atlasFBO);
+gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, atlasTex, 0);
+gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+const layerReady = (c) => { const id = state.layer[c]; const p = id && layerProgs[id]; return p && p !== "pending" && p !== "error"; };
+function renderLayers(now){
+  let any = false;
+  for (let c=0;c<state.channels;c++) if (layerReady(c)) { any = true; break; }
+  if (!any) return;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, atlasFBO);
+  gl.viewport(0,0,atlasW,atlasH); gl.disable(gl.SCISSOR_TEST);
+  gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);     // transparent atlas
+  for (let c=0;c<state.channels;c++){
+    if (!layerReady(c)) continue;
+    const p = layerProgs[state.layer[c]];
+    const col = c % ATLAS_COLS, row = (c / ATLAS_COLS) | 0;
+    gl.viewport(col*TILE_W, row*TILE_H, TILE_W, TILE_H);
     gl.useProgram(p);
     const pos = gl.getAttribLocation(p, "position");
     gl.bindBuffer(gl.ARRAY_BUFFER, quad); gl.enableVertexAttribArray(pos); gl.vertexAttribPointer(pos,2,gl.FLOAT,false,0,0);
     const cu = (n) => gl.getUniformLocation(p, n);
-    gl.uniform2f(cu("iResolution"), slotW, slotH); gl.uniform1f(cu("iTime"), now);
+    gl.uniform2f(cu("iResolution"), TILE_W, TILE_H); gl.uniform1f(cu("iTime"), now);
     gl.uniform1f(cu("iBass"), bands.bass); gl.uniform1f(cu("iMid"), bands.mid); gl.uniform1f(cu("iTreble"), bands.treble);
     gl.uniform1f(cu("iLevel"), (bands.bass+bands.mid+bands.treble)/3.0); gl.uniform1f(cu("iBeat"), 0.0);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
@@ -497,14 +582,11 @@ function buildGrid(){
     const nsel = document.createElement("select"); nsel.className = "nlen"; nsel.title = "note length";
     NOTE_OPTS.forEach(([lab,val]) => { const o=document.createElement("option"); o.value=val; o.textContent=lab; if (Math.abs(val-(state.noteLen[c]||0.25))<1e-6) o.selected=true; nsel.appendChild(o); });
     nsel.onchange = () => { state.noteLen[c] = +nsel.value; save(); };
-    // per-channel showcase graphic (voice/drums/bass slots can host one)
-    let gsel = null;
-    if (c < CUSTOM_SLOTS){
-      gsel = document.createElement("select"); gsel.className = "nlen"; gsel.title = "graphic (showcase shader)";
-      const def = document.createElement("option"); def.value = ""; def.textContent = "default"; gsel.appendChild(def);
-      BATCH.forEach(([id,lab]) => { const o=document.createElement("option"); o.value=id; o.textContent=lab; if (state.custom[c]===id) o.selected=true; gsel.appendChild(o); });
-      gsel.onchange = () => { state.custom[c] = gsel.value; loadCustom(gsel.value); save(); };
-    }
+    // per-channel object-layer (replaces the built-in element); available on every channel
+    const gsel = document.createElement("select"); gsel.className = "nlen"; gsel.title = "graphic layer";
+    const def = document.createElement("option"); def.value = ""; def.textContent = "default"; gsel.appendChild(def);
+    LAYERS.forEach(([id,lab,desc]) => { const o=document.createElement("option"); o.value=id; o.textContent=lab; o.title=desc; if (state.layer[c]===id) o.selected=true; gsel.appendChild(o); });
+    gsel.onchange = () => { state.layer[c] = gsel.value; compileLayer(gsel.value); save(); };
     const cells = document.createElement("div"); cells.className = "cells";
     cells.style.gridTemplateColumns = `repeat(${state.steps}, 1fr)`;
     for (let s=0;s<state.steps;s++){
@@ -533,14 +615,14 @@ function markPlayhead(step){
 // ---------- persistence ----------
 function save(){ try{ localStorage.setItem("scene6687seq3", JSON.stringify({
   steps:state.steps, channels:state.channels, names:state.names, bpm:state.bpm,
-  pitch:state.pitch, noteLen:state.noteLen, custom:state.custom, fxFilter, echoOn, grid:Array.from(state.grid) })); }catch(e){} }
+  pitch:state.pitch, noteLen:state.noteLen, layer:state.layer, fxFilter, echoOn, grid:Array.from(state.grid) })); }catch(e){} }
 function load(){ try{ const d = JSON.parse(localStorage.getItem("scene6687seq3")); if(!d) return;
   state.steps=d.steps; state.channels=d.channels; state.names=d.names||FULL_NAMES.slice(0,state.channels);
   state.bpm=d.bpm||120; state.grid=Uint8Array.from(d.grid);
   state.pitch=d.pitch||Array.from({length:state.channels},()=>0);
   state.noteLen=d.noteLen||Array.from({length:state.channels},()=>0.25);
-  state.custom=d.custom||Array.from({length:state.channels},()=>"");
-  state.custom.forEach((id)=>loadCustom(id));
+  state.layer=d.layer||Array.from({length:state.channels},()=>"");
+  state.layer.forEach((id)=>compileLayer(id));
   fxFilter=d.fxFilter||0; echoOn=!!d.echoOn;
   pulses2d = new Float32Array(state.channels*state.steps); }catch(e){} }
 
@@ -564,7 +646,7 @@ $("add").onclick = () => {
   const ng = new Uint8Array((state.channels+1)*state.steps); ng.set(state.grid); state.grid = ng;
   pulses2d = new Float32Array((state.channels+1)*state.steps);
   state.names.push(FULL_NAMES[state.channels] || ("Ch " + (state.channels+1)));
-  state.pitch.push(0); state.noteLen.push(0.25); state.custom.push("");
+  state.pitch.push(0); state.noteLen.push(0.25); state.layer.push("");
   state.channels++;
   buildGrid(); save();
 };
@@ -635,7 +717,7 @@ let lastT = performance.now()/1000;
   const energy = (row) => { if (row >= state.channels) return 0; let m=0; for (let s=0;s<state.steps;s++) m=Math.max(m, pulses2d[row*state.steps+s]); return m; };
 
   if (canvas.width !== innerWidth || canvas.height !== innerHeight){ canvas.width=innerWidth; canvas.height=innerHeight; }
-  renderCustomSlots(now);                                     // multi-pass: showcase graphics -> slot textures
+  renderLayers(now);                                          // multi-pass: object-layers -> atlas
 
   gl.viewport(0,0,canvas.width,canvas.height);
   gl.useProgram(prog);
@@ -650,14 +732,8 @@ let lastT = performance.now()/1000;
   gl.uniform1f(U("uChannels"), state.channels);
   gl.uniform1f(U("uEnOpen"), energy(5));
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, pulseTex); gl.uniform1i(U("uPulseTex"), 0);
-  // custom slot graphics on units 1..3, with their flags
-  for (let i=0;i<CUSTOM_SLOTS;i++){
-    const ready = state.custom[i] && customProgs[state.custom[i]] && customProgs[state.custom[i]] !== "pending" && customProgs[state.custom[i]] !== "error";
-    gl.activeTexture(gl.TEXTURE1 + i);
-    gl.bindTexture(gl.TEXTURE_2D, (ready && slotTex[i]) ? slotTex[i] : pulseTex);
-    gl.uniform1i(U("uCustom" + i), 1 + i);
-    gl.uniform1f(U("uHasC" + i), ready ? 1.0 : 0.0);
-  }
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, atlasTex); gl.uniform1i(U("uAtlas"), 1);
+  for (let c=0;c<8;c++) gl.uniform1f(U("uHasLayer[" + c + "]"), (c < state.channels && layerReady(c)) ? 1.0 : 0.0);
   gl.drawArrays(gl.TRIANGLES, 0, 6);
   requestAnimationFrame(loop);
 })();
