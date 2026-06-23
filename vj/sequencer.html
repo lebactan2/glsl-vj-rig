@@ -51,6 +51,8 @@ uniform float uSteps;                 // steps per lane
 uniform float uChannels;              // rows in the pulse texture
 uniform sampler2D uPulseTex;          // steps x channels, .r = per-step pulse 0..1
 uniform float uEnOpen;                // open-hat (row 5) energy for leaves
+uniform sampler2D uCustom0, uCustom1, uCustom2;   // per-slot showcase graphic (voice/drums/bass)
+uniform float uHasC0, uHasC1, uHasC2;             // 1 = that slot uses a showcase graphic
 
 float h2(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float vn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
@@ -119,9 +121,14 @@ void main(){
     if (pm > 0.5){
         float t = clamp((uv.x - 0.52) / 0.46, 0.0, 1.0);
         float bright; float tw = stepWarp(t, 2.0, bright);
-        float cellT = fract(tw * uSteps);
-        float edgeShade = 0.86 + 0.14 * smoothstep(0.0, 0.10, min(cellT, 1.0-cellT));
-        col = paverCol(uv) * bright * edgeShade * (1.0 + uBass*0.4);
+        float seg = floor(clamp(tw,0.0,0.999) * uSteps);
+        if (uHasC2 > 0.5){
+            col = mix(col, texture2D(uCustom2, uv).rgb, 0.9 * (0.35 + 0.65 * pulseAt(2.0, seg)));
+        } else {
+            float cellT = fract(tw * uSteps);
+            float edgeShade = 0.86 + 0.14 * smoothstep(0.0, 0.10, min(cellT, 1.0-cellT));
+            col = paverCol(uv) * bright * edgeShade * (1.0 + uBass*0.4);
+        }
     }
     // DRUMS (row 1) — navy mosaic; the hit ring lights up following the tile grid (no scaling)
     vec2 c0 = vec2(0.58, 0.40); float ang = -0.32;
@@ -137,17 +144,25 @@ void main(){
         tile *= 0.9 + 0.1 * sin(iTime*1.5 + r*6.2831 + id.x*0.6 + id.y*0.9);
         float rn = max(abs(id.x) / 10.0, abs(id.y) / 12.0);                       // ring index in TILE units
         float seg = floor(clamp(rn, 0.0, 0.999) * uSteps);
-        tile += pulseAt(1.0, seg) * vec3(0.35, 0.45, 0.85);                       // hit ring of tiles lights up
-        col = mix(vec3(0.06,0.07,0.13), tile, grout) * (1.0 + uTreble*0.3);
+        if (uHasC1 > 0.5){
+            col = mix(col, texture2D(uCustom1, uv).rgb, 0.9 * (0.35 + 0.65 * pulseAt(1.0, seg)));
+        } else {
+            tile += pulseAt(1.0, seg) * vec3(0.35, 0.45, 0.85);                   // hit ring of tiles lights up
+            col = mix(vec3(0.06,0.07,0.13), tile, grout) * (1.0 + uTreble*0.3);
+        }
     }
     // VOICE (row 0) — metal grate (left), divided HORIZONTALLY; a hit shows as a shadow band
     float edge = 0.30 - uv.y * 0.05;
     if (uv.x < edge){
         float seg = floor(uv.y * uSteps);
         float p = pulseAt(0.0, seg);
-        float cellY = fract(uv.y * uSteps);
-        float shadow = p * (0.55 + 0.35 * sin(cellY * 3.14159));    // soft shadow across the rails
-        col = grateCol(vec2(uv.x, uv.y), edge) * (1.0 - shadow) * (1.0 + uMid*0.25);
+        if (uHasC0 > 0.5){
+            col = mix(col, texture2D(uCustom0, uv).rgb, 0.9 * (0.35 + 0.65 * p));  // showcase graphic, segmented
+        } else {
+            float cellY = fract(uv.y * uSteps);
+            float shadow = p * (0.55 + 0.35 * sin(cellY * 3.14159));    // soft shadow across the rails
+            col = grateCol(vec2(uv.x, uv.y), edge) * (1.0 - shadow) * (1.0 + uMid*0.25);
+        }
     }
     // SEAMS (row 3) — curb + block joints, stepped along x (hit steps thicken + glow)
     {
@@ -259,6 +274,13 @@ const DEFAULT_NAMES = FULL_NAMES.slice(0, 4);
 const SYNTH = [2, 0, 1, 3, 4, 5, 6, 3];
 const NP = PAT.length;
 const NOTE_OPTS = [["1/32",0.03125],["1/16",0.0625],["1/8",0.125],["1/4",0.25],["1/2",0.5],["1",1],["4",4],["8",8],["16",16],["32",32]];
+// test batch of showcase shaders selectable per channel (voice/drums/bass slots)
+const BATCH = [
+  ["3714","arrows 3714"], ["0398","interior 0398"], ["0995","balcony 0995"],
+  ["1213","seascape 1213"], ["1720","white gate 1720"], ["1426","1426"],
+  ["2148","2148"], ["5538","5538"], ["7211","7211"], ["1333","raincoat 1333"],
+];
+const CUSTOM_SLOTS = 3;   // voice(0)/drums(1)/bass(2) can host a showcase graphic
 const $ = (id) => document.getElementById(id);
 
 const state = {
@@ -270,6 +292,7 @@ state.grid = new Uint8Array(state.channels * state.steps);
 let pulses2d = new Float32Array(state.channels * state.steps);   // per-step pulse, decays each frame
 state.pitch = Array.from({length: state.channels}, () => 0);     // per-channel semitone transpose
 state.noteLen = Array.from({length: state.channels}, () => 0.25);// per-channel note length (whole-notes)
+state.custom = Array.from({length: state.channels}, () => "");   // per-channel showcase shader id ("" = built-in)
 let echoOn = false, fxFilter = 0;
 
 // ---------- WebGL ----------
@@ -302,6 +325,65 @@ function uploadPulse(){
   gl.bindTexture(gl.TEXTURE_2D, pulseTex);
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);   // data-texture rows must NOT be flipped
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, state.steps, state.channels, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, pulseBytes);
+}
+
+// ---------- multi-pass: render a chosen showcase shader into a slot texture ----------
+const CUSTOM_HEADER = "precision highp float;\nuniform vec2 iResolution;\nuniform float iTime;\nuniform float iBass,iMid,iTreble,iLevel,iBeat;\n";
+const customProgs = {};                 // id -> compiled program (or 'pending'/'error')
+const slotTex = [], slotFBO = [];       // one render target per custom slot
+let slotW = 0, slotH = 0;
+function makeTarget(w, h){
+  const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const fbo = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  return { tex, fbo };
+}
+function ensureTargets(w, h){
+  if (w === slotW && h === slotH && slotTex.length) return;
+  slotW = w; slotH = h;
+  for (let i=0;i<CUSTOM_SLOTS;i++){
+    if (slotFBO[i]) { gl.deleteFramebuffer(slotFBO[i]); gl.deleteTexture(slotTex[i]); }
+    const t = makeTarget(w, h); slotTex[i] = t.tex; slotFBO[i] = t.fbo;
+  }
+}
+function loadCustom(id){
+  if (!id || customProgs[id]) return;
+  customProgs[id] = "pending";
+  fetch("../" + id + ".glsl").then(r => r.ok ? r.text() : Promise.reject(r.status)).then(src => {
+    try {
+      const p = gl.createProgram();
+      gl.attachShader(p, compile(gl.VERTEX_SHADER, VERT));
+      gl.attachShader(p, compile(gl.FRAGMENT_SHADER, CUSTOM_HEADER + "\n" + src));
+      gl.linkProgram(p);
+      if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+      customProgs[id] = p;
+    } catch (e) { console.error("custom shader " + id, e); customProgs[id] = "error"; }
+  }).catch(e => { console.error("fetch " + id, e); customProgs[id] = "error"; });
+}
+function renderCustomSlots(now){
+  ensureTargets(canvas.width, canvas.height);
+  for (let i=0;i<CUSTOM_SLOTS;i++){
+    const id = state.custom[i];
+    const p = id && customProgs[id];
+    if (!p || p === "pending" || p === "error") continue;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, slotFBO[i]);
+    gl.viewport(0, 0, slotW, slotH);
+    gl.useProgram(p);
+    const pos = gl.getAttribLocation(p, "position");
+    gl.bindBuffer(gl.ARRAY_BUFFER, quad); gl.enableVertexAttribArray(pos); gl.vertexAttribPointer(pos,2,gl.FLOAT,false,0,0);
+    const cu = (n) => gl.getUniformLocation(p, n);
+    gl.uniform2f(cu("iResolution"), slotW, slotH); gl.uniform1f(cu("iTime"), now);
+    gl.uniform1f(cu("iBass"), bands.bass); gl.uniform1f(cu("iMid"), bands.mid); gl.uniform1f(cu("iTreble"), bands.treble);
+    gl.uniform1f(cu("iLevel"), (bands.bass+bands.mid+bands.treble)/3.0); gl.uniform1f(cu("iBeat"), 0.0);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 }
 
 // ---------- Audio synth ----------
@@ -415,6 +497,14 @@ function buildGrid(){
     const nsel = document.createElement("select"); nsel.className = "nlen"; nsel.title = "note length";
     NOTE_OPTS.forEach(([lab,val]) => { const o=document.createElement("option"); o.value=val; o.textContent=lab; if (Math.abs(val-(state.noteLen[c]||0.25))<1e-6) o.selected=true; nsel.appendChild(o); });
     nsel.onchange = () => { state.noteLen[c] = +nsel.value; save(); };
+    // per-channel showcase graphic (voice/drums/bass slots can host one)
+    let gsel = null;
+    if (c < CUSTOM_SLOTS){
+      gsel = document.createElement("select"); gsel.className = "nlen"; gsel.title = "graphic (showcase shader)";
+      const def = document.createElement("option"); def.value = ""; def.textContent = "default"; gsel.appendChild(def);
+      BATCH.forEach(([id,lab]) => { const o=document.createElement("option"); o.value=id; o.textContent=lab; if (state.custom[c]===id) o.selected=true; gsel.appendChild(o); });
+      gsel.onchange = () => { state.custom[c] = gsel.value; loadCustom(gsel.value); save(); };
+    }
     const cells = document.createElement("div"); cells.className = "cells";
     cells.style.gridTemplateColumns = `repeat(${state.steps}, 1fr)`;
     for (let s=0;s<state.steps;s++){
@@ -429,7 +519,9 @@ function buildGrid(){
       };
       cells.appendChild(cell);
     }
-    lane.appendChild(sw); lane.appendChild(nm); lane.appendChild(pit); lane.appendChild(nsel); lane.appendChild(cells); wrap.appendChild(lane);
+    lane.appendChild(sw); lane.appendChild(nm); lane.appendChild(pit); lane.appendChild(nsel);
+    if (gsel) lane.appendChild(gsel);
+    lane.appendChild(cells); wrap.appendChild(lane);
   }
 }
 function markPlayhead(step){
@@ -441,12 +533,14 @@ function markPlayhead(step){
 // ---------- persistence ----------
 function save(){ try{ localStorage.setItem("scene6687seq3", JSON.stringify({
   steps:state.steps, channels:state.channels, names:state.names, bpm:state.bpm,
-  pitch:state.pitch, noteLen:state.noteLen, fxFilter, echoOn, grid:Array.from(state.grid) })); }catch(e){} }
+  pitch:state.pitch, noteLen:state.noteLen, custom:state.custom, fxFilter, echoOn, grid:Array.from(state.grid) })); }catch(e){} }
 function load(){ try{ const d = JSON.parse(localStorage.getItem("scene6687seq3")); if(!d) return;
   state.steps=d.steps; state.channels=d.channels; state.names=d.names||FULL_NAMES.slice(0,state.channels);
   state.bpm=d.bpm||120; state.grid=Uint8Array.from(d.grid);
   state.pitch=d.pitch||Array.from({length:state.channels},()=>0);
   state.noteLen=d.noteLen||Array.from({length:state.channels},()=>0.25);
+  state.custom=d.custom||Array.from({length:state.channels},()=>"");
+  state.custom.forEach((id)=>loadCustom(id));
   fxFilter=d.fxFilter||0; echoOn=!!d.echoOn;
   pulses2d = new Float32Array(state.channels*state.steps); }catch(e){} }
 
@@ -470,7 +564,7 @@ $("add").onclick = () => {
   const ng = new Uint8Array((state.channels+1)*state.steps); ng.set(state.grid); state.grid = ng;
   pulses2d = new Float32Array((state.channels+1)*state.steps);
   state.names.push(FULL_NAMES[state.channels] || ("Ch " + (state.channels+1)));
-  state.pitch.push(0); state.noteLen.push(0.25);
+  state.pitch.push(0); state.noteLen.push(0.25); state.custom.push("");
   state.channels++;
   buildGrid(); save();
 };
@@ -541,6 +635,8 @@ let lastT = performance.now()/1000;
   const energy = (row) => { if (row >= state.channels) return 0; let m=0; for (let s=0;s<state.steps;s++) m=Math.max(m, pulses2d[row*state.steps+s]); return m; };
 
   if (canvas.width !== innerWidth || canvas.height !== innerHeight){ canvas.width=innerWidth; canvas.height=innerHeight; }
+  renderCustomSlots(now);                                     // multi-pass: showcase graphics -> slot textures
+
   gl.viewport(0,0,canvas.width,canvas.height);
   gl.useProgram(prog);
   const pos = gl.getAttribLocation(prog, "position");
@@ -554,6 +650,14 @@ let lastT = performance.now()/1000;
   gl.uniform1f(U("uChannels"), state.channels);
   gl.uniform1f(U("uEnOpen"), energy(5));
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, pulseTex); gl.uniform1i(U("uPulseTex"), 0);
+  // custom slot graphics on units 1..3, with their flags
+  for (let i=0;i<CUSTOM_SLOTS;i++){
+    const ready = state.custom[i] && customProgs[state.custom[i]] && customProgs[state.custom[i]] !== "pending" && customProgs[state.custom[i]] !== "error";
+    gl.activeTexture(gl.TEXTURE1 + i);
+    gl.bindTexture(gl.TEXTURE_2D, (ready && slotTex[i]) ? slotTex[i] : pulseTex);
+    gl.uniform1i(U("uCustom" + i), 1 + i);
+    gl.uniform1f(U("uHasC" + i), ready ? 1.0 : 0.0);
+  }
   gl.drawArrays(gl.TRIANGLES, 0, 6);
   requestAnimationFrame(loop);
 })();
