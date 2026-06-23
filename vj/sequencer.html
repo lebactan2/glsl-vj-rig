@@ -411,76 +411,74 @@ function uploadPulse(){
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, state.steps, state.channels, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, pulseBytes);
 }
 
-// ---------- multi-pass: render each channel's chosen object-layer into one atlas (4x2 tiles) ----------
+// ---------- multi-pass: render each channel's chosen shader (whole, native position) into an atlas ----------
 const LAYER_HEADER = "precision highp float;\nuniform vec2 iResolution;\nuniform float iTime;\nuniform float iBass,iMid,iTreble,iLevel,iBeat;\n";
-const layerProgs = {};   // key -> compiled program / 'pending' / 'error'
-function buildWrapper(src, call){
-  const mi = src.lastIndexOf("void main");           // drop the file's own main()
-  const body = mi >= 0 ? src.slice(0, mi) : src;
-  return LAYER_HEADER + "\n" + body + "\n" +
-    "void main(){ vec2 uv=gl_FragCoord.xy/iResolution.xy; vec2 p=uv*2.0-1.0; p.x*=iResolution.x/iResolution.y;" +
-    " vec3 col=vec3(-1.0); " + call +
-    " float a=step(0.0, max(col.r,max(col.g,col.b))); gl_FragColor=vec4(clamp(col,0.0,1.0), a); }";
-}
-function compileLayer(key){
-  if (!key || layerProgs[key]) return;
-  const L = LAYERS[key];
-  if (!L){ layerProgs[key] = "error"; return; }
-  layerProgs[key] = "pending";
+const layerProgs = {};   // id -> compiled program / 'pending' / 'error'
+function compileLayer(id){
+  if (!id || layerProgs[id]) return;
+  const L = LAYERS[id];
+  if (!L){ layerProgs[id] = "error"; return; }
+  layerProgs[id] = "pending";
   fetch("../layered_glsl/" + L.file).then(r => r.ok ? r.text() : Promise.reject(r.status)).then(src => {
     try {
       const prog = gl.createProgram();
       gl.attachShader(prog, compile(gl.VERTEX_SHADER, VERT));
-      gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, buildWrapper(src, L.call)));
+      gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, LAYER_HEADER + "\n" + src));  // file has its own main()
       gl.linkProgram(prog);
       if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
-      layerProgs[key] = prog;
-    } catch (e) { console.error("layer " + key, e); layerProgs[key] = "error"; }
-  }).catch(e => { console.error("fetch " + L.file, e); layerProgs[key] = "error"; });
+      layerProgs[id] = prog;
+    } catch (e) { console.error("layer " + id, e); layerProgs[id] = "error"; }
+  }).catch(e => { console.error("fetch " + L.file, e); layerProgs[id] = "error"; });
 }
 function loadLayersManifest(){
   return fetch("layers_manifest.json").then(r => r.ok ? r.json() : []).then(arr => {
     const dl = document.createElement("datalist"); dl.id = "layerlist";
     arr.forEach(o => {
-      const key = o.id + "#" + o.fn;
-      o.label = o.id + " · " + o.name;
-      LAYERS[key] = o;
-      const s = o.id + " " + o.name + " " + (o.keywords||[]).join(" ");   // searchable string
-      layerSearch[s] = key;
+      o.label = o.id + " · " + (o.title || o.id);
+      LAYERS[o.id] = o;
+      const s = o.id + "  " + (o.title||"") + "  " + (o.tags||[]).join(" ");   // searchable
+      layerSearch[s] = o.id;
       const opt = document.createElement("option"); opt.value = s; dl.appendChild(opt);
     });
     document.body.appendChild(dl);
   }).catch(() => {});
 }
-const ATLAS_COLS = 4, ATLAS_ROWS = 2, TILE_W = 512, TILE_H = 384;
-const atlasW = ATLAS_COLS * TILE_W, atlasH = ATLAS_ROWS * TILE_H;
-const atlasTex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, atlasTex);
-gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, atlasW, atlasH, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-const atlasFBO = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, atlasFBO);
-gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, atlasTex, 0);
-gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+const ATLAS_COLS = 4, ATLAS_ROWS = 2;
+let TILE_W = 0, TILE_H = 0, atlasTex = null, atlasFBO = null;
+function ensureAtlas(){
+  const tw = Math.max(2, canvas.width >> 1), th = Math.max(2, canvas.height >> 1);  // canvas aspect per tile
+  if (tw === TILE_W && th === TILE_H && atlasTex) return;
+  TILE_W = tw; TILE_H = th;
+  if (atlasTex) gl.deleteTexture(atlasTex);
+  atlasTex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, atlasTex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, ATLAS_COLS*tw, ATLAS_ROWS*th, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  if (!atlasFBO) atlasFBO = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, atlasFBO);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, atlasTex, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+}
 const layerReady = (c) => { const id = state.layer[c]; const p = id && layerProgs[id]; return p && p !== "pending" && p !== "error"; };
 function renderLayers(now){
   let any = false;
   for (let c=0;c<state.channels;c++) if (layerReady(c)) { any = true; break; }
   if (!any) return;
+  ensureAtlas();
   gl.bindFramebuffer(gl.FRAMEBUFFER, atlasFBO);
-  gl.viewport(0,0,atlasW,atlasH); gl.disable(gl.SCISSOR_TEST);
-  gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);     // transparent atlas
+  gl.clearColor(0,0,0,0); gl.viewport(0,0,ATLAS_COLS*TILE_W,ATLAS_ROWS*TILE_H); gl.clear(gl.COLOR_BUFFER_BIT);
   for (let c=0;c<state.channels;c++){
     if (!layerReady(c)) continue;
     const p = layerProgs[state.layer[c]];
-    const col = c % ATLAS_COLS, row = (c / ATLAS_COLS) | 0;
-    gl.viewport(col*TILE_W, row*TILE_H, TILE_W, TILE_H);
+    const cx = c % ATLAS_COLS, cy = (c / ATLAS_COLS) | 0;
+    gl.viewport(cx*TILE_W, cy*TILE_H, TILE_W, TILE_H);
     gl.useProgram(p);
     const pos = gl.getAttribLocation(p, "position");
     gl.bindBuffer(gl.ARRAY_BUFFER, quad); gl.enableVertexAttribArray(pos); gl.vertexAttribPointer(pos,2,gl.FLOAT,false,0,0);
     const cu = (n) => gl.getUniformLocation(p, n);
-    gl.uniform2f(cu("iResolution"), TILE_W, TILE_H); gl.uniform1f(cu("iTime"), now);
+    gl.uniform2f(cu("iResolution"), TILE_W, TILE_H); gl.uniform1f(cu("iTime"), now);   // tile = canvas aspect -> native position
     gl.uniform1f(cu("iBass"), bands.bass); gl.uniform1f(cu("iMid"), bands.mid); gl.uniform1f(cu("iTreble"), bands.treble);
     gl.uniform1f(cu("iLevel"), (bands.bass+bands.mid+bands.treble)/3.0); gl.uniform1f(cu("iBeat"), 0.0);
     gl.drawArrays(gl.TRIANGLES, 0, 6);

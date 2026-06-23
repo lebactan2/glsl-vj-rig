@@ -1,40 +1,24 @@
-// build_layers_manifest.js — scan layered_glsl/*.glsl; for each separated layer capture
-// its metadata (name + keywords) and the exact call text used in the file's main(), so the
-// sequencer can render that single layer with a sentinel-alpha wrapper.
-// Run:  node vj/build_layers_manifest.js
+// build_layers_manifest.js — one entry per layered_glsl shader (rendered whole, at native
+// position). Tags come from the cleaned per-image index (unified_search_index.json), falling
+// back to the file's @layer_metadata keywords.  Run: node vj/build_layers_manifest.js
 const fs = require("fs");
 const path = require("path");
 const ROOT = path.resolve(__dirname, "..");
 const DIR = path.join(ROOT, "layered_glsl");
 
-function mainCalls(src) {
-  // last main() body
-  const mi = src.lastIndexOf("void main");
-  if (mi < 0) return {};
-  const body = src.slice(mi);
-  const calls = {};
-  for (const m of body.matchAll(/(layer_\w+)\s*\(([^;]*)\)\s*;/g)) {
-    calls[m[1]] = m[0].trim();   // fn -> full "layer_X(p, iTime, col);"
-  }
-  return calls;
-}
+let unified = {};
+try { unified = JSON.parse(fs.readFileSync(path.join(ROOT, "unified_search_index.json"), "utf8")); } catch (e) {}
 
 const out = [];
 for (const f of fs.readdirSync(DIR).filter((x) => x.endsWith(".glsl"))) {
-  const src = fs.readFileSync(path.join(DIR, f), "utf8");
   const id = f.replace(/\.glsl$/, "");
-  let meta = null;
+  const src = fs.readFileSync(path.join(DIR, f), "utf8");
+  let title = id, kw = [];
   const mm = src.match(/@layer_metadata\s*([\s\S]*?)\*\//);
-  if (mm) { try { meta = JSON.parse(mm[1]); } catch (e) {} }
-  if (!meta || !meta.layers) continue;
-  const calls = mainCalls(src);
-  const fns = [...src.matchAll(/void\s+(layer_\w+)\s*\(/g)].map((x) => x[1]);
-  meta.layers.forEach((L, i) => {
-    const fn = fns[i] || ("layer_" + L.name.replace(/[^A-Za-z0-9]/g, ""));
-    const call = calls[fn];
-    if (!call) return;                    // need a usable call signature
-    out.push({ id, file: f, fn, name: L.name, call, keywords: L.keywords || [] });
-  });
+  if (mm) { try { const m = JSON.parse(mm[1]); title = m.title || id; (m.layers||[]).forEach(L => kw.push(L.name, ...(L.keywords||[]))); } catch (e) {} }
+  const tags = (unified[id] && unified[id].length ? unified[id] : kw).map(s => String(s).toLowerCase());
+  out.push({ id, file: f, title, tags: [...new Set(tags)] });
 }
+out.sort((a, b) => a.id.localeCompare(b.id));
 fs.writeFileSync(path.join(__dirname, "layers_manifest.json"), JSON.stringify(out));
-console.log(`layers_manifest.json: ${out.length} layers from ${new Set(out.map(o=>o.id)).size} shaders`);
+console.log(`layers_manifest.json: ${out.length} shaders (${out.filter(o=>o.tags.length).length} tagged)`);
