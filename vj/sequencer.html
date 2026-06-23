@@ -200,23 +200,29 @@ void main(){
             col = mix(col, lc, leaf * (0.25 + 0.75 * uEnOpen));
         }
     }
-    // HI HAT (row 6) — faceless dog poops (procedural coil), random scale, fade over note
+    // HI HAT (row 6) — soft-serve dog poop (stacked tiers + curl tip), random scale, fades over note
     if (uChannels > 6.5){
         float asp = iResolution.x / iResolution.y;
         for (int s=0;s<32;s++){
             if (float(s) >= uSteps) break;
             float p = pulseAt(6.0, float(s));
             if (p < 0.02) continue;
-            vec2 pos = vec2(0.08 + 0.84 * h2(vec2(float(s),5.0)), 0.10 + 0.80 * h2(vec2(float(s),9.0)));
-            float sz = 0.05 + h2(vec2(float(s),7.0)) * 0.07;          // random scale
-            vec2 d = (uv - pos); d.x *= asp; d /= sz;
-            float poop = 0.0;                                          // stacked tapering lobes -> coil
-            poop = max(poop, smoothstep(0.04,0.0, length(d - vec2(0.00,-0.12)) - 0.17));
-            poop = max(poop, smoothstep(0.04,0.0, length(d - vec2(0.04, 0.02)) - 0.12));
-            poop = max(poop, smoothstep(0.04,0.0, length(d - vec2(-0.03,0.13)) - 0.075));
-            if (poop < 0.01) continue;
-            vec3 pc = mix(vec3(0.26,0.15,0.06), vec3(0.46,0.30,0.13), d.y * 0.4 + 0.5);
-            col = mix(col, pc, poop * clamp(p, 0.0, 1.0));
+            vec2 pos = vec2(0.08 + 0.84 * h2(vec2(float(s),5.0)), 0.12 + 0.78 * h2(vec2(float(s),9.0)));
+            float sz = 0.07 + h2(vec2(float(s),7.0)) * 0.09;          // random scale
+            vec2 d = (uv - pos); d.x *= asp; d /= sz;                 // poop space, height ~1
+            float lean = 0.10 * smoothstep(-0.1, 0.55, d.y);          // tip leans over
+            vec2 dd = vec2(d.x - lean, d.y);
+            float e1 = length(vec2(dd.x/0.42, (dd.y+0.26)/0.17)) - 1.0; // bottom tier (wide)
+            float e2 = length(vec2(dd.x/0.32, (dd.y+0.02)/0.14)) - 1.0; // middle tier
+            float e3 = length(vec2(dd.x/0.22, (dd.y-0.18)/0.12)) - 1.0; // top tier
+            float tp = length(vec2((dd.x-0.03)/0.085,(dd.y-0.34)/0.10)) - 1.0; // curl tip
+            float sdf = min(min(e1, e2), min(e3, tp));
+            float pm = smoothstep(0.05, -0.02, sdf);
+            if (pm < 0.01) continue;
+            vec3 base = mix(vec3(0.28,0.16,0.06), vec3(0.52,0.35,0.18), d.y * 0.5 + 0.5); // brown grad
+            base += vec3(0.12,0.09,0.05) * smoothstep(0.15, -0.25, dd.x) * smoothstep(0.06,-0.3,sdf); // left sheen
+            base -= 0.10 * smoothstep(-0.2, 0.06, sdf);              // edge shading
+            col = mix(col, base, pm * clamp(p, 0.0, 1.0));
         }
     }
 

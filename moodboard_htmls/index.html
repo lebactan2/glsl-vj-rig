@@ -292,7 +292,7 @@
         <div class="sidebar-header">
             <h1>Shader Showcase</h1>
             <p>166 Procedural Conversions</p>
-            <input type="text" id="searchInput" placeholder="Search by image name...">
+            <input type="text" id="searchInput" placeholder="Search name or content (e.g. forest, arrow)...">
             <div class="custom-row">
                 <button id="openShaderBtn">📂 Open shader</button>
                 <button id="openImageBtn">🖼 Open image</button>
@@ -382,16 +382,18 @@
         imgView.onload = () => imgContainer.classList.remove('loading');
         htmlView.onload = () => htmlContainer.classList.remove('loading');
 
+        // full-text search index (shader content words); loaded lazily
+        let searchIndex = {};
+        fetch('search_index.json').then(r => r.ok ? r.json() : {}).then(j => { searchIndex = j; });
+
         searchInput.addEventListener('input', (e) => {
-            const query = e.target.value.toLowerCase();
+            const tokens = e.target.value.toLowerCase().split(/\s+/).filter(Boolean);
             const items = itemList.getElementsByClassName('item');
             for (let item of items) {
-                const text = item.querySelector('span').textContent.toLowerCase();
-                if (text.includes(query)) {
-                    item.style.display = 'flex';
-                } else {
-                    item.style.display = 'none';
-                }
+                const name = item.querySelector('span').textContent.toLowerCase();
+                const hay = name + ' ' + (searchIndex[name.replace(/\s.*$/, '')] || '');
+                const match = tokens.every(t => hay.includes(t));   // every word must match (name OR content)
+                item.style.display = match ? 'flex' : 'none';
             }
         });
 
