@@ -23,6 +23,9 @@
   .transport button.on { background:#caa23a; color:#111; border-color:#caa23a; font-weight:700; }
   .lane .pit { width:38px; background:#1c1c22; color:#ddd; border:1px solid #3a3a44; border-radius:4px; padding:2px; }
   .lane select.nlen { background:#1c1c22; color:#ddd; border:1px solid #3a3a44; border-radius:4px; padding:2px; font-size:10px; }
+  .lane .lsel { width:120px; background:#1c1c22; color:#ddd; border:1px solid #3a3a44; border-radius:4px; padding:2px; font-size:10px; }
+  .lane .mv { width:16px; padding:0; background:#1c1c22; color:#9aa; border:1px solid #3a3a44; border-radius:3px; cursor:pointer; font-size:9px; line-height:14px; }
+  .transport select { background:#1c1c22; color:#ddd; border:1px solid #3a3a44; border-radius:5px; padding:4px; }
   .transport .title { font-weight:700; color:#8cf; letter-spacing:1px; margin-right:6px; }
   .transport label { color:#999; }
   #grid { display:flex; flex-direction:column; gap:5px; }
@@ -254,6 +257,7 @@ void main(){
     <input type="file" id="audioFile" accept="audio/*" hidden>
     <label>BPM <input type="range" id="bpm" min="60" max="200" step="1" value="120"></label>
     <span id="bpmv">120</span>
+    <label>steps <select id="steps"><option>16</option><option selected>32</option><option>64</option></select></label>
     <label>filter <input type="range" id="filter" min="-100" max="100" step="1" value="0" style="width:90px"></label>
     <button id="echo">echo</button>
     <span style="flex:1"></span>
@@ -358,23 +362,13 @@ const DEFAULT_NAMES = FULL_NAMES.slice(0, 4);
 const SYNTH = [2, 0, 1, 3, 4, 5, 6, 3];
 const NP = PAT.length;
 const NOTE_OPTS = [["1/32",0.03125],["1/16",0.0625],["1/8",0.125],["1/4",0.25],["1/2",0.5],["1",1],["4",4],["8",8],["16",16],["32",32]];
-// separated object-layers (id -> [label, description]); selectable on every channel
-const LAYERS = [
-  ["white_gate", "White gate", "ornate white wrought-iron gate with sunburst"],
-  ["arrows",     "Arrows",     "scrolling road arrows / chevrons"],
-  ["rings",      "Rings",      "concentric neon rings"],
-  ["blossom",    "Blossom",    "five-petal flower rosette"],
-  ["grid",       "Grid",       "glowing square grid"],
-  ["waves",      "Waves",      "horizontal sine waves"],
-  ["scales",     "Scales",     "fish-scale arcs"],
-  ["dots",       "Dots",       "polka-dot field"],
-  ["star",       "Star",       "starburst rays"],
-  ["spiral",     "Spiral",     "rotating spiral arms"],
-];
+// separated object-layers loaded from vj/layers_manifest.json (built from layered_glsl/*)
+let LAYERS = {};          // key (id#fn) -> {id,file,fn,name,call,keywords,label}
+let layerSearch = {};     // searchable datalist string -> key
 const $ = (id) => document.getElementById(id);
 
 const state = {
-  steps: 16, stepsPerBeat: 4, bpm: 120, channels: 4,
+  steps: 32, stepsPerBeat: 4, bpm: 120, channels: 4,
   names: DEFAULT_NAMES.slice(),
   grid: null, playing: false, startTime: 0, playhead: 0, lastStep: -1,
 };
@@ -418,22 +412,45 @@ function uploadPulse(){
 }
 
 // ---------- multi-pass: render each channel's chosen object-layer into one atlas (4x2 tiles) ----------
-const LAYER_HEADER = "precision highp float;\nuniform vec2 iResolution;\nuniform float iTime;\nuniform float iBass,iMid,iTreble,iLevel,iBeat;\n"
-  + "float h2(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453); }\n"
-  + "mat2 rot(float a){ float s=sin(a),c=cos(a); return mat2(c,-s,s,c); }\n";
-const layerProgs = {};   // id -> compiled program (compiled from inline <script id="layer-ID">)
-function compileLayer(id){
-  if (!id || layerProgs[id]) return;
-  const el = document.getElementById("layer-" + id);
-  if (!el){ layerProgs[id] = "error"; return; }
-  try {
-    const p = gl.createProgram();
-    gl.attachShader(p, compile(gl.VERTEX_SHADER, VERT));
-    gl.attachShader(p, compile(gl.FRAGMENT_SHADER, LAYER_HEADER + "\n" + el.textContent));
-    gl.linkProgram(p);
-    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
-    layerProgs[id] = p;
-  } catch (e) { console.error("layer " + id, e); layerProgs[id] = "error"; }
+const LAYER_HEADER = "precision highp float;\nuniform vec2 iResolution;\nuniform float iTime;\nuniform float iBass,iMid,iTreble,iLevel,iBeat;\n";
+const layerProgs = {};   // key -> compiled program / 'pending' / 'error'
+function buildWrapper(src, call){
+  const mi = src.lastIndexOf("void main");           // drop the file's own main()
+  const body = mi >= 0 ? src.slice(0, mi) : src;
+  return LAYER_HEADER + "\n" + body + "\n" +
+    "void main(){ vec2 uv=gl_FragCoord.xy/iResolution.xy; vec2 p=uv*2.0-1.0; p.x*=iResolution.x/iResolution.y;" +
+    " vec3 col=vec3(-1.0); " + call +
+    " float a=step(0.0, max(col.r,max(col.g,col.b))); gl_FragColor=vec4(clamp(col,0.0,1.0), a); }";
+}
+function compileLayer(key){
+  if (!key || layerProgs[key]) return;
+  const L = LAYERS[key];
+  if (!L){ layerProgs[key] = "error"; return; }
+  layerProgs[key] = "pending";
+  fetch("../layered_glsl/" + L.file).then(r => r.ok ? r.text() : Promise.reject(r.status)).then(src => {
+    try {
+      const prog = gl.createProgram();
+      gl.attachShader(prog, compile(gl.VERTEX_SHADER, VERT));
+      gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, buildWrapper(src, L.call)));
+      gl.linkProgram(prog);
+      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+      layerProgs[key] = prog;
+    } catch (e) { console.error("layer " + key, e); layerProgs[key] = "error"; }
+  }).catch(e => { console.error("fetch " + L.file, e); layerProgs[key] = "error"; });
+}
+function loadLayersManifest(){
+  return fetch("layers_manifest.json").then(r => r.ok ? r.json() : []).then(arr => {
+    const dl = document.createElement("datalist"); dl.id = "layerlist";
+    arr.forEach(o => {
+      const key = o.id + "#" + o.fn;
+      o.label = o.id + " · " + o.name;
+      LAYERS[key] = o;
+      const s = o.id + " " + o.name + " " + (o.keywords||[]).join(" ");   // searchable string
+      layerSearch[s] = key;
+      const opt = document.createElement("option"); opt.value = s; dl.appendChild(opt);
+    });
+    document.body.appendChild(dl);
+  }).catch(() => {});
 }
 const ATLAS_COLS = 4, ATLAS_ROWS = 2, TILE_W = 512, TILE_H = 384;
 const atlasW = ATLAS_COLS * TILE_W, atlasH = ATLAS_ROWS * TILE_H;
@@ -582,11 +599,21 @@ function buildGrid(){
     const nsel = document.createElement("select"); nsel.className = "nlen"; nsel.title = "note length";
     NOTE_OPTS.forEach(([lab,val]) => { const o=document.createElement("option"); o.value=val; o.textContent=lab; if (Math.abs(val-(state.noteLen[c]||0.25))<1e-6) o.selected=true; nsel.appendChild(o); });
     nsel.onchange = () => { state.noteLen[c] = +nsel.value; save(); };
-    // per-channel object-layer (replaces the built-in element); available on every channel
-    const gsel = document.createElement("select"); gsel.className = "nlen"; gsel.title = "graphic layer";
-    const def = document.createElement("option"); def.value = ""; def.textContent = "default"; gsel.appendChild(def);
-    LAYERS.forEach(([id,lab,desc]) => { const o=document.createElement("option"); o.value=id; o.textContent=lab; o.title=desc; if (state.layer[c]===id) o.selected=true; gsel.appendChild(o); });
-    gsel.onchange = () => { state.layer[c] = gsel.value; compileLayer(gsel.value); save(); };
+    // reorder (z-order, lower lane draws on top) + per-channel object-layer search
+    const up = document.createElement("button"); up.textContent = "▲"; up.className = "mv"; up.title = "move up";
+    up.onclick = () => moveChannel(c, -1);
+    const dn = document.createElement("button"); dn.textContent = "▼"; dn.className = "mv"; dn.title = "move down";
+    dn.onclick = () => moveChannel(c, +1);
+    const gsel = document.createElement("input"); gsel.className = "lsel"; gsel.setAttribute("list", "layerlist");
+    gsel.placeholder = "layer (type to search)"; gsel.title = "graphic layer (replaces element)";
+    gsel.value = state.layer[c] && LAYERS[state.layer[c]] ? LAYERS[state.layer[c]].label : "";
+    gsel.onchange = () => {
+      const key = layerSearch[gsel.value];
+      if (!gsel.value) { state.layer[c] = ""; }
+      else if (key) { state.layer[c] = key; compileLayer(key); gsel.value = LAYERS[key].label; }
+      else { gsel.value = state.layer[c] && LAYERS[state.layer[c]] ? LAYERS[state.layer[c]].label : ""; return; }
+      save();
+    };
     const cells = document.createElement("div"); cells.className = "cells";
     cells.style.gridTemplateColumns = `repeat(${state.steps}, 1fr)`;
     for (let s=0;s<state.steps;s++){
@@ -601,10 +628,31 @@ function buildGrid(){
       };
       cells.appendChild(cell);
     }
+    lane.appendChild(up); lane.appendChild(dn);
     lane.appendChild(sw); lane.appendChild(nm); lane.appendChild(pit); lane.appendChild(nsel);
-    if (gsel) lane.appendChild(gsel);
+    lane.appendChild(gsel);
     lane.appendChild(cells); wrap.appendChild(lane);
   }
+}
+// move a channel up/down — reorders draw/z order (lower index draws first = behind)
+function moveChannel(c, dir){
+  const j = c + dir;
+  if (j < 0 || j >= state.channels) return;
+  const S = state.steps;
+  const swapArr = (a) => { const t=a[c]; a[c]=a[j]; a[j]=t; };
+  swapArr(state.names); swapArr(state.pitch); swapArr(state.noteLen); swapArr(state.layer);
+  for (let s=0;s<S;s++){                                  // swap grid + pulse rows
+    let t=state.grid[c*S+s]; state.grid[c*S+s]=state.grid[j*S+s]; state.grid[j*S+s]=t;
+    let u=pulses2d[c*S+s]; pulses2d[c*S+s]=pulses2d[j*S+s]; pulses2d[j*S+s]=u;
+  }
+  buildGrid(); save();
+}
+// change steps per pattern (16 / 32 / 64), preserving existing hits
+function setSteps(n){
+  const old = state.steps, g = new Uint8Array(state.channels*n);
+  for (let c=0;c<state.channels;c++) for (let s=0;s<Math.min(old,n);s++) g[c*n+s]=state.grid[c*old+s];
+  state.steps = n; state.grid = g; pulses2d = new Float32Array(state.channels*n);
+  state.lastStep = -1; buildGrid(); save();
 }
 function markPlayhead(step){
   document.querySelectorAll(".cell.play").forEach(e=>e.classList.remove("play"));
@@ -622,7 +670,6 @@ function load(){ try{ const d = JSON.parse(localStorage.getItem("scene6687seq3")
   state.pitch=d.pitch||Array.from({length:state.channels},()=>0);
   state.noteLen=d.noteLen||Array.from({length:state.channels},()=>0.25);
   state.layer=d.layer||Array.from({length:state.channels},()=>"");
-  state.layer.forEach((id)=>compileLayer(id));
   fxFilter=d.fxFilter||0; echoOn=!!d.echoOn;
   pulses2d = new Float32Array(state.channels*state.steps); }catch(e){} }
 
@@ -652,6 +699,7 @@ $("add").onclick = () => {
 };
 $("bpm").oninput = (e) => { state.bpm = +e.target.value; $("bpmv").textContent = e.target.value;
   if(state.playing) state.startTime = performance.now()/1000 - state.playhead*stepDur(); save(); };
+$("steps").onchange = (e) => setSteps(+e.target.value);
 $("loadBtn").onclick = () => $("audioFile").click();
 $("audioFile").onchange = (e) => { if (e.target.files[0]) loadAudioFile(e.target.files[0]); };
 $("filter").oninput = (e) => { fxFilter = +e.target.value/100; applyFilter(fxFilter); save(); };
@@ -665,8 +713,10 @@ addEventListener("keydown", (e) => {
 // ---------- boot ----------
 load();
 $("bpm").value = state.bpm; $("bpmv").textContent = state.bpm;
+$("steps").value = String(state.steps);
 $("filter").value = Math.round(fxFilter*100);
 $("echo").classList.toggle("on", echoOn);
+loadLayersManifest().then(() => { state.layer.forEach((id)=>compileLayer(id)); buildGrid(); });
 buildGrid();
 window.__ready = true;
 let lastT = performance.now()/1000;
