@@ -1,0 +1,171 @@
+void layer_TopSection(in vec2 p, in float iTime, inout vec3 col) {
+    if (p.y > 0.4) {
+        col = vec3(0.55, 0.82, 0.35);
+        
+        if (p.x > -1.2 && p.x < -0.4 && p.y > 0.6 && p.y < 0.75) {
+            float letters = fract(p.x * 5.0);
+            if (letters < 0.7 && fract(p.x * 20.0 + p.y*10.0 + iTime*2.0) > 0.2) { 
+                col = vec3(0.1, 0.2, 0.7);
+            }
+        }
+        
+        if (abs(p.x) < 0.1 && p.y > 0.65 && p.y < 0.7) {
+            col = mix(vec3(0.2, 0.3, 0.5), vec3(0.1, 0.2, 0.8), sin(iTime*5.0)*0.5+0.5);
+        }
+        
+        vec2 logop = p - vec2(0.8, 0.65);
+        if (length(logop) < 0.3) {
+            float wave = sin(logop.x * 20.0 + logop.y * 10.0 + iTime*3.0) * cos(logop.y * 15.0 - iTime);
+            if (abs(wave) < 0.2 && logop.y > -0.1 && logop.y < 0.1) col = vec3(0.1, 0.1, 0.8);
+            if (length(logop - vec2(-0.2, sin(iTime*2.0)*0.02)) < 0.05) col = vec3(0.1, 0.1, 0.8);
+            if (length(logop - vec2(0.2, cos(iTime*2.0)*0.02)) < 0.05) col = vec3(0.1, 0.1, 0.8);
+        }
+    }
+}
+
+void layer_BottomPhoto(in vec2 p, inout vec3 col) {
+    if (p.y <= 0.4) {
+        col = vec3(0.08, 0.1, 0.12);
+        
+        float structNoise = fract(sin(dot(floor(p * 5.0), vec2(12.9898, 78.233))) * 43758.5453);
+        if (abs(fract(p.x * 3.0)) < 0.05) col += vec3(0.05);
+        if (abs(fract(p.y * 5.0)) < 0.02) col += vec3(0.05);
+        col *= 0.8 + 0.2 * structNoise;
+    }
+}
+
+void layer_Lasers(in vec2 p, in float iTime, inout vec3 col) {
+    if (p.y <= 0.4) {
+        vec3 laserCol = vec3(0.0);
+        
+        vec2 orig1 = vec2(-0.4, 0.0);
+        vec2 orig2 = vec2(0.4, 0.1);
+        vec2 orig3 = vec2(-0.1, 0.2);
+        
+        float sweep = sin(iTime * 1.5) * 0.5;
+        
+        for(float i=0.0; i<40.0; i++) {
+            vec2 o = (mod(i, 3.0) < 1.0) ? orig1 : ((mod(i, 3.0) < 2.0) ? orig2 : orig3);
+            
+            float angle = sin(i * 123.4) * 3.14 + p.y*0.1 + sweep * sin(i*0.5); 
+            vec2 dir = vec2(cos(angle), sin(angle));
+            
+            vec2 pa = p - o;
+            float h = clamp(dot(pa, dir), 0.0, 2.0);
+            float d = length(pa - dir * h);
+            
+            float intensity = 0.001 / (d * d + 0.0001);
+            
+            vec3 lColor = vec3(1.0, 0.9, 0.6);
+            if (fract(i * 0.1) < 0.3) lColor = vec3(0.8, 0.9, 1.0);
+            
+            laserCol += lColor * intensity * (1.0 - h*0.4);
+        }
+        
+        col += laserCol * 0.5;
+    }
+}
+
+void layer_Foreground(in vec2 p, in float iTime, inout vec3 col) {
+    if (p.y <= 0.4) {
+        col += vec3(1.0, 0.9, 0.7) * (0.05 / (length(p - vec2(0.0, -0.1)) + 0.01)) * (0.8 + 0.2*sin(iTime*8.0));
+        
+        float djDist = 1.0;
+        
+        vec2 djP = p - vec2(0.0, -0.4 + sin(iTime*4.0)*0.02);
+        
+        float head = length(djP) - 0.15;
+        djDist = min(djDist, head);
+        float hp1 = length(djP - vec2(-0.16, 0.0)) - 0.05;
+        float hp2 = length(djP - vec2(0.16, 0.0)) - 0.05;
+        djDist = min(min(djDist, hp1), hp2);
+        
+        float body = max(abs(djP.x) - 0.3 - (djP.y+0.2)*0.2, djP.y + 0.1);
+        if (p.y < -0.5) djDist = min(djDist, body);
+        
+        if (djDist < 0.0) {
+            vec3 djCol = vec3(0.05, 0.08, 0.1);
+            djCol += vec3(0.1, 0.15, 0.1) * (0.5 + 0.5 * sin(p.y * 50.0)) * smoothstep(-0.5, -0.8, p.y);
+            col = djCol;
+        }
+        
+        vec2 screenL = p - vec2(-0.6, -0.6);
+        float sL = max(abs(screenL.x) - 0.15, abs(screenL.y) - 0.1);
+        if (sL < 0.0) {
+            vec3 sCol = vec3(0.2, 0.8, 0.4);
+            if (fract(screenL.x*10.0 - iTime) < 0.5 && screenL.y > 0.0) sCol = vec3(0.3, 0.9, 0.5);
+            if (abs(screenL.y) > 0.08 || abs(screenL.x) > 0.13) sCol = vec3(0.8);
+            col = sCol;
+        }
+        
+        vec2 screenR = p - vec2(0.6, -0.6);
+        float sR = max(abs(screenR.x) - 0.15, abs(screenR.y) - 0.08);
+        if (sR < 0.0) {
+            vec3 sCol2 = vec3(0.8, 0.8, 0.9);
+            if (fract(screenR.x * 20.0 + iTime*2.0) < 0.5 && screenR.y < 0.0) sCol2 = vec3(0.3, 0.3, 0.8);
+            col = sCol2;
+        }
+        
+        if (abs(p.x) > 0.7 && p.y > -0.3 && p.y < 0.1) {
+            if (abs(p.x) < 0.8) {
+                col = vec3(0.02);
+            }
+        }
+    }
+}
+
+vec4 layer_TopSection(vec2 _uv){
+
+    vec2 uv = gl_FragCoord.xy / iResolution.xy;
+    vec2 p = uv * 2.0 - 1.0;
+    p.x *= iResolution.x / iResolution.y;
+
+    vec3 col = vec3(-1.0);
+    
+    layer_TopSection(p, iTime, col);
+
+
+  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+}
+
+vec4 layer_BottomPhoto(vec2 _uv){
+
+    vec2 uv = gl_FragCoord.xy / iResolution.xy;
+    vec2 p = uv * 2.0 - 1.0;
+    p.x *= iResolution.x / iResolution.y;
+
+    vec3 col = vec3(-1.0);
+    
+    layer_BottomPhoto(p, col);
+
+
+  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+}
+
+vec4 layer_Lasers(vec2 _uv){
+
+    vec2 uv = gl_FragCoord.xy / iResolution.xy;
+    vec2 p = uv * 2.0 - 1.0;
+    p.x *= iResolution.x / iResolution.y;
+
+    vec3 col = vec3(-1.0);
+    
+    layer_Lasers(p, iTime, col);
+
+
+  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+}
+
+vec4 layer_Foreground(vec2 _uv){
+
+    vec2 uv = gl_FragCoord.xy / iResolution.xy;
+    vec2 p = uv * 2.0 - 1.0;
+    p.x *= iResolution.x / iResolution.y;
+
+    vec3 col = vec3(-1.0);
+    
+    layer_Foreground(p, iTime, col);
+
+
+  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+}

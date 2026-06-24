@@ -1,0 +1,123 @@
+float layer_Mapping(vec3 p) {
+    float base = max(length(p.xz) - 0.6, abs(p.y) - 0.3);
+    base -= 0.02 * sin(atan(p.z, p.x) * 14.0);
+    base -= 0.01 * sin(p.y * 50.0);
+    
+    vec3 stonePos = p - vec3(0.0, 0.35, 0.0);
+    float stone = length(stonePos) - 0.12;
+    stone += 0.02 * sin(stonePos.x*25.0) * sin(stonePos.z*25.0); 
+    
+    return min(base, stone);
+}
+
+vec3 getNormal(vec3 p) {
+    vec2 e = vec2(0.01, 0);
+    return normalize(vec3(
+        layer_Mapping(p+e.xyy) - layer_Mapping(p-e.xyy),
+        layer_Mapping(p+e.yxy) - layer_Mapping(p-e.yxy),
+        layer_Mapping(p+e.yyx) - layer_Mapping(p-e.yyx)
+    ));
+}
+
+void layer_Background(in vec2 p, inout vec3 col) {
+    col = vec3(0.75); 
+    if (p.y < -0.3) col = vec3(0.35); 
+}
+
+void layer_MaterialsAndLighting(in vec3 ro, in vec3 rd, in float d, in float iTime, inout vec3 col) {
+    if (d < 10.0) {
+        vec3 p3 = ro + rd * d;
+        vec3 n = getNormal(p3);
+        vec3 light = normalize(vec3(cos(iTime), 1.5, sin(iTime)));
+        float diff = max(dot(n, light), 0.1);
+        
+        if (p3.y > 0.28 && length(p3.xz) < 0.18) {
+            col = vec3(0.9, 0.9, 0.85) * diff;
+        } else {
+            col = vec3(0.1) * diff;
+            vec3 view = normalize(ro - p3);
+            vec3 ref = reflect(-light, n);
+            float spec = pow(max(dot(view, ref), 0.0), 32.0);
+            col += vec3(0.3) * spec;
+        }
+    }
+}
+
+void layer_Vignette(in vec2 p, inout vec3 col) {
+    col *= 1.0 - length(p)*0.15;
+}
+
+vec4 layer_Mapping(vec2 _uv){
+
+    vec2 uv = gl_FragCoord.xy / iResolution.xy;
+    vec2 p = uv * 2.0 - 1.0;
+    p.x *= iResolution.x / iResolution.y;
+
+    vec3 ro = vec3(0.0, 1.2, -2.5);
+    vec3 rd = normalize(vec3(p.x, p.y - 0.4, 1.0));
+    
+    float d = 0.0;
+    for(int i=0; i<64; i++) {
+        vec3 p3 = ro + rd * d;
+        if (dist < 0.001) break;
+        d += dist;
+        if (d > 10.0) break;
+    }
+    
+    vec3 col = vec3(-1.0);
+    
+    layer_Background(p, col);
+    
+
+  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+}
+
+vec4 layer_Background(vec2 _uv){
+
+    vec2 uv = gl_FragCoord.xy / iResolution.xy;
+    vec2 p = uv * 2.0 - 1.0;
+    p.x *= iResolution.x / iResolution.y;
+
+    vec3 ro = vec3(0.0, 1.2, -2.5);
+    vec3 rd = normalize(vec3(p.x, p.y - 0.4, 1.0));
+    
+    float d = 0.0;
+    for(int i=0; i<64; i++) {
+        vec3 p3 = ro + rd * d;
+        if (dist < 0.001) break;
+        d += dist;
+        if (d > 10.0) break;
+    }
+    
+    vec3 col = vec3(-1.0);
+    
+    layer_MaterialsAndLighting(ro, rd, d, iTime, col);
+    
+
+  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+}
+
+vec4 layer_Lighting(vec2 _uv){
+
+    vec2 uv = gl_FragCoord.xy / iResolution.xy;
+    vec2 p = uv * 2.0 - 1.0;
+    p.x *= iResolution.x / iResolution.y;
+
+    vec3 ro = vec3(0.0, 1.2, -2.5);
+    vec3 rd = normalize(vec3(p.x, p.y - 0.4, 1.0));
+    
+    float d = 0.0;
+    for(int i=0; i<64; i++) {
+        vec3 p3 = ro + rd * d;
+        if (dist < 0.001) break;
+        d += dist;
+        if (d > 10.0) break;
+    }
+    
+    vec3 col = vec3(-1.0);
+    
+    layer_Vignette(p, col);
+    
+
+  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+}
