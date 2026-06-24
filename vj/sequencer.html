@@ -25,6 +25,8 @@
   .lane select.nlen { background:#1c1c22; color:#ddd; border:1px solid #3a3a44; border-radius:4px; padding:2px; font-size:10px; }
   .lane .lsel { width:120px; background:#1c1c22; color:#ddd; border:1px solid #3a3a44; border-radius:4px; padding:2px; font-size:10px; }
   .lane .mv { width:16px; padding:0; background:#1c1c22; color:#9aa; border:1px solid #3a3a44; border-radius:3px; cursor:pointer; font-size:9px; line-height:14px; }
+  .lane .eye { width:20px; }
+  .lane .eye.off { color:#555; background:#141418; }
   .transport select { background:#1c1c22; color:#ddd; border:1px solid #3a3a44; border-radius:5px; padding:4px; }
   .transport .title { font-weight:700; color:#8cf; letter-spacing:1px; margin-right:6px; }
   .transport label { color:#999; }
@@ -56,6 +58,7 @@ uniform sampler2D uPulseTex;          // steps x channels, .r = per-step pulse 0
 uniform float uEnOpen;                // open-hat (row 5) energy for leaves
 uniform sampler2D uAtlas;             // separated object-layers packed 4x2; one tile per channel
 uniform float uHasLayer[8];           // 1 = that channel renders a layer instead of its built-in element
+uniform float uVis[8];                // 1 = channel visible
 
 float h2(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float vn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
@@ -121,7 +124,7 @@ void main(){
     // BASS (row 2) — paver bands (upper-right), stepped along x
     float pm = max(boxMask(uv, vec2(0.78,0.82), vec2(0.24,0.11), -0.32),
                    boxMask(uv, vec2(0.86,0.50), vec2(0.13,0.22), -0.32));
-    if (pm > 0.5 && uHasLayer[2] < 0.5){
+    if (pm > 0.5 && uHasLayer[2] < 0.5 && uVis[2] > 0.5){
         float t = clamp((uv.x - 0.52) / 0.46, 0.0, 1.0);
         float bright; float tw = stepWarp(t, 2.0, bright);
         float cellT = fract(tw * uSteps);
@@ -131,7 +134,7 @@ void main(){
     // DRUMS (row 1) — navy mosaic; the hit ring lights up following the tile grid (no scaling)
     vec2 c0 = vec2(0.58, 0.40); float ang = -0.32;
     vec2 hsz = vec2(0.30, 0.33);
-    if (boxMask(uv, c0, hsz, ang) > 0.5 && uHasLayer[1] < 0.5){
+    if (boxMask(uv, c0, hsz, ang) > 0.5 && uHasLayer[1] < 0.5 && uVis[1] > 0.5){
         vec2 local = rot(ang) * (uv - c0);
         vec2 g = local * vec2(34.0, 38.0);
         vec2 cell = fract(g); vec2 id = floor(g);
@@ -147,7 +150,7 @@ void main(){
     }
     // VOICE (row 0) — metal grate (left), divided HORIZONTALLY; a hit shows as a shadow band
     float edge = 0.30 - uv.y * 0.05;
-    if (uv.x < edge && uHasLayer[0] < 0.5){
+    if (uv.x < edge && uHasLayer[0] < 0.5 && uVis[0] > 0.5){
         float seg = floor(uv.y * uSteps);
         float p = pulseAt(0.0, seg);
         float cellY = fract(uv.y * uSteps);
@@ -155,7 +158,7 @@ void main(){
         col = grateCol(vec2(uv.x, uv.y), edge) * (1.0 - shadow) * (1.0 + uMid*0.25);
     }
     // KEYBOARD (row 3) — curb + block joints, stepped along x (hit steps thicken + glow)
-    if (uHasLayer[3] < 0.5){
+    if (uHasLayer[3] < 0.5 && uVis[3] > 0.5){
         float seg = floor(clamp(uv.x,0.0,1.0) * uSteps);
         float p = pulseAt(3.0, seg);
         float w = 0.010 + p * 0.020;
@@ -167,7 +170,7 @@ void main(){
     }
 
     // SNARE (row 4) — tree-leaf shadow travelling clockwise around the screen edge
-    if (uChannels > 4.5 && uHasLayer[4] < 0.5){
+    if (uChannels > 4.5 && uHasLayer[4] < 0.5 && uVis[4] > 0.5){
         float dTop = 1.0 - uv.y, dBot = uv.y, dL = uv.x, dR = 1.0 - uv.x;
         float d = min(min(dTop, dBot), min(dL, dR));        // distance to nearest edge
         float fringe = smoothstep(0.30, 0.0, d);
@@ -183,7 +186,7 @@ void main(){
         col = mix(col, vec3(0.12,0.12,0.14), canopy * 0.92); // darker, more visible leaf shadow
     }
     // OPEN HAT (row 5) — falling leaves (shaped, spinning, autumn colours)
-    if (uChannels > 5.5 && uHasLayer[5] < 0.5){
+    if (uChannels > 5.5 && uHasLayer[5] < 0.5 && uVis[5] > 0.5){
         float asp = iResolution.x / iResolution.y;
         for (int i=0;i<40;i++){
             float fi = float(i);
@@ -206,7 +209,7 @@ void main(){
         }
     }
     // HI HAT (row 6) — soft-serve dog poop (stacked tiers + curl tip), random scale, fades over note
-    if (uChannels > 6.5 && uHasLayer[6] < 0.5){
+    if (uChannels > 6.5 && uHasLayer[6] < 0.5 && uVis[6] > 0.5){
         float asp = iResolution.x / iResolution.y;
         for (int s=0;s<32;s++){
             if (float(s) >= uSteps) break;
@@ -231,15 +234,19 @@ void main(){
         }
     }
 
-    // SEPARATED LAYERS — a channel's chosen object-layer replaces its element (opaque, no opacity)
+    // SEPARATED LAYERS — chosen layer always shows its shape; on a beat hit the segment scales up + highlights
     for (int c = 0; c < 8; c++){
         if (float(c) >= uChannels) break;
-        if (uHasLayer[c] < 0.5) continue;
+        if (uHasLayer[c] < 0.5 || uVis[c] < 0.5) continue;
         float cc = mod(float(c), 4.0), rr = floor(float(c) / 4.0);
-        vec4 lc = texture2D(uAtlas, vec2((uv.x + cc) / 4.0, (uv.y + rr) / 2.0));
-        if (lc.a < 0.5) continue;                                   // object silhouette only
-        float seg = floor(clamp(uv.x, 0.0, 0.999) * uSteps);        // 16 vertical beat-segments
-        if (pulseAt(float(c), seg) > 0.5) col = lc.rgb;             // opaque where its beat is hit
+        float segN = clamp(uv.x, 0.0, 0.999);
+        float seg = floor(segN * uSteps);
+        float p = pulseAt(float(c), seg);
+        float segC = (seg + 0.5) / uSteps;
+        float sx = (segN - segC) / (1.0 + p * 0.6) + segC;          // hit segment bulges ~160%
+        vec4 lc = texture2D(uAtlas, vec2((sx + cc) / 4.0, (uv.y + rr) / 2.0));
+        if (lc.a < 0.5) continue;                                   // keep the layer's shape
+        col = lc.rgb * (1.0 + p * 0.9);                             // always visible; brighten on hit
     }
 
     col = satb(col, 1.22, 1.0);
@@ -257,7 +264,7 @@ void main(){
     <input type="file" id="audioFile" accept="audio/*" hidden>
     <label>BPM <input type="range" id="bpm" min="60" max="200" step="1" value="120"></label>
     <span id="bpmv">120</span>
-    <label>steps <select id="steps"><option>16</option><option selected>32</option><option>64</option></select></label>
+    <label>steps <select id="steps"><option>8</option><option>16</option><option selected>32</option><option>64</option></select></label>
     <label>filter <input type="range" id="filter" min="-100" max="100" step="1" value="0" style="width:90px"></label>
     <button id="echo">echo</button>
     <span style="flex:1"></span>
@@ -356,10 +363,13 @@ void main(){
 const PAT = ["grate (voice)", "mosaic (drums)", "paver (bass)", "keyboard (curb)",
              "tree shadow (snare)", "leaves (open hat)", "poops (hi hat)", "extra"];
 const PAT_COLOR = ["#aab2c0", "#2a3a6a", "#cdbb86", "#caa44a", "#3b5e3b", "#6f9b3a", "#7a5230", "#888888"];
-const FULL_NAMES = ["Voice", "Drums", "Bass", "Keyboard", "Snare", "Open hat", "Hi hat", "Ch 8"];
-const DEFAULT_NAMES = FULL_NAMES.slice(0, 4);
-// per-channel synth voice: 2=triangle 0=noise(mid) 1=sine 3=keyboard 4=snare 5=open-hat 6=hi-hat
-const SYNTH = [2, 0, 1, 3, 4, 5, 6, 3];
+// 8 instrument tracks: [name, synth voice id]
+const INSTRUMENTS = [
+  ["808 Sub / Kick", 7], ["Snare / Clap", 4], ["Hi-Hats", 6], ["Percussion / FX", 5],
+  ["Synth Bass", 1], ["Keys / Pads", 3], ["Lead / Pluck", 2], ["Sampler / Strings", 8],
+];
+const FULL_NAMES = INSTRUMENTS.map(i => i[0]);
+const DEFAULT_NAMES = FULL_NAMES.slice();
 const NP = PAT.length;
 const NOTE_OPTS = [["1/32",0.03125],["1/16",0.0625],["1/8",0.125],["1/4",0.25],["1/2",0.5],["1",1],["4",4],["8",8],["16",16],["32",32]];
 // separated object-layers loaded from vj/layers_manifest.json (built from layered_glsl/*)
@@ -368,7 +378,7 @@ let layerSearch = {};     // searchable datalist string -> key
 const $ = (id) => document.getElementById(id);
 
 const state = {
-  steps: 32, stepsPerBeat: 4, bpm: 120, channels: 4,
+  steps: 32, stepsPerBeat: 4, bpm: 120, channels: 8,
   names: DEFAULT_NAMES.slice(),
   grid: null, playing: false, startTime: 0, playhead: 0, lastStep: -1,
 };
@@ -377,6 +387,8 @@ let pulses2d = new Float32Array(state.channels * state.steps);   // per-step pul
 state.pitch = Array.from({length: state.channels}, () => 0);     // per-channel semitone transpose
 state.noteLen = Array.from({length: state.channels}, () => 0.25);// per-channel note length (whole-notes)
 state.layer = Array.from({length: state.channels}, () => "");    // per-channel object-layer id ("" = built-in element)
+state.inst  = Array.from({length: state.channels}, (_,c) => INSTRUMENTS[c%8][1]); // synth voice per channel
+state.vis   = Array.from({length: state.channels}, () => 1);     // 1 = visible
 let echoOn = false, fxFilter = 0;
 
 // ---------- WebGL ----------
@@ -516,7 +528,7 @@ function applyEcho(on){
 }
 function blip(ch){
   if (!actx) return;
-  const type = SYNTH[ch % NP];
+  const type = (state.inst[ch] !== undefined) ? state.inst[ch] : 0;
   const semi = state.pitch[ch] || 0;
   const ft = (base) => base * Math.pow(2, semi / 12);
   const dur = Math.max(0.04, (state.noteLen[ch] || 0.25) * 4 * 60 / state.bpm);
@@ -528,7 +540,19 @@ function blip(ch){
     g.gain.setValueAtTime(gain, t); g.gain.exponentialRampToValueAtTime(0.001, t + d);
     src.start(t); src.stop(t + d + 0.02);
   };
-  if (type === 0) noise(1900, 0.8, 0.5, Math.min(dur, 0.2));                 // drums
+  if (type === 7){                                                          // 808 kick: pitch-drop sine
+    const o = actx.createOscillator(); o.type="sine"; o.connect(g);
+    o.frequency.setValueAtTime(ft(140), t); o.frequency.exponentialRampToValueAtTime(ft(42), t+0.12);
+    g.gain.setValueAtTime(0.9, t); g.gain.exponentialRampToValueAtTime(0.001, t+Math.min(dur,0.5));
+    o.start(t); o.stop(t+Math.min(dur,0.5)+0.05);
+  }
+  else if (type === 8){                                                     // sampler/strings: sustained saw-ish
+    const d = Math.min(dur, 6.0);
+    [1.0,1.005,2.0].forEach((m,i)=>{ const o=actx.createOscillator(); o.type=i<2?"sawtooth":"triangle"; o.frequency.value=ft(220)*m;
+      const og=actx.createGain(); og.gain.value=i<2?0.18:0.08; o.connect(og); og.connect(g); o.start(t); o.stop(t+d+0.05); });
+    g.gain.setValueAtTime(0.0001,t); g.gain.linearRampToValueAtTime(0.5,t+0.08); g.gain.exponentialRampToValueAtTime(0.001,t+d);
+  }
+  else if (type === 0) noise(1900, 0.8, 0.5, Math.min(dur, 0.2));            // drums / perc
   else if (type === 4){                                                     // snare: noise body + tone
     noise(1500, 0.5, 0.45, Math.min(dur, 0.25));
     const o = actx.createOscillator(); o.type="triangle"; o.frequency.value=ft(200); const og=actx.createGain();
@@ -587,9 +611,17 @@ function buildGrid(){
   const wrap = $("grid"); wrap.innerHTML = "";
   for (let c=0;c<state.channels;c++){
     const lane = document.createElement("div"); lane.className = "lane";
+    // visible/invisible toggle
+    const eye = document.createElement("button"); eye.className = "mv eye"; eye.title = "show/hide";
+    eye.textContent = state.vis[c] ? "👁" : "∅"; eye.classList.toggle("off", !state.vis[c]);
+    eye.onclick = () => { state.vis[c] = state.vis[c] ? 0 : 1; eye.textContent = state.vis[c] ? "👁" : "∅"; eye.classList.toggle("off", !state.vis[c]); save(); };
     const sw = document.createElement("div"); sw.className = "swatch"; sw.style.background = PAT_COLOR[c%NP];
     const nm = document.createElement("div"); nm.className = "nm";
     nm.textContent = (state.names[c] || ("Ch "+(c+1))); nm.title = PAT[c%NP];
+    // instrument (synth voice) picker
+    const isel = document.createElement("select"); isel.className = "nlen"; isel.title = "instrument";
+    INSTRUMENTS.forEach(([nme,ty]) => { const o=document.createElement("option"); o.value=ty; o.textContent=nme; if (state.inst[c]===ty) o.selected=true; isel.appendChild(o); });
+    isel.onchange = () => { state.inst[c] = +isel.value; save(); };
     // per-channel pitch (semitones) + note length
     const pit = document.createElement("input"); pit.type = "number"; pit.className = "pit";
     pit.min = -24; pit.max = 24; pit.value = state.pitch[c] || 0; pit.title = "pitch (semitones)";
@@ -626,8 +658,8 @@ function buildGrid(){
       };
       cells.appendChild(cell);
     }
-    lane.appendChild(up); lane.appendChild(dn);
-    lane.appendChild(sw); lane.appendChild(nm); lane.appendChild(pit); lane.appendChild(nsel);
+    lane.appendChild(eye); lane.appendChild(up); lane.appendChild(dn);
+    lane.appendChild(sw); lane.appendChild(nm); lane.appendChild(isel); lane.appendChild(pit); lane.appendChild(nsel);
     lane.appendChild(gsel);
     lane.appendChild(cells); wrap.appendChild(lane);
   }
@@ -638,7 +670,7 @@ function moveChannel(c, dir){
   if (j < 0 || j >= state.channels) return;
   const S = state.steps;
   const swapArr = (a) => { const t=a[c]; a[c]=a[j]; a[j]=t; };
-  swapArr(state.names); swapArr(state.pitch); swapArr(state.noteLen); swapArr(state.layer);
+  swapArr(state.names); swapArr(state.pitch); swapArr(state.noteLen); swapArr(state.layer); swapArr(state.inst); swapArr(state.vis);
   for (let s=0;s<S;s++){                                  // swap grid + pulse rows
     let t=state.grid[c*S+s]; state.grid[c*S+s]=state.grid[j*S+s]; state.grid[j*S+s]=t;
     let u=pulses2d[c*S+s]; pulses2d[c*S+s]=pulses2d[j*S+s]; pulses2d[j*S+s]=u;
@@ -661,13 +693,15 @@ function markPlayhead(step){
 // ---------- persistence ----------
 function save(){ try{ localStorage.setItem("scene6687seq3", JSON.stringify({
   steps:state.steps, channels:state.channels, names:state.names, bpm:state.bpm,
-  pitch:state.pitch, noteLen:state.noteLen, layer:state.layer, fxFilter, echoOn, grid:Array.from(state.grid) })); }catch(e){} }
+  pitch:state.pitch, noteLen:state.noteLen, layer:state.layer, inst:state.inst, vis:state.vis, fxFilter, echoOn, grid:Array.from(state.grid) })); }catch(e){} }
 function load(){ try{ const d = JSON.parse(localStorage.getItem("scene6687seq3")); if(!d) return;
   state.steps=d.steps; state.channels=d.channels; state.names=d.names||FULL_NAMES.slice(0,state.channels);
   state.bpm=d.bpm||120; state.grid=Uint8Array.from(d.grid);
   state.pitch=d.pitch||Array.from({length:state.channels},()=>0);
   state.noteLen=d.noteLen||Array.from({length:state.channels},()=>0.25);
   state.layer=d.layer||Array.from({length:state.channels},()=>"");
+  state.inst=d.inst||Array.from({length:state.channels},(_,c)=>INSTRUMENTS[c%8][1]);
+  state.vis=d.vis||Array.from({length:state.channels},()=>1);
   fxFilter=d.fxFilter||0; echoOn=!!d.echoOn;
   pulses2d = new Float32Array(state.channels*state.steps); }catch(e){} }
 
@@ -692,6 +726,7 @@ $("add").onclick = () => {
   pulses2d = new Float32Array((state.channels+1)*state.steps);
   state.names.push(FULL_NAMES[state.channels] || ("Ch " + (state.channels+1)));
   state.pitch.push(0); state.noteLen.push(0.25); state.layer.push("");
+  state.inst.push(INSTRUMENTS[state.channels%8][1]); state.vis.push(1);
   state.channels++;
   buildGrid(); save();
 };
@@ -781,7 +816,10 @@ let lastT = performance.now()/1000;
   gl.uniform1f(U("uEnOpen"), energy(5));
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, pulseTex); gl.uniform1i(U("uPulseTex"), 0);
   gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, atlasTex); gl.uniform1i(U("uAtlas"), 1);
-  for (let c=0;c<8;c++) gl.uniform1f(U("uHasLayer[" + c + "]"), (c < state.channels && layerReady(c)) ? 1.0 : 0.0);
+  for (let c=0;c<8;c++){
+    gl.uniform1f(U("uHasLayer[" + c + "]"), (c < state.channels && layerReady(c)) ? 1.0 : 0.0);
+    gl.uniform1f(U("uVis[" + c + "]"), (c < state.channels && state.vis[c]) ? 1.0 : 0.0);
+  }
   gl.drawArrays(gl.TRIANGLES, 0, 6);
   requestAnimationFrame(loop);
 })();
