@@ -18,9 +18,9 @@ body{
     radial-gradient(at 100% 0%,hsla(339,49%,30%,.2) 0,transparent 50%);
   color:var(--text-main);height:100vh;display:flex;overflow:hidden;
 }
-.sidebar{width:320px;background:var(--bg-panel);backdrop-filter:blur(16px);border-right:1px solid var(--border);
+.sidebar{width:340px;background:var(--bg-panel);backdrop-filter:blur(16px);border-right:1px solid var(--border);
   display:flex;flex-direction:column;z-index:10;box-shadow:5px 0 25px rgba(0,0,0,.5)}
-.sidebar-header{padding:24px 20px;border-bottom:1px solid var(--border);
+.sidebar-header{padding:22px 20px;border-bottom:1px solid var(--border);
   background:linear-gradient(180deg,rgba(255,255,255,.05) 0%,transparent 100%)}
 .sidebar-header h1{font-size:22px;font-weight:800;background:linear-gradient(to right,#38bdf8,#818cf8);
   -webkit-background-clip:text;-webkit-text-fill-color:transparent;letter-spacing:-.5px;margin-bottom:6px}
@@ -31,33 +31,37 @@ body{
 .hint-keys{margin-top:10px;color:var(--text-muted);font-size:11px}
 .item-list{flex:1;overflow-y:auto;padding:14px}
 .item-list::-webkit-scrollbar{width:6px}.item-list::-webkit-scrollbar-thumb{background:rgba(255,255,255,.2);border-radius:10px}
-.item{padding:12px 16px;margin-bottom:8px;border-radius:12px;cursor:pointer;transition:all .25s cubic-bezier(.4,0,.2,1);
-  border:1px solid transparent;display:flex;flex-direction:column;gap:6px}
+.item{padding:10px;margin-bottom:8px;border-radius:12px;cursor:pointer;transition:all .25s cubic-bezier(.4,0,.2,1);
+  border:1px solid transparent;display:flex;gap:12px;align-items:center}
 .item:hover{background:rgba(255,255,255,.05);transform:translateX(4px)}
-.item.active{background:rgba(56,189,248,.15);border:1px solid var(--accent-glow);color:var(--accent);
-  font-weight:600;box-shadow:0 4px 15px var(--accent-glow)}
-.item .title{font-size:14px}
-.item .sub{font-size:11px;color:var(--text-muted)}
-.item-layers{display:flex;flex-wrap:wrap;gap:4px}
-.layer-badge{background:rgba(255,255,255,.1);padding:2px 6px;border-radius:8px;font-size:.7rem;font-weight:400}
-.main-content{flex:1;display:flex;flex-direction:column;padding:26px 30px;gap:18px;min-height:0}
+.item.active{background:rgba(56,189,248,.15);border:1px solid var(--accent-glow);box-shadow:0 4px 15px var(--accent-glow)}
+.thumb{width:56px;height:56px;flex:0 0 56px;border-radius:10px;object-fit:cover;background:#000;border:1px solid var(--border)}
+.thumb.ph{display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:10px;text-align:center;line-height:1.1}
+.item .meta{min-width:0}
+.item .title{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item .sub{font-size:11px;color:var(--text-muted);margin-top:2px}
+.main-content{flex:1;display:flex;flex-direction:column;padding:24px 30px;gap:16px;min-height:0}
 .header h2{font-weight:600;font-size:26px;letter-spacing:-.5px}
 .header p{color:var(--text-muted);font-size:13px;margin-top:4px}
-.grid{flex:1;overflow-y:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));
-  gap:20px;align-content:start;padding-right:6px}
-.grid::-webkit-scrollbar{width:8px}.grid::-webkit-scrollbar-thumb{background:rgba(255,255,255,.2);border-radius:10px}
-.card{background:rgba(15,23,42,.6);border:1px solid var(--border);border-radius:16px;overflow:hidden;
-  display:flex;flex-direction:column;box-shadow:0 10px 30px rgba(0,0,0,.4);transition:transform .3s ease,box-shadow .3s ease}
-.card:hover{transform:translateY(-4px);box-shadow:0 16px 36px rgba(0,0,0,.55)}
-.card.composite{border-color:var(--accent-glow)}
-.card-canvas{position:relative;aspect-ratio:1/1;
-  background-image:linear-gradient(45deg,#1b2638 25%,transparent 25%),linear-gradient(-45deg,#1b2638 25%,transparent 25%),
+.chipbar{display:flex;flex-wrap:wrap;gap:8px}
+.chip{padding:7px 13px;border-radius:20px;border:1px solid var(--border);background:rgba(255,255,255,.05);
+  color:var(--text-muted);cursor:pointer;font-size:13px;font-weight:600;transition:all .2s ease}
+.chip:hover{background:rgba(255,255,255,.1);color:var(--text-main)}
+.chip.active{background:rgba(56,189,248,.18);border-color:var(--accent-glow);color:var(--accent);box-shadow:0 0 12px var(--accent-glow)}
+.stage{flex:1;display:flex;gap:24px;min-height:0}
+.pane{flex:1;display:flex;flex-direction:column;background:rgba(15,23,42,.6);border:1px solid var(--border);
+  border-radius:18px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.4)}
+.pane-head{padding:12px 18px;border-bottom:1px solid var(--border);font-size:12px;font-weight:600;
+  text-transform:uppercase;letter-spacing:1px;color:var(--text-muted)}
+.pane-body{flex:1;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;background:#000}
+.pane-body img{max-width:100%;max-height:100%;object-fit:contain}
+.pane-body.live{background-image:linear-gradient(45deg,#1b2638 25%,transparent 25%),linear-gradient(-45deg,#1b2638 25%,transparent 25%),
     linear-gradient(45deg,transparent 75%,#1b2638 75%),linear-gradient(-45deg,transparent 75%,#1b2638 75%);
-  background-size:20px 20px;background-position:0 0,0 10px,10px -10px,-10px 0}
-.card-canvas canvas{width:100%;height:100%;display:block}
-.card-meta{padding:10px 14px;border-top:1px solid var(--border)}
-.card-meta .nm{font-size:14px;font-weight:600}
-.card-meta .tags{margin-top:6px;display:flex;flex-wrap:wrap;gap:4px}
+  background-size:24px 24px;background-position:0 0,0 12px,12px -12px,-12px 0;background-color:#0a0f1a}
+.pane-body.live canvas{width:100%;height:100%;display:block}
+.noimg{color:var(--text-muted);font-size:14px}
+.tags-line{margin-top:8px;display:flex;flex-wrap:wrap;gap:5px}
+.tag{background:rgba(255,255,255,.08);padding:2px 8px;border-radius:8px;font-size:.72rem;color:var(--text-muted)}
 .empty{margin:auto;color:var(--text-muted);font-size:15px;text-align:center}
 </style>
 </head>
@@ -67,99 +71,103 @@ body{
     <h1>6687 Layer Preview</h1>
     <p id="stats">0 shaders</p>
     <input type="text" id="searchInput" placeholder="Search shader, object or tag (e.g. chair, forest)…">
-    <div class="hint-keys">↑ / ↓ cycle shaders · each card = one separated object on transparent bg</div>
+    <div class="hint-keys">↑ / ↓ cycle shaders · click a layer chip to preview only that object</div>
   </div>
   <div class="item-list" id="itemList"></div>
 </div>
 <div class="main-content">
   <div class="header"><h2 id="title">Select a shader</h2><p id="subtitle"></p></div>
-  <div class="grid" id="grid"><div class="empty">Pick a shader from the left to preview its separated layers.</div></div>
+  <div class="chipbar" id="chipbar"></div>
+  <div class="stage" id="stage"><div class="empty">Pick a shader from the left.</div></div>
 </div>
 
 <script src="layers_bundle.js"></script>
 <script>
 const H="precision highp float;\nuniform vec2 iResolution;\nuniform float iTime;\nuniform float iBass,iMid,iTreble,iLevel,iBeat;\n";
 const VERT="attribute vec2 p;void main(){gl_Position=vec4(p,0.0,1.0);}";
-const SRC=window.FILE_GLOBALS||{}, IDX=window.LAYER_SOURCES||{}, META=window.LAYER_METADATA||{};
+const SRC=window.FILE_GLOBALS||{}, IDX=window.LAYER_SOURCES||{}, META=window.LAYER_METADATA||{}, PHOTOS=window.LAYER_PHOTOS||{};
 const ids=Object.keys(IDX).sort();
-const itemList=document.getElementById("itemList"), grid=document.getElementById("grid");
+const itemList=document.getElementById("itemList"), stage=document.getElementById("stage"), chipbar=document.getElementById("chipbar");
 const titleEl=document.getElementById("title"), subEl=document.getElementById("subtitle"), statsEl=document.getElementById("stats");
-let active=null, livePanels=[];
+let active=null, curLayer=null, raf=0, glLost=null;
 
-function tagsOf(id){ const m=META[id]; const t=new Set();
-  (m&&m.layers||[]).forEach(L=>(L.keywords||[]).forEach(k=>t.add(String(k).toLowerCase()))); return [...t]; }
-function metaName(id,nm){ const m=META[id]; const L=(m&&m.layers||[]).find(x=>x.name.replace(/\s+/g,'')===nm); return L?L.name:nm; }
-function metaTags(id,nm){ const m=META[id]; const L=(m&&m.layers||[]).find(x=>x.name.replace(/\s+/g,'')===nm); return L?(L.keywords||[]):[]; }
+function tagsOf(id){ const t=new Set(); (META[id]&&META[id].layers||[]).forEach(L=>(L.keywords||[]).forEach(k=>t.add(String(k).toLowerCase()))); return [...t]; }
+function metaName(id,nm){ const L=(META[id]&&META[id].layers||[]).find(x=>x.name.replace(/\s+/g,'')===nm); return L?L.name:nm; }
+function metaTags(id,nm){ const L=(META[id]&&META[id].layers||[]).find(x=>x.name.replace(/\s+/g,'')===nm); return L?(L.keywords||[]):[]; }
 
 function buildList(filter){
-  itemList.innerHTML=""; filter=(filter||"").trim().toLowerCase();
-  let shown=0;
+  itemList.innerHTML=""; filter=(filter||"").trim().toLowerCase(); let shown=0;
   ids.forEach(id=>{
     const m=META[id]||{title:id};
     const hay=(id+" "+(m.title||"")+" "+IDX[id].join(" ")+" "+tagsOf(id).join(" ")).toLowerCase();
     if(filter && !hay.includes(filter)) return;
     shown++;
     const el=document.createElement("div"); el.className="item"+(id===active?" active":""); el.dataset.id=id;
-    el.innerHTML=`<div class="title">${m.title||id}</div><div class="sub">${id} · ${IDX[id].length} layers</div>`+
-      `<div class="item-layers">${IDX[id].slice(0,6).map(n=>`<span class="layer-badge">${metaName(id,n)}</span>`).join("")}</div>`;
+    const ph=PHOTOS[id];
+    const thumb=ph?`<img class="thumb" src="${ph}" onerror="this.outerHTML='&lt;div class=\\'thumb ph\\'&gt;no photo&lt;/div&gt;'">`
+                  :`<div class="thumb ph">no photo</div>`;
+    el.innerHTML=thumb+`<div class="meta"><div class="title">${m.title||id}</div><div class="sub">${id} · ${IDX[id].length} layers</div></div>`;
     el.onclick=()=>select(id);
     itemList.appendChild(el);
   });
   statsEl.textContent=`${shown} / ${ids.length} shaders`;
 }
 
-function stopLive(){ livePanels.forEach(p=>{cancelAnimationFrame(p.raf); const e=p.gl.getExtension("WEBGL_lose_context"); if(e)e.loseContext();}); livePanels=[]; }
+function stopLive(){ if(raf)cancelAnimationFrame(raf); raf=0; if(glLost){try{glLost.loseContext()}catch(e){}} glLost=null; }
 
-function makePanel(canvas, id, nm){
-  const gl=canvas.getContext("webgl",{premultipliedAlpha:false,alpha:true});
-  if(!gl) return;
-  const comp=(s)=>{const sh=gl.createShader(s===0?gl.VERTEX_SHADER:gl.FRAGMENT_SHADER);
-    gl.shaderSource(sh,s===0?VERT:fsrc);gl.compileShader(sh);
-    if(!gl.getShaderParameter(sh,gl.COMPILE_STATUS))console.warn(id+"#"+(nm||"composite"),gl.getShaderInfoLog(sh)); return sh;};
+// render current shader/layer into the live canvas (curLayer=null -> full composite)
+function renderStage(){
+  stopLive();
+  const id=active; const ph=PHOTOS[id];
+  stage.innerHTML="";
+  // reference photo pane
+  const ref=document.createElement("div"); ref.className="pane";
+  ref.innerHTML=`<div class="pane-head">Original photo</div><div class="pane-body">`+
+    (ph?`<img src="${ph}" onerror="this.parentNode.innerHTML='&lt;div class=\\'noimg\\'&gt;procedural — no source photo&lt;/div&gt;'">`
+       :`<div class="noimg">procedural — no source photo</div>`)+`</div>`;
+  // live layer pane
+  const live=document.createElement("div"); live.className="pane";
+  const label=curLayer?metaName(id,curLayer):"Full composite";
+  const tags=curLayer?metaTags(id,curLayer):tagsOf(id).slice(0,10);
+  live.innerHTML=`<div class="pane-head">${label}</div><div class="pane-body live"><canvas></canvas></div>`+
+    `<div style="padding:10px 16px;border-top:1px solid var(--border)"><div class="tags-line">${tags.map(t=>`<span class="tag">${t}</span>`).join("")}</div></div>`;
+  stage.appendChild(ref); stage.appendChild(live);
+  const canvas=live.querySelector("canvas");
+  const gl=canvas.getContext("webgl",{premultipliedAlpha:false,alpha:true}); if(!gl)return;
+  glLost=gl.getExtension("WEBGL_lose_context");
   let body;
-  if(nm){ body=`gl_FragColor=layer_${nm}(uv);`; }
-  else { body="vec3 col=vec3(0.0);float a=0.0;"+
-      IDX[id].map((n,i)=>`vec4 _l${i}=layer_${n}(uv);col=mix(col,_l${i}.rgb,_l${i}.a);a=max(a,_l${i}.a);`).join("")+
-      "gl_FragColor=vec4(col,a);"; }
+  if(curLayer){ body=`gl_FragColor=layer_${curLayer}(uv);`; }
+  else { body="vec3 col=vec3(0.0);float a=0.0;"+IDX[id].map((n,i)=>`vec4 _l${i}=layer_${n}(uv);col=mix(col,_l${i}.rgb,_l${i}.a);a=max(a,_l${i}.a);`).join("")+"gl_FragColor=vec4(col,a);"; }
   const fsrc=H+SRC[id]+`\nvoid main(){vec2 uv=gl_FragCoord.xy/iResolution.xy;${body}}`;
-  const pr=gl.createProgram(); gl.attachShader(pr,comp(0)); gl.attachShader(pr,comp(1)); gl.linkProgram(pr); gl.useProgram(pr);
-  const buf=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,buf);
-  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
-  const lp=gl.getAttribLocation(pr,"p"); gl.enableVertexAttribArray(lp); gl.vertexAttribPointer(lp,2,gl.FLOAT,false,0,0);
-  const uRes=gl.getUniformLocation(pr,"iResolution"), uT=gl.getUniformLocation(pr,"iTime");
-  const t0=performance.now();
-  const panel={gl,raf:0};
-  function draw(){
-    const w=canvas.clientWidth||240, h=canvas.clientHeight||240;
+  function sh(type,s){const o=gl.createShader(type);gl.shaderSource(o,s);gl.compileShader(o);
+    if(!gl.getShaderParameter(o,gl.COMPILE_STATUS))console.warn(id+"#"+(curLayer||"composite"),gl.getShaderInfoLog(o));return o;}
+  const pr=gl.createProgram();gl.attachShader(pr,sh(gl.VERTEX_SHADER,VERT));gl.attachShader(pr,sh(gl.FRAGMENT_SHADER,fsrc));
+  gl.linkProgram(pr);gl.useProgram(pr);
+  const buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buf);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
+  const lp=gl.getAttribLocation(pr,"p");gl.enableVertexAttribArray(lp);gl.vertexAttribPointer(lp,2,gl.FLOAT,false,0,0);
+  const uRes=gl.getUniformLocation(pr,"iResolution"),uT=gl.getUniformLocation(pr,"iTime");const t0=performance.now();
+  (function draw(){
+    const w=canvas.clientWidth||512,h=canvas.clientHeight||512;
     if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;}
-    gl.viewport(0,0,canvas.width,canvas.height);
-    gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);
-    gl.uniform2f(uRes,canvas.width,canvas.height);
-    gl.uniform1f(uT,(performance.now()-t0)/1000);
-    gl.drawArrays(gl.TRIANGLES,0,3);
-    panel.raf=requestAnimationFrame(draw);
-  }
-  draw(); livePanels.push(panel);
+    gl.viewport(0,0,canvas.width,canvas.height);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.uniform2f(uRes,canvas.width,canvas.height);gl.uniform1f(uT,(performance.now()-t0)/1000);
+    gl.drawArrays(gl.TRIANGLES,0,3);raf=requestAnimationFrame(draw);
+  })();
 }
 
-function card(id, nm, composite){
-  const c=document.createElement("div"); c.className="card"+(composite?" composite":"");
-  const cv=document.createElement("div"); cv.className="card-canvas";
-  const canvas=document.createElement("canvas"); cv.appendChild(canvas);
-  const meta=document.createElement("div"); meta.className="card-meta";
-  const name=composite?"● Full composite":metaName(id,nm);
-  const tags=composite?tagsOf(id).slice(0,8):metaTags(id,nm);
-  meta.innerHTML=`<div class="nm">${name}</div><div class="tags">${tags.map(t=>`<span class="layer-badge">${t}</span>`).join("")}</div>`;
-  c.appendChild(cv); c.appendChild(meta); grid.appendChild(c);
-  requestAnimationFrame(()=>makePanel(canvas,id,nm));
+function buildChips(){
+  chipbar.innerHTML="";
+  const mk=(nm,label)=>{const c=document.createElement("div");c.className="chip"+((curLayer===nm)?" active":"");
+    c.textContent=label;c.onclick=()=>{curLayer=nm;buildChips();renderStage();};chipbar.appendChild(c);};
+  mk(null,"● Composite");
+  IDX[active].forEach(nm=>mk(nm,metaName(active,nm)));
 }
 
 function select(id){
-  active=id; stopLive(); grid.innerHTML="";
+  active=id; curLayer=null;
   const m=META[id]||{title:id};
-  titleEl.textContent=m.title||id; subEl.textContent=`${id} — ${IDX[id].length} separated layers (6687)`;
-  card(id,null,true);
-  IDX[id].forEach(nm=>card(id,nm,false));
+  titleEl.textContent=m.title||id; subEl.textContent=`${id} — ${IDX[id].length} separated layers (6687) · click a chip to isolate one`;
+  buildChips(); renderStage();
   [...itemList.children].forEach(el=>el.classList.toggle("active",el.dataset.id===id));
 }
 
@@ -167,12 +175,11 @@ document.getElementById("searchInput").addEventListener("input",e=>buildList(e.t
 document.addEventListener("keydown",e=>{
   if(e.target.tagName==="INPUT")return;
   if(e.key!=="ArrowDown"&&e.key!=="ArrowUp")return;
-  const vis=[...itemList.children].map(el=>el.dataset.id); if(!vis.length)return;
-  let i=vis.indexOf(active); i=e.key==="ArrowDown"?Math.min(vis.length-1,i+1):Math.max(0,i-1);
-  select(vis[i]); itemList.children[i].scrollIntoView({block:"nearest"}); e.preventDefault();
+  const vis=[...itemList.children].map(el=>el.dataset.id);if(!vis.length)return;
+  let i=vis.indexOf(active);i=e.key==="ArrowDown"?Math.min(vis.length-1,i+1):Math.max(0,i-1);
+  select(vis[i]);itemList.children[i].scrollIntoView({block:"nearest"});e.preventDefault();
 });
-buildList("");
-if(ids.length) select(ids[0]);
+buildList(""); if(ids.length) select(ids[0]);
 </script>
 </body>
 </html>
