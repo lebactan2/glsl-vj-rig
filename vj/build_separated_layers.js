@@ -56,8 +56,12 @@ for (const f of fs.readdirSync(SRC).filter((x) => x.endsWith(".glsl"))) {
   const names = [];
   let combined = helpers + "\n";
   const RET = "  vec3 _rgb = vec3(col);\n  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));";
-  const nonRegion = /=\s*layer_\w+\s*\(/.test(body);                              // layer used as a value -> SDF/raymarch
-  if (nonRegion) {
+  const vec4fns = [...src.matchAll(/vec4\s+(layer_\w+)\s*\(\s*vec2/g)].map((x) => x[1]); // already 6687-style
+  const nonRegion = vec4fns.length === 0 && /=\s*layer_\w+\s*\(/.test(body);      // layer used as a value -> SDF/raymarch
+  if (vec4fns.length) {                                                           // export existing self-contained fns directly
+    vec4fns.forEach((fn) => { names.push(fn.replace(/^layer_/, "")); nObj++; });
+    LAYER_METADATA[id] = { title: meta.title || id, layers: meta.layers };
+  } else if (nonRegion) {
     combined += `\nvec4 layer_Scene(vec2 _uv){\n${sceneBody(body)}\n  return vec4(clamp(vec3(col),0.0,1.0), 1.0);\n}\n`;
     names.push("Scene"); nObj++;
     LAYER_METADATA[id] = { title: meta.title || id, layers: [{ name: "Scene", keywords: [...new Set(meta.layers.flatMap(l => l.keywords || []))] }] };

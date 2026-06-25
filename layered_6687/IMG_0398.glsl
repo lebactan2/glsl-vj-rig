@@ -112,26 +112,3 @@ vec4 layer_WoodenSculpture(vec2 uv) {
     }
     return vec4(0.0);
 }
-
-vec4 layer_Scene(vec2 _uv){
-
-    vec2 uv = gl_FragCoord.xy / iResolution.xy;
-
-    vec3 col = vec3(0.0);
-    
-    vec4 l1 = layer_Floor(uv);
-    col = mix(col, l1.rgb, l1.a);
-    
-    vec4 l2 = layer_CeilingGrid(uv);
-    col = mix(col, l2.rgb, l2.a);
-    
-    vec4 l3 = layer_BackgroundForest(uv);
-    col = mix(col, l3.rgb, l3.a);
-    
-    vec4 l4 = layer_GlowingScreens(uv);
-    col = mix(col, l4.rgb, l4.a);
-    
-    vec4 l5 = layer_WoodenSculpture(uv);
-    col = mix(col, l5.rgb, l5.a);
-  return vec4(clamp(vec3(col),0.0,1.0), 1.0);
-}
