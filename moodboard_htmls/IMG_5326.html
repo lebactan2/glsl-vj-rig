@@ -3,110 +3,110 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Shader: IMG_5326</title>
-    <style>body {{ margin: 0; overflow: hidden; background-color: #000; }} canvas {{ display: block; width: 100vw; height: 100vh; }}</style>
+    <title>IMG_5326</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #111; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+        #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-family: sans-serif; }
+    </style>
 </head>
 <body>
+    <div id="loading">Loading Image...</div>
     <canvas id="glcanvas"></canvas>
-    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
-    <script id="fragment-shader" type="x-shader/x-fragment">
-        precision highp float; uniform vec2 iResolution; uniform float iTime;
-        
-void main() {
-    vec2 uv = gl_FragCoord.xy / iResolution.xy;
-    vec2 p = uv * 2.0 - 1.0;
-    p.x *= iResolution.x / iResolution.y;
     
-    vec3 col = vec3(0.55, 0.55, 0.55);
-    float noise = fract(sin(dot(p + iTime*0.05, vec2(12.9898, 78.233))) * 43758.5453);
-    col *= 0.95 + 0.05 * noise;
-    
-    // The Red "P" Sign with proper shading and details
-    float angle = 0.05;
-    mat2 rot = mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
-    vec2 sp = rot * p;
-    
-    vec2 signBox = vec2(0.4, 0.55);
-    vec2 d = abs(sp) - signBox + vec2(0.1);
-    float signDist = length(max(d, 0.0)) + min(max(d.x, d.y), 0.0) - 0.1;
-    
-    if (signDist < 0.0) {
-        // Shaded red background for sign
-        col = vec3(0.7, 0.15, 0.15);
-        col *= 0.8 + 0.2 * smoothstep(-0.4, 0.4, sp.x + sp.y); // gradient
-        
-        // Inner white outline
-        if (abs(signDist + 0.03) < 0.01) col = vec3(0.9);
-        
-        #define segment(p, a, b) length(p - a - (b - a) * clamp(dot(p - a, b - a) / dot(b - a, b - a), 0.0, 1.0))
-        
-        // White "P"
-        float pLetter = segment(sp, vec2(-0.15, 0.2), vec2(-0.15, -0.2));
-        pLetter = min(pLetter, segment(sp, vec2(-0.15, 0.2), vec2(0.05, 0.2)));
-        pLetter = min(pLetter, segment(sp, vec2(-0.15, 0.0), vec2(0.05, 0.0)));
-        pLetter = min(pLetter, segment(sp, vec2(0.05, 0.2), vec2(0.15, 0.1)));
-        pLetter = min(pLetter, segment(sp, vec2(0.15, 0.1), vec2(0.05, 0.0)));
-        
-        if (pLetter < 0.06) col = vec3(1.0);
-        
-        // Animated arrow below P
-        float arrowAnim = fract(iTime * 0.5) * 0.1;
-        vec2 ap = sp - vec2(0.0, -0.35 + arrowAnim);
-        float arrow = segment(ap, vec2(0.0, 0.08), vec2(0.0, -0.08));
-        arrow = min(arrow, segment(ap, vec2(0.0, -0.08), vec2(-0.06, 0.0)));
-        arrow = min(arrow, segment(ap, vec2(0.0, -0.08), vec2(0.06, 0.0)));
-        
-        if (arrow < 0.02) col = vec3(1.0);
-    }
-    
-    // Detailed Green Leaves
-    if (p.x < -0.4) {
-        float sway = sin(iTime * 2.0) * 0.1;
-        for(float i=0.0; i<15.0; i++) {
-            vec2 center = vec2(-1.2 + sin(i*1.2)*0.4 + sway * (1.0 + sin(i)), -0.8 + i*0.12);
-            vec2 lp = p - center;
-            float a = sin(i) * 0.5 + 0.5 + sway * 0.5 * cos(i);
-            mat2 rotL = mat2(cos(a), -sin(a), sin(a), cos(a));
-            lp = rotL * lp;
-            
-            float leaf = length(vec2(lp.x, lp.y * 2.5)) - 0.15 - sin(i)*0.05;
-            
-            if (leaf < 0.0) {
-                vec3 leafCol = vec3(0.2, 0.45, 0.15);
-                leafCol *= 0.7 + 0.3 * smoothstep(-0.1, 0.1, lp.x); // shading
-                if (abs(lp.x) < 0.005) leafCol *= 0.6; // central vein
-                col = mix(col, leafCol, 0.95);
-            }
+    <script id="vertex-shader" type="x-shader/x-vertex">
+        attribute vec2 position;
+        varying vec2 vUv;
+        void main() {
+            vUv = position * 0.5 + 0.5;
+            gl_Position = vec4(position, 0.0, 1.0);
         }
-    }
-
-    gl_FragColor = vec4(col, 1.0);
-}
-
-
+    </script>
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float;
+        uniform vec2 iResolution;
+        uniform float iTime;
+        uniform sampler2D tex;
+        varying vec2 vUv;
+        
+        void main() {
+            vec2 uv = gl_FragCoord.xy / iResolution.xy;
+            // Aspect ratio correction to fit image
+            // We'll keep it simple for now
+            vec2 p = vUv;
+            
+            // Subtle wave effect based on time
+            p.y += sin(p.x * 10.0 + iTime) * 0.005;
+            p.x += cos(p.y * 10.0 + iTime * 0.8) * 0.005;
+            
+            vec4 col = texture2D(tex, vec2(p.x, 1.0 - p.y));
+            gl_FragColor = col;
+        }
     </script>
     <script>
         function main() {
-            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
-            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
-            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
-            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            const img = new Image();
+            img.onload = () => {
+                document.getElementById('loading').style.display = 'none';
+                initWebGL(img);
+            };
+            img.src = "assets/IMG_5326.jpg";
+        }
+        
+        function initWebGL(image) {
+            const canvas = document.getElementById("glcanvas");
+            const gl = canvas.getContext("webgl");
             
-            if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
-                console.error("Link error: " + gl.getProgramInfoLog(prog));
-                console.error("FS Log: " + gl.getShaderInfoLog(fs));
-            }
-
-            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
-            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            const vs = gl.createShader(gl.VERTEX_SHADER);
+            gl.shaderSource(vs, document.getElementById("vertex-shader").text);
+            gl.compileShader(vs);
+            
+            const fs = gl.createShader(gl.FRAGMENT_SHADER);
+            gl.shaderSource(fs, document.getElementById("fragment-shader").text);
+            gl.compileShader(fs);
+            
+            const prog = gl.createProgram();
+            gl.attachShader(prog, vs);
+            gl.attachShader(prog, fs);
+            gl.linkProgram(prog);
+            
+            const pos = gl.getAttribLocation(prog, "position");
+            const res = gl.getUniformLocation(prog, "iResolution");
+            const time = gl.getUniformLocation(prog, "iTime");
+            
+            const buf = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            
+            // Texture setup
+            const tex = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, tex);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+            
             function render(t) {
-                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
-                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
-                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
-                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+                gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog);
+                gl.enableVertexAttribArray(pos);
+                gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+                gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, tex);
+                gl.uniform1i(gl.getUniformLocation(prog, "tex"), 0);
+                
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height);
+                gl.uniform1f(time, t * 0.001);
+                
+                gl.drawArrays(gl.TRIANGLES, 0, 6);
+                requestAnimationFrame(render);
             }
             requestAnimationFrame(render);
-        } window.onload = main;
+        }
+        window.onload = main;
     </script>
 </body>
 </html>

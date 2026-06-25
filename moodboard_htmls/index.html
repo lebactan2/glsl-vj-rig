@@ -165,6 +165,33 @@
             box-shadow: 0 4px 15px var(--accent-glow);
         }
 
+        .item-content {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .item-layers {
+            font-size: 0.75rem;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin-top: 4px;
+        }
+
+        .layer-badge {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 2px 6px;
+            border-radius: 8px;
+            font-weight: 400;
+        }
+
+        .layer-badge.highlight {
+            background: rgba(56, 189, 248, 0.2);
+            color: #38bdf8;
+            border: 1px solid rgba(56, 189, 248, 0.4);
+        }
+
         /* Main Content */
         .main-content {
             flex: 1;
@@ -347,7 +374,13 @@
         function createItem(name, folder, isManual = false) {
             const div = document.createElement('div');
             div.className = 'item';
-            div.innerHTML = `<span>${name}${isManual ? ' (Manual)' : ''}</span> <span>â†’</span>`;
+            div.innerHTML = `
+                <div class="item-content">
+                    <span class="item-title">${name}${isManual ? ' (Manual)' : ''}</span>
+                    <div class="item-layers" style="display: none;"></div>
+                </div>
+                <span>→</span>
+            `;
             div.onclick = () => selectItem(div, name, folder, isManual);
             itemList.appendChild(div);
         }
@@ -386,14 +419,53 @@
         let searchIndex = {};
         fetch('search_index.json').then(r => r.ok ? r.json() : {}).then(j => { searchIndex = j; });
 
+        let layerSearchIndex = [];
+        fetch('../search_index.json').then(r => r.ok ? r.json() : []).then(j => { layerSearchIndex = j; });
+
         searchInput.addEventListener('input', (e) => {
             const tokens = e.target.value.toLowerCase().split(/\s+/).filter(Boolean);
             const items = itemList.getElementsByClassName('item');
             for (let item of items) {
-                const name = item.querySelector('span').textContent.toLowerCase();
-                const hay = name + ' ' + (searchIndex[name.replace(/\s.*$/, '')] || '');
-                const match = tokens.every(t => hay.includes(t));   // every word must match (name OR content)
+                const titleSpan = item.querySelector('.item-title');
+                const nameText = titleSpan ? titleSpan.textContent : '';
+                const name = nameText.replace(' (Manual)', '').toLowerCase();
+                const rawId = name.replace('img_', '');
+                
+                const searchItem = layerSearchIndex.find(s => s.filename === rawId + '.glsl');
+
+                let hay = name + ' ' + (searchIndex[name.replace(/\s.*$/, '')] || '').toLowerCase();
+                if (searchItem) {
+                    hay += ' ' + (searchItem.title || '').toLowerCase();
+                    searchItem.layers.forEach(layer => {
+                        hay += ' ' + layer.name.toLowerCase();
+                        layer.keywords.forEach(kw => hay += ' ' + kw.toLowerCase());
+                    });
+                }
+
+                const match = tokens.length === 0 || tokens.every(t => hay.includes(t));
                 item.style.display = match ? 'flex' : 'none';
+
+                // Handle layer badges
+                const layersDiv = item.querySelector('.item-layers');
+                if (layersDiv) {
+                    layersDiv.innerHTML = '';
+                    if (match && tokens.length > 0 && searchItem) {
+                        let hasMatchingLayers = false;
+                        searchItem.layers.forEach(layer => {
+                            const isLayerMatch = tokens.some(t => layer.name.toLowerCase().includes(t) || layer.keywords.some(kw => kw.toLowerCase().includes(t)));
+                            if (isLayerMatch) {
+                                const badge = document.createElement('span');
+                                badge.className = 'layer-badge highlight';
+                                badge.innerText = layer.name;
+                                layersDiv.appendChild(badge);
+                                hasMatchingLayers = true;
+                            }
+                        });
+                        layersDiv.style.display = hasMatchingLayers ? 'flex' : 'none';
+                    } else {
+                        layersDiv.style.display = 'none';
+                    }
+                }
             }
         });
 

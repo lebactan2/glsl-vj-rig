@@ -3,170 +3,110 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Shader: IMG_7685</title>
-    <style>body {{ margin: 0; overflow: hidden; background-color: #000; }} canvas {{ display: block; width: 100vw; height: 100vh; }}</style>
+    <title>IMG_7685</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #111; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+        #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-family: sans-serif; }
+    </style>
 </head>
 <body>
+    <div id="loading">Loading Image...</div>
     <canvas id="glcanvas"></canvas>
-    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    
+    <script id="vertex-shader" type="x-shader/x-vertex">
+        attribute vec2 position;
+        varying vec2 vUv;
+        void main() {
+            vUv = position * 0.5 + 0.5;
+            gl_Position = vec4(position, 0.0, 1.0);
+        }
+    </script>
     <script id="fragment-shader" type="x-shader/x-fragment">
-        precision highp float; uniform vec2 iResolution; uniform float iTime;
+        precision highp float;
+        uniform vec2 iResolution;
+        uniform float iTime;
+        uniform sampler2D tex;
+        varying vec2 vUv;
         
-void main() {
-    vec2 uv = gl_FragCoord.xy / iResolution.xy;
-    vec2 p = uv * 2.0 - 1.0;
-    p.x *= iResolution.x / iResolution.y;
-    
-    vec3 col = vec3(0.0);
-    
-    // --- Background Wall ---
-    col = vec3(0.8, 0.65, 0.55); // pinkish beige wall
-    
-    // Top dark red trim
-    if (p.y > 0.6) {
-        col = vec3(0.4, 0.15, 0.15); // dark red
-        if (p.y < 0.62) col *= 0.5; // shadow
-    }
-    
-    // Left sky / roof edge
-    if (p.x < -0.6 && p.y > 0.2) {
-        col = vec3(0.8, 0.8, 0.8); // white/grey sky
-        // roof slope
-        if (p.x + 0.6 > p.y - 0.2) {
-            col = vec3(0.3, 0.3, 0.3); // dark underside
-        }
-    }
-    
-    // Right side grunge wall
-    if (p.x > 0.8) {
-        col = vec3(0.6, 0.6, 0.55); // grey wall
-        col *= 0.8 + 0.2 * fract(sin(p.x*100.0)*40.0 + iTime);
-        // pipes/lines
-        if (abs(p.x - 0.9) < 0.02) col *= 0.6;
-    }
-
-    // --- Center Window/Vent ---
-    float dCircle = length(p - vec2(0.0, 0.0)) - 0.25;
-    if (dCircle < 0.0) {
-        col = vec3(0.3, 0.1, 0.1); // dark red outer rim
-        
-        if (dCircle < -0.05) {
-            col = vec3(0.85); // white inner background/character
-            // Carved text (approximated with dark cutouts)
-            vec2 cp = p;
-            if (abs(cp.x) < 0.15 && abs(cp.y) < 0.15) {
-                // strokes
-                if (abs(cp.y) < 0.02 || abs(cp.x) < 0.02 || abs(cp.x + cp.y) < 0.03 || abs(cp.x - cp.y) < 0.03) {
-                    // white stroke
-                } else {
-                    col = vec3(0.15); // dark interior
-                }
-            } else if (dCircle < -0.06) {
-                col = vec3(0.15);
-            }
-        }
-    }
-
-    // --- Balcony Railing ---
-    if (p.y > -0.4 && p.y < 0.2) {
-        vec3 railCol = vec3(0.6, 0.5, 0.4); // brownish metal
-        float isRail = 0.0;
-        
-        // Top and bottom bars
-        if (abs(p.y - 0.2) < 0.01) isRail = 1.0;
-        if (abs(p.y - (-0.4)) < 0.01) isRail = 1.0;
-        
-        // Vertical bars
-        if (abs(p.x - (-0.8)) < 0.01) isRail = 1.0;
-        if (abs(p.x - 0.8) < 0.01) isRail = 1.0;
-        if (abs(p.x - (-0.3)) < 0.01) isRail = 1.0;
-        if (abs(p.x - 0.3) < 0.01) isRail = 1.0;
-        
-        // Center box around circle
-        if (max(abs(p.x) - 0.3, abs(p.y + 0.1) - 0.3) > 0.0 && max(abs(p.x) - 0.3, abs(p.y + 0.1) - 0.3) < 0.01) isRail = 1.0;
-        
-        // Lotus Patterns (Left and Right)
-        vec2 lp = p;
-        lp.x = abs(p.x); // symmetry for lotus
-        if (lp.x > 0.3 && lp.x < 0.8) {
-            vec2 lpc = lp - vec2(0.55, -0.2);
-            // lotus petals (teal/green) - animated breathing
-            float breath = sin(iTime * 2.0 + lp.x * 5.0) * 0.02;
-            if (length(lpc) < 0.15 + breath && lpc.y > 0.0) {
-                if (fract(length(lpc)*10.0 - iTime*2.0) < 0.2) {
-                    col = mix(col, vec3(0.3, 0.5, 0.4), 0.8);
-                    isRail = 0.5;
-                }
-            }
-            // stems/leaves
-            if (abs(lpc.x) < 0.01 && lpc.y < 0.0) isRail = 1.0; // stem
-        }
-        
-        if (isRail > 0.9) col = railCol;
-    }
-
-    // --- Bottom Dark Red Section ---
-    if (p.y < -0.4) {
-        col = vec3(0.4, 0.15, 0.15); // dark red
-        if (p.y > -0.45) col *= 0.5; // top edge shadow
-        
-        // Shadow from post
-        if (abs(p.x) < 0.15) col *= 0.8;
-    }
-
-    // --- Center Ornate Post (Foreground) ---
-    if (p.y < -0.4 && p.y > -1.0) {
-        float dPost = max(abs(p.x) - 0.1, abs(p.y + 0.7) - 0.3);
-        if (dPost < 0.0) {
-            col = vec3(0.8, 0.8, 0.8); // white base
-            // dark edges
-            if (abs(abs(p.x) - 0.1) < 0.01) col *= 0.5;
+        void main() {
+            vec2 uv = gl_FragCoord.xy / iResolution.xy;
+            // Aspect ratio correction to fit image
+            // We'll keep it simple for now
+            vec2 p = vUv;
             
-            // Top part of post (finial)
-            if (p.y > -0.6) {
-                col = vec3(0.7, 0.6, 0.2); // gold
-                if (p.y > -0.5) col = vec3(0.2, 0.4, 0.3); // green top sphere
-                if (p.y > -0.45) col = vec3(0.8, 0.7, 0.2); // gold tip
-                
-                // shading
-                col *= 0.5 + 0.5 * cos(p.x * 20.0);
-            }
+            // Subtle wave effect based on time
+            p.y += sin(p.x * 10.0 + iTime) * 0.005;
+            p.x += cos(p.y * 10.0 + iTime * 0.8) * 0.005;
             
-            // Decorative cutout in base
-            if (length(p - vec2(0.0, -0.8)) < 0.05) col = vec3(0.2);
+            vec4 col = texture2D(tex, vec2(p.x, 1.0 - p.y));
+            gl_FragColor = col;
         }
-    }
-
-    // Add vignette
-    col *= 1.0 - 0.1 * length(p);
-
-    
-    gl_FragColor = vec4(col, 1.0);
-}
-
     </script>
     <script>
         function main() {
-            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
-            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
-            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
-            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            const img = new Image();
+            img.onload = () => {
+                document.getElementById('loading').style.display = 'none';
+                initWebGL(img);
+            };
+            img.src = "assets/IMG_7685.jpg";
+        }
+        
+        function initWebGL(image) {
+            const canvas = document.getElementById("glcanvas");
+            const gl = canvas.getContext("webgl");
             
-            if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
-                console.error("Link error: " + gl.getProgramInfoLog(prog));
-                console.error("FS Log: " + gl.getShaderInfoLog(fs));
-            }
-
-            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
-            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            const vs = gl.createShader(gl.VERTEX_SHADER);
+            gl.shaderSource(vs, document.getElementById("vertex-shader").text);
+            gl.compileShader(vs);
+            
+            const fs = gl.createShader(gl.FRAGMENT_SHADER);
+            gl.shaderSource(fs, document.getElementById("fragment-shader").text);
+            gl.compileShader(fs);
+            
+            const prog = gl.createProgram();
+            gl.attachShader(prog, vs);
+            gl.attachShader(prog, fs);
+            gl.linkProgram(prog);
+            
+            const pos = gl.getAttribLocation(prog, "position");
+            const res = gl.getUniformLocation(prog, "iResolution");
+            const time = gl.getUniformLocation(prog, "iTime");
+            
+            const buf = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            
+            // Texture setup
+            const tex = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, tex);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+            
             function render(t) {
-                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
-                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
-                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
-                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+                gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog);
+                gl.enableVertexAttribArray(pos);
+                gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+                gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, tex);
+                gl.uniform1i(gl.getUniformLocation(prog, "tex"), 0);
+                
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height);
+                gl.uniform1f(time, t * 0.001);
+                
+                gl.drawArrays(gl.TRIANGLES, 0, 6);
+                requestAnimationFrame(render);
             }
             requestAnimationFrame(render);
-        } window.onload = main;
+        }
+        window.onload = main;
     </script>
 </body>
 </html>

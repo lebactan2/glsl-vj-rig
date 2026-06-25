@@ -95,12 +95,12 @@ On `onStep`, play a sound per channel: synthesized (WebAudio osc/noise for drums
 ## Open Questions
 
 > [!IMPORTANT]
-> 1. **Audio:** synthesize sounds inside the tool (true sequencer), or visual-only synced to an external track/mic? (Plan supports either; Phase 6 optional.)
-> 2. **Grid size / tempo:** default steps per pattern (16?), default BPM (120?), max channels?
-> 3. **Scroll direction:** tiles fall **downward** to a hit line at the bottom (classic Guitar Hero) — confirm vs rising.
+> 1. **Audio:** synthesize sounds inside the tool (true sequencer), or visual-only synced to an external track/mic? (Plan supports either; Phase 6 optional.)-> only audio-reactive visual for now
+> 2. **Grid size / tempo:** default steps per pattern (16?), default BPM (120?), max channels?-> default steps 32, default bpm 120, max channels 3
+> 3. **Scroll direction:** tiles fall **downward** to a hit line at the bottom (classic Guitar Hero) — confirm vs rising.->no line needed, just fall down screen
 > 4. **Persistence:** save/load sequences (localStorage / shareable URL)?
-> 5. **Hosting:** self-contained single HTML (recommended, double-click + GitHub Pages), consistent with the rest of `vj/`?
-
+> 5. **Hosting:** self-contained single HTML (recommended, double-click + GitHub Pages), consistent with the rest of `vj/`?-> only local now
+6. add a cement background
 ## Suggested Build Order
 
 Phase 1 → 2 → 3 → 5 (playable skeleton fast) → 4 (density polish) → 6 (audio). Phases 1 and 5 are mostly Haiku/Sonnet; reserve Opus for the GLSL in Phases 2–4.

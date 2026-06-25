@@ -97,32 +97,50 @@ float petal(vec2 p, float a, vec2 offset) {
     return length(q) - 0.12;
 }
 
-void layer_Background(in vec2 uv, inout vec3 col) {
-    col = vec3(0.95, 0.95, 0.94);
+vec4 layer_Background(vec2 uv) {
+    return vec4(0.95, 0.95, 0.94, 1.0);
 }
 
-void layer_WoodStripes(in vec2 uv, in vec2 p, inout vec3 col, out bool inWood) {
-    inWood = false;
+vec4 layer_WoodStripes(vec2 uv) {
+    float aspect = iResolution.x / iResolution.y;
+    vec2 p = uv;
+    p.x *= aspect;
+    
     if ((uv.y > 0.35 && uv.y < 0.5) || uv.y < 0.1) {
-        inWood = true;
         float g = woodGrain(p, 10.0);
         vec3 woodDark = vec3(0.3, 0.15, 0.05);
         vec3 woodLight = vec3(0.6, 0.35, 0.18);
-        col = mix(woodLight, woodDark, g);
+        return vec4(mix(woodLight, woodDark, g), 1.0);
     }
+    return vec4(0.0);
 }
 
-void layer_Watermark(in vec2 p, in bool inWood, inout vec3 col) {
+vec4 layer_Watermark(vec2 uv) {
+    float aspect = iResolution.x / iResolution.y;
+    vec2 p = uv;
+    p.x *= aspect;
+    
+    bool inWood = ((uv.y > 0.35 && uv.y < 0.5) || uv.y < 0.1);
+    
     if (!inWood) {
         vec2 lp1 = p - vec2(0.5, 0.6);
         float dLeaf1 = length(vec2(lp1.x * 1.5, lp1.y + lp1.x * lp1.x * 2.0)) - 0.25;
         if (dLeaf1 < 0.0) {
-            col = mix(col, vec3(0.9, 0.9, 0.89), 1.0 - smoothstep(-0.01, 0.0, dLeaf1));
+            float alpha = 1.0 - smoothstep(-0.01, 0.0, dLeaf1);
+            vec3 leafCol = vec3(0.9, 0.9, 0.89);
+            return vec4(leafCol, alpha);
         }
     }
+    return vec4(0.0);
 }
 
-void layer_Diamonds(in vec2 p, inout vec3 col) {
+vec4 layer_Diamonds(vec2 uv) {
+    float aspect = iResolution.x / iResolution.y;
+    vec2 p = uv;
+    p.x *= aspect;
+    
+    vec4 finalCol = vec4(0.0);
+    
     for (int i = 0; i < 3; i++) {
         vec2 dp = p - vec2(0.2 + float(i) * 0.15, 0.8);
         float d1 = sdDiamond(dp, vec2(0.04));
@@ -131,28 +149,43 @@ void layer_Diamonds(in vec2 p, inout vec3 col) {
         if (d1 < 0.0) {
             vec3 diamCol = vec3(0.8, 0.8, 0.78);
             if (d1 < -0.01 && d1 > -0.015) diamCol *= 0.9;
-            col = mix(col, diamCol, 1.0 - smoothstep(-0.002, 0.002, d1));
+            float alpha = 1.0 - smoothstep(-0.002, 0.002, d1);
+            finalCol.rgb = mix(finalCol.rgb, diamCol, alpha);
+            finalCol.a = mix(finalCol.a, 1.0, alpha);
         }
         if (d2 < 0.0) {
             vec3 innerCol = vec3(0.35, 0.2, 0.1);
             float g = woodGrain(dp * 5.0, 5.0);
             innerCol = mix(innerCol, innerCol * 0.5, g);
-            col = mix(col, innerCol, 1.0 - smoothstep(-0.002, 0.002, d2));
+            float alpha = 1.0 - smoothstep(-0.002, 0.002, d2);
+            finalCol.rgb = mix(finalCol.rgb, innerCol, alpha);
+            finalCol.a = mix(finalCol.a, 1.0, alpha);
         }
     }
+    return finalCol;
 }
 
-void layer_Shelf(in vec2 p, in float aspect, inout vec3 col) {
+vec4 layer_Shelf(vec2 uv) {
+    float aspect = iResolution.x / iResolution.y;
+    vec2 p = uv;
+    p.x *= aspect;
+    
     float dShelf = sdBox(p - vec2(aspect*0.5, 0.15), vec2(0.35, 0.03));
     if (dShelf < 0.01) {
         float g = woodGrain(p, 15.0);
         vec3 shelfCol = mix(vec3(0.4, 0.2, 0.1), vec3(0.2, 0.1, 0.02), g);
         if (p.y > 0.17) shelfCol += 0.05;
-        col = mix(col, shelfCol, 1.0 - smoothstep(0.0, 0.002, dShelf));
+        float alpha = 1.0 - smoothstep(0.0, 0.002, dShelf);
+        return vec4(shelfCol, alpha);
     }
+    return vec4(0.0);
 }
 
-void layer_Vases(in vec2 p, inout vec3 col) {
+vec4 layer_Vases(vec2 uv) {
+    float aspect = iResolution.x / iResolution.y;
+    vec2 p = uv;
+    p.x *= aspect;
+
     vec2 vp1 = p - vec2(0.7, 0.18);
     float v1_y = clamp(vp1.y, 0.0, 0.35);
     float v1_w = mix(0.12, 0.04, smoothstep(0.0, 0.35, v1_y));
@@ -182,11 +215,17 @@ void layer_Vases(in vec2 p, inout vec3 col) {
         vcol *= 0.5 + 0.5 * shade;
         vcol += 0.15 * pow(max(0.0, shade), 3.0);
 
-        col = mix(col, vcol, 1.0 - smoothstep(0.0, 0.002, dVase));
+        float alpha = 1.0 - smoothstep(0.0, 0.002, dVase);
+        return vec4(vcol, alpha);
     }
+    return vec4(0.0);
 }
 
-void layer_Branches(in vec2 p, inout vec3 col) {
+vec4 layer_Branches(vec2 uv) {
+    float aspect = iResolution.x / iResolution.y;
+    vec2 p = uv;
+    p.x *= aspect;
+
     float dBranch = 1000.0;
     vec2 t1 = vec2(0.7, 0.45);
     dBranch = smin(dBranch, sdSegment(p, t1 - vec2(0.0, 0.15), t1 + vec2(-0.05, 0.1), 0.015, 0.01), 0.02);
@@ -207,11 +246,17 @@ void layer_Branches(in vec2 p, inout vec3 col) {
 
     if (dBranch < 0.015) {
         vec3 branchCol = vec3(0.15, 0.12, 0.1);
-        col = mix(col, branchCol, 1.0 - smoothstep(0.0, 0.002, dBranch));
+        float alpha = 1.0 - smoothstep(0.0, 0.002, dBranch);
+        return vec4(branchCol, alpha);
     }
+    return vec4(0.0);
 }
 
-void layer_Flowers(in vec2 p, inout vec3 col) {
+vec4 layer_Flowers(vec2 uv) {
+    float aspect = iResolution.x / iResolution.y;
+    vec2 p = uv;
+    p.x *= aspect;
+
     float dFlower = 1000.0;
     vec2 f1 = vec2(0.35, 0.25);
     vec2 f2 = vec2(1.1, 0.2);
@@ -229,27 +274,41 @@ void layer_Flowers(in vec2 p, inout vec3 col) {
         float dc = min(length(p - f1), length(p - f2));
         vec3 fcol = vec3(0.98, 0.98, 0.96);
         fcol -= 0.4 * smoothstep(0.0, 0.15, dc);
-        col = mix(col, fcol * (0.8 + 0.2 * smoothstep(-0.05, 0.0, dFlower)), 1.0 - smoothstep(0.0, 0.002, dFlower));
+        fcol *= (0.8 + 0.2 * smoothstep(-0.05, 0.0, dFlower));
+        float alpha = 1.0 - smoothstep(0.0, 0.002, dFlower);
+        return vec4(fcol, alpha);
     }
+    return vec4(0.0);
 }
 
 void main() {
     vec2 uv = gl_FragCoord.xy / iResolution.xy;
-    float aspect = iResolution.x / iResolution.y;
-    vec2 p = uv;
-    p.x *= aspect;
 
     vec3 col = vec3(0.0);
-    bool inWood = false;
-
-    layer_Background(uv, col);
-    layer_WoodStripes(uv, p, col, inWood);
-    layer_Watermark(p, inWood, col);
-    layer_Diamonds(p, col);
-    layer_Shelf(p, aspect, col);
-    layer_Vases(p, col);
-    layer_Branches(p, col);
-    layer_Flowers(p, col);
+    
+    vec4 l1 = layer_Background(uv);
+    col = mix(col, l1.rgb, l1.a);
+    
+    vec4 l2 = layer_WoodStripes(uv);
+    col = mix(col, l2.rgb, l2.a);
+    
+    vec4 l3 = layer_Watermark(uv);
+    col = mix(col, l3.rgb, l3.a);
+    
+    vec4 l4 = layer_Diamonds(uv);
+    col = mix(col, l4.rgb, l4.a);
+    
+    vec4 l5 = layer_Shelf(uv);
+    col = mix(col, l5.rgb, l5.a);
+    
+    vec4 l6 = layer_Vases(uv);
+    col = mix(col, l6.rgb, l6.a);
+    
+    vec4 l7 = layer_Branches(uv);
+    col = mix(col, l7.rgb, l7.a);
+    
+    vec4 l8 = layer_Flowers(uv);
+    col = mix(col, l8.rgb, l8.a);
 
     gl_FragColor = vec4(col, 1.0);
 }

@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Layer Viewer</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; color: #fff; font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; }
+        canvas { display: none; width: 100vw; height: 100vh; }
+        #message { font-size: 1.2rem; }
+    </style>
+    <script src="layers_bundle.js"></script>
+</head>
+<body>
+    <div id="message">Loading Layer...</div>
+    <canvas id="glcanvas"></canvas>
+    
+    <script id="vertex-shader" type="x-shader/x-vertex">
+        attribute vec2 position;
+        void main() {
+            gl_Position = vec4(position, 0.0, 1.0);
+        }
+    </script>
+    
+    <script>
+        function init() {
+            const params = new URLSearchParams(window.location.search);
+            const glslFile = params.get('glsl');
+            const targetLayerName = params.get('layer');
+            const msg = document.getElementById('message');
+            
+            if (!glslFile || !targetLayerName) {
+                msg.innerText = "Missing glsl or layer parameter.";
+                return;
+            }
+
+            // Fallback for missing 'IMG_' prefix
+            let fileBase = glslFile;
+            if (!window.FILE_GLOBALS[fileBase] && glslFile.startsWith('IMG_')) {
+                fileBase = glslFile.replace('IMG_', '');
+            }
+
+            if (!window.FILE_GLOBALS || !window.FILE_GLOBALS[fileBase]) {
+                msg.innerText = `Error: Layer '${fileBase}' not found in bundle.`;
+                return;
+            }
+
+            const targetLayerFunc = "layer_" + targetLayerName.replace(/\s+/g, '');
+            
+            try {
+                let glslCode = window.FILE_GLOBALS[fileBase];
+                
+                // Add uniforms if missing
+                if (!glslCode.includes('uniform vec2 iResolution;')) {
+                    glslCode = 'uniform vec2 iResolution;\nuniform float iTime;\n' + glslCode;
+                }
+                
+                // Add precision if missing (must be at the very top)
+                if (!glslCode.includes('precision highp float;') && !glslCode.includes('precision mediump float;')) {
+                    glslCode = 'precision highp float;\n' + glslCode;
+                }
+
+                // Auto-generate the main function that only outputs this layer
+                glslCode += `
+void main() {
+    vec2 uv = gl_FragCoord.xy / iResolution.xy;
+    vec4 col = ${targetLayerFunc}(uv);
+    gl_FragColor = col;
+}
+`;
+
+                runWebGL(glslCode);
+
+            } catch (e) {
+                msg.innerText = "Error loading GLSL: " + e.message;
+            }
+        }
+
+        function runWebGL(fragmentShaderSource) {
+            const canvas = document.getElementById("glcanvas");
+            const gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
+            
+            if (!gl) {
+                document.getElementById('message').innerText = "WebGL not supported.";
+                return;
+            }
+
+            const vs = gl.createShader(gl.VERTEX_SHADER);
+            gl.shaderSource(vs, document.getElementById("vertex-shader").text);
+            gl.compileShader(vs);
+
+            const fs = gl.createShader(gl.FRAGMENT_SHADER);
+            gl.shaderSource(fs, fragmentShaderSource);
+            gl.compileShader(fs);
+
+            if (!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) {
+                document.getElementById('message').innerText = "Shader Compile Error:\n" + gl.getShaderInfoLog(fs);
+                console.error("Fragment Shader Error:", gl.getShaderInfoLog(fs));
+                console.error("Shader Code:", fragmentShaderSource);
+                return;
+            }
+
+            const prog = gl.createProgram();
+            gl.attachShader(prog, vs);
+            gl.attachShader(prog, fs);
+            gl.linkProgram(prog);
+
+            const pos = gl.getAttribLocation(prog, "position");
+            const res = gl.getUniformLocation(prog, "iResolution");
+            const time = gl.getUniformLocation(prog, "iTime");
+
+            const buf = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+                -1, -1,
+                 1, -1,
+                -1,  1,
+                -1,  1,
+                 1, -1,
+                 1,  1
+            ]), gl.STATIC_DRAW);
+
+            document.getElementById('message').style.display = 'none';
+            canvas.style.display = 'block';
+
+            function render(t) {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+                gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+
+                gl.useProgram(prog);
+                gl.enableVertexAttribArray(pos);
+                gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+                gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height);
+                gl.uniform1f(time, t * 0.001);
+
+                gl.drawArrays(gl.TRIANGLES, 0, 6);
+                requestAnimationFrame(render);
+            }
+            requestAnimationFrame(render);
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>

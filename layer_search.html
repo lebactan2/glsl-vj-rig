@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GLSL Layer Showcase</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: #000; 
+            font-family: 'Inter', sans-serif;
+            color: #fff;
+        }
+        canvas { 
+            display: block; 
+            width: 100vw; 
+            height: 100vh; 
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 0;
+        }
+        .ui-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            pointer-events: none;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            padding-top: 5vh;
+            z-index: 10;
+        }
+        .search-panel {
+            width: 90%;
+            max-width: 600px;
+            pointer-events: auto;
+            background: rgba(20, 20, 25, 0.6);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+        .search-panel:hover {
+            background: rgba(30, 30, 35, 0.7);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .search-header {
+            padding: 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        input[type="text"] {
+            width: 100%;
+            background: transparent;
+            border: none;
+            outline: none;
+            color: #fff;
+            font-size: 1.2rem;
+            font-family: inherit;
+            box-sizing: border-box;
+        }
+        input[type="text"]::placeholder {
+            color: rgba(255, 255, 255, 0.4);
+        }
+        .results-container {
+            max-height: 60vh;
+            overflow-y: auto;
+        }
+        /* Custom scrollbar */
+        .results-container::-webkit-scrollbar {
+            width: 6px;
+        }
+        .results-container::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 3px;
+        }
+        .result-item {
+            padding: 16px 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+        .result-item:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+        .result-item:last-child {
+            border-bottom: none;
+        }
+        .result-title {
+            font-weight: 600;
+            font-size: 1.1rem;
+            margin-bottom: 6px;
+            color: #e0e0e0;
+        }
+        .result-layers {
+            font-size: 0.9rem;
+            color: rgba(255, 255, 255, 0.6);
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+        .layer-badge {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.8rem;
+        }
+        .layer-badge.highlight {
+            background: rgba(80, 150, 255, 0.3);
+            color: #aaccff;
+            border: 1px solid rgba(80, 150, 255, 0.5);
+        }
+        .loading-text {
+            padding: 20px;
+            text-align: center;
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    
+    <div class="ui-container">
+        <div class="search-panel">
+            <div class="search-header">
+                <input type="text" id="searchInput" placeholder="Search objects, layers, colors..." autocomplete="off">
+            </div>
+            <div id="results" class="results-container">
+                <div class="loading-text">Loading index...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // WebGL Setup
+        const canvas = document.getElementById("glcanvas");
+        const gl = canvas.getContext("webgl");
+        let shaderProgram = null;
+        let positionBuffer = null;
+        let positionAttributeLocation = -1;
+        let resolutionUniformLocation = null;
+        let timeUniformLocation = null;
+        let animationFrameId = null;
+
+        const vsSource = `
+            attribute vec2 position;
+            void main() {
+                gl_Position = vec4(position, 0.0, 1.0);
+            }
+        `;
+
+        const fsBoilerplate = `
+            precision highp float;
+            uniform vec2 iResolution;
+            uniform float iTime;
+        `;
+
+        function createShader(gl, type, source) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error("Shader compile error: " + gl.getShaderInfoLog(shader));
+                gl.deleteShader(shader);
+                return null;
+            }
+            return shader;
+        }
+
+        function loadShaderContent(fsContent) {
+            const fullFsSource = fsBoilerplate + "\n" + fsContent;
+            const vertexShader = createShader(gl, gl.VERTEX_SHADER, vsSource);
+            const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fullFsSource);
+
+            if (!fragmentShader) return;
+
+            const newProgram = gl.createProgram();
+            gl.attachShader(newProgram, vertexShader);
+            gl.attachShader(newProgram, fragmentShader);
+            gl.linkProgram(newProgram);
+
+            if (!gl.getProgramParameter(newProgram, gl.LINK_STATUS)) {
+                console.error("Program link error: " + gl.getProgramInfoLog(newProgram));
+                return;
+            }
+
+            if (shaderProgram) {
+                gl.deleteProgram(shaderProgram);
+            }
+
+            shaderProgram = newProgram;
+            positionAttributeLocation = gl.getAttribLocation(shaderProgram, "position");
+            resolutionUniformLocation = gl.getUniformLocation(shaderProgram, "iResolution");
+            timeUniformLocation = gl.getUniformLocation(shaderProgram, "iTime");
+
+            if (!positionBuffer) {
+                positionBuffer = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+                const positions = [
+                    -1.0, -1.0,
+                     1.0, -1.0,
+                    -1.0,  1.0,
+                    -1.0,  1.0,
+                     1.0, -1.0,
+                     1.0,  1.0,
+                ];
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
+            }
+        }
+
+        function render(time) {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+
+            if (shaderProgram) {
+                gl.useProgram(shaderProgram);
+                gl.enableVertexAttribArray(positionAttributeLocation);
+                gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+                gl.vertexAttribPointer(positionAttributeLocation, 2, gl.FLOAT, false, 0, 0);
+
+                gl.uniform2f(resolutionUniformLocation, gl.canvas.width, gl.canvas.height);
+                gl.uniform1f(timeUniformLocation, time * 0.001);
+
+                gl.drawArrays(gl.TRIANGLES, 0, 6);
+            } else {
+                gl.clearColor(0.0, 0.0, 0.0, 1.0);
+                gl.clear(gl.COLOR_BUFFER_BIT);
+            }
+
+            animationFrameId = requestAnimationFrame(render);
+        }
+
+        // Initialize empty render loop
+        if (gl) {
+            animationFrameId = requestAnimationFrame(render);
+        } else {
+            alert("Unable to initialize WebGL.");
+        }
+
+        // Search UI Logic
+        let searchIndex = [];
+        const searchInput = document.getElementById('searchInput');
+        const resultsContainer = document.getElementById('results');
+
+        async function fetchIndex() {
+            try {
+                // cache buster to always get fresh index during development
+                const res = await fetch(`search_index.json?t=${Date.now()}`);
+                if (res.ok) {
+                    searchIndex = await res.json();
+                    renderResults(searchIndex);
+                } else {
+                    resultsContainer.innerHTML = `<div class="loading-text">Error loading search index. Run generate_search_index.py</div>`;
+                }
+            } catch (e) {
+                resultsContainer.innerHTML = `<div class="loading-text">Error: ${e.message}</div>`;
+            }
+        }
+
+        async function loadGlslFile(filename) {
+            try {
+                const res = await fetch(`layered_glsl/${filename}?t=${Date.now()}`);
+                if (res.ok) {
+                    const content = await res.text();
+                    // Optional: Here we could manipulate the content to isolate a specific layer if needed.
+                    // For now, load the whole shader.
+                    loadShaderContent(content);
+                } else {
+                    console.error("Failed to fetch glsl file");
+                }
+            } catch (e) {
+                console.error("Error loading glsl file:", e);
+            }
+        }
+
+        function renderResults(data, query = "") {
+            if (data.length === 0) {
+                resultsContainer.innerHTML = `<div class="loading-text">No matching layers found.</div>`;
+                return;
+            }
+
+            resultsContainer.innerHTML = "";
+            const q = query.toLowerCase();
+
+            data.forEach(item => {
+                const itemDiv = document.createElement('div');
+                itemDiv.className = 'result-item';
+                
+                const titleDiv = document.createElement('div');
+                titleDiv.className = 'result-title';
+                titleDiv.innerText = item.title || item.filename;
+                itemDiv.appendChild(titleDiv);
+
+                const layersDiv = document.createElement('div');
+                layersDiv.className = 'result-layers';
+                
+                let matchesQuery = false;
+
+                item.layers.forEach(layer => {
+                    const badge = document.createElement('span');
+                    badge.className = 'layer-badge';
+                    
+                    const isMatch = q && (layer.name.toLowerCase().includes(q) || layer.keywords.some(kw => kw.toLowerCase().includes(q)));
+                    if (isMatch) {
+                        badge.classList.add('highlight');
+                        matchesQuery = true;
+                    }
+
+                    badge.innerText = layer.name;
+                    layersDiv.appendChild(badge);
+                });
+
+                itemDiv.appendChild(layersDiv);
+                
+                // If there's a query and this item has NO matching layers (e.g. title matched but layers didn't), 
+                // we still show it, but highlight logic is handled.
+                itemDiv.addEventListener('click', () => {
+                    loadGlslFile(item.filename);
+                });
+
+                resultsContainer.appendChild(itemDiv);
+            });
+        }
+
+        searchInput.addEventListener('input', (e) => {
+            const q = e.target.value.toLowerCase().trim();
+            if (!q) {
+                renderResults(searchIndex);
+                return;
+            }
+
+            const filtered = searchIndex.filter(item => {
+                const titleMatch = item.title && item.title.toLowerCase().includes(q);
+                const layerMatch = item.layers.some(layer => {
+                    return layer.name.toLowerCase().includes(q) || layer.keywords.some(kw => kw.toLowerCase().includes(q));
+                });
+                return titleMatch || layerMatch;
+            });
+
+            renderResults(filtered, q);
+        });
+
+        // Init
+        fetchIndex();
+
+    </script>
+</body>
+</html>

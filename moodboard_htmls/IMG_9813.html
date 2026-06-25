@@ -3,166 +3,110 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Shader: IMG_9813</title>
-    <style>body {{ margin: 0; overflow: hidden; background-color: #000; }} canvas {{ display: block; width: 100vw; height: 100vh; }}</style>
+    <title>IMG_9813</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #111; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+        #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-family: sans-serif; }
+    </style>
 </head>
 <body>
+    <div id="loading">Loading Image...</div>
     <canvas id="glcanvas"></canvas>
-    <script id="vertex-shader" type="x-shader/x-vertex">attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }</script>
+    
+    <script id="vertex-shader" type="x-shader/x-vertex">
+        attribute vec2 position;
+        varying vec2 vUv;
+        void main() {
+            vUv = position * 0.5 + 0.5;
+            gl_Position = vec4(position, 0.0, 1.0);
+        }
+    </script>
     <script id="fragment-shader" type="x-shader/x-fragment">
-        precision highp float; uniform vec2 iResolution; uniform float iTime;
+        precision highp float;
+        uniform vec2 iResolution;
+        uniform float iTime;
+        uniform sampler2D tex;
+        varying vec2 vUv;
         
-void main() {
-    vec2 uv = gl_FragCoord.xy / iResolution.xy;
-    vec2 p = uv * 2.0 - 1.0;
-    p.x *= iResolution.x / iResolution.y;
-    
-    vec3 col = vec3(0.0);
-    
-    // --- Background (Brushed Metal) ---
-    // Base color
-    col = vec3(0.65, 0.65, 0.68);
-    
-    // Brushed texture (fine vertical noise) - animated
-    float brush = fract(sin(p.x * 500.0 + iTime * 0.5) * 43758.5453);
-    brush += fract(sin(p.x * 300.0 + p.y * 10.0 + iTime * 0.5) * 43758.5453) * 0.5;
-    col *= 0.9 + 0.1 * brush;
-    
-    // Broad color reflections (horizontal bands) - animated light sweep
-    float lightPulse = sin(iTime * 1.0) * 0.1;
-    // Top light
-    col += vec3(0.2) * smoothstep(0.5 + lightPulse, 1.0 + lightPulse, p.y);
-    // Middle warm band
-    col += vec3(0.3, 0.25, 0.1) * smoothstep(0.4, 0.0, abs(p.y - 0.2 - lightPulse*0.5));
-    // Bottom cool band
-    col -= vec3(0.1, 0.0, 0.1) * smoothstep(0.5, 0.0, abs(p.y + 0.3 - lightPulse));
-    col += vec3(0.0, 0.15, 0.0) * smoothstep(0.4, 0.0, abs(p.y + 0.1 - lightPulse*0.8));
-
-    // --- Main Graphics (Three repeating characters) ---
-    // They are centered around p.y = 0.25
-    if (p.y > -0.1 && p.y < 0.6) {
-        // Repeat on x axis
-        float spacing = 0.6;
-        float x_idx = floor((p.x + spacing * 1.5) / spacing);
-        
-        if (x_idx >= 0.0 && x_idx < 3.0) {
-            vec2 char_p = p;
-            char_p.x = mod(p.x + spacing * 0.5, spacing) - spacing * 0.5;
-            char_p.y -= 0.25;
-            // Bobbing animation for characters
-            char_p.y += sin(iTime * 2.0 + x_idx * 1.5) * 0.02;
+        void main() {
+            vec2 uv = gl_FragCoord.xy / iResolution.xy;
+            // Aspect ratio correction to fit image
+            // We'll keep it simple for now
+            vec2 p = vUv;
             
-            // The character is black
-            float dChar = 1.0;
+            // Subtle wave effect based on time
+            p.y += sin(p.x * 10.0 + iTime) * 0.005;
+            p.x += cos(p.y * 10.0 + iTime * 0.8) * 0.005;
             
-            // 1. Hat (oval)
-            float dHat = length(vec2(char_p.x, (char_p.y - 0.2) * 2.5)) - 0.12;
-            dChar = min(dChar, dHat);
-            
-            // 2. Head/Body (complex curvy shape)
-            // Top curve
-            float dHeadTop = abs(length(vec2(char_p.x, char_p.y - 0.05)) - 0.2) - 0.04;
-            if (char_p.y > 0.05) dChar = min(dChar, dHeadTop);
-            
-            // "Eyes" / loops
-            float dEyeL = length(vec2(char_p.x + 0.08, char_p.y)) - 0.04;
-            float dEyeR = length(vec2(char_p.x - 0.08, char_p.y)) - 0.04;
-            float dEyes = min(dEyeL, dEyeR);
-            // cut out the inside of eyes
-            dEyes = max(dEyes, -(length(vec2(char_p.x + 0.08, char_p.y + 0.01)) - 0.02));
-            dEyes = max(dEyes, -(length(vec2(char_p.x - 0.08, char_p.y + 0.01)) - 0.02));
-            dChar = min(dChar, dEyes);
-            
-            // Bottom swoops
-            float dSwoop = abs(sin(char_p.x * 10.0) * 0.1 - (char_p.y + 0.15)) - 0.04;
-            if (char_p.y < 0.0 && char_p.x > -0.25 && char_p.x < 0.25) {
-                dChar = min(dChar, dSwoop);
-            }
-            
-            // Just roughly fill some areas to make it chunky
-            if (length(vec2(char_p.x, char_p.y + 0.1)) < 0.15 && char_p.y > -0.1) dChar = min(dChar, 0.0);
-            
-            // Masking
-            if (char_p.y < -0.25) dChar = 1.0;
-            
-            if (dChar < 0.0) {
-                col = vec3(0.08); // almost black
-            }
+            vec4 col = texture2D(tex, vec2(p.x, 1.0 - p.y));
+            gl_FragColor = col;
         }
-    }
-
-    // --- Text (OPENING HOURS) ---
-    // Approx at p.y = -0.3
-    if (abs(p.y + 0.3) < 0.05 && abs(p.x) < 0.4) {
-        // Just draw some rough blocks for the text line
-        float textPat = sin(p.x * 200.0);
-        if (textPat > 0.5 && abs(p.y + 0.28) < 0.015) col = vec3(0.1);
-        
-        // 13:00 - 20:00 (bigger)
-        float numPat = sin(p.x * 150.0);
-        if (numPat > 0.3 && abs(p.y + 0.35) < 0.025) {
-            if (abs(p.x) > 0.05) col = vec3(0.1); // the dash in middle is missing or smaller
-        }
-        if (abs(p.x) < 0.02 && abs(p.y + 0.35) < 0.01) col = vec3(0.1); // dash
-    }
-
-    // --- Bottom Text / Logos (@luvluvluv.seoul) ---
-    if (abs(p.y + 0.6) < 0.1 && abs(p.x) < 0.3) {
-        // Text line
-        float textPat = sin(p.x * 250.0);
-        if (textPat > 0.5 && abs(p.y + 0.58) < 0.01) col = vec3(0.1);
-        
-        // Small logos below text
-        if (abs(p.y + 0.65) < 0.04) {
-            float spacing = 0.12;
-            float x_idx = floor((p.x + spacing * 1.5) / spacing);
-            if (x_idx >= 0.0 && x_idx < 3.0) {
-                vec2 lp = p;
-                lp.x = mod(p.x + spacing * 0.5, spacing) - spacing * 0.5;
-                lp.y += 0.65;
-                // Animate logos slightly
-                lp.y += sin(iTime * 3.0 + x_idx * 2.0) * 0.005;
-                
-                // Draw a small black pill/oval
-                float dLogo = length(max(abs(lp) - vec2(0.02, 0.01), 0.0)) - 0.02;
-                if (dLogo < 0.0) col = vec3(0.1);
-                
-                // Cutout in logo
-                if (length(lp) < 0.015) col = vec3(0.65); // rough background color
-            }
-        }
-    }
-
-    // Add vignette
-    col *= 1.0 - 0.2 * length(p);
-
-    
-    gl_FragColor = vec4(col, 1.0);
-}
-
     </script>
     <script>
         function main() {
-            const canvas = document.getElementById("glcanvas"); const gl = canvas.getContext("webgl");
-            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, document.getElementById("vertex-shader").text); gl.compileShader(vs);
-            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, document.getElementById("fragment-shader").text); gl.compileShader(fs);
-            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            const img = new Image();
+            img.onload = () => {
+                document.getElementById('loading').style.display = 'none';
+                initWebGL(img);
+            };
+            img.src = "assets/IMG_9813.jpg";
+        }
+        
+        function initWebGL(image) {
+            const canvas = document.getElementById("glcanvas");
+            const gl = canvas.getContext("webgl");
             
-            if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
-                console.error("Link error: " + gl.getProgramInfoLog(prog));
-                console.error("FS Log: " + gl.getShaderInfoLog(fs));
-            }
-
-            const pos = gl.getAttribLocation(prog, "position"); const res = gl.getUniformLocation(prog, "iResolution"); const time = gl.getUniformLocation(prog, "iTime");
-            const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            const vs = gl.createShader(gl.VERTEX_SHADER);
+            gl.shaderSource(vs, document.getElementById("vertex-shader").text);
+            gl.compileShader(vs);
+            
+            const fs = gl.createShader(gl.FRAGMENT_SHADER);
+            gl.shaderSource(fs, document.getElementById("fragment-shader").text);
+            gl.compileShader(fs);
+            
+            const prog = gl.createProgram();
+            gl.attachShader(prog, vs);
+            gl.attachShader(prog, fs);
+            gl.linkProgram(prog);
+            
+            const pos = gl.getAttribLocation(prog, "position");
+            const res = gl.getUniformLocation(prog, "iResolution");
+            const time = gl.getUniformLocation(prog, "iTime");
+            
+            const buf = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            
+            // Texture setup
+            const tex = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, tex);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+            
             function render(t) {
-                canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
-                gl.useProgram(prog); gl.enableVertexAttribArray(pos); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
-                gl.uniform2f(res, gl.canvas.width, gl.canvas.height); gl.uniform1f(time, t * 0.001);
-                gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(render);
+                canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+                gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                gl.useProgram(prog);
+                gl.enableVertexAttribArray(pos);
+                gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+                gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+                
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, tex);
+                gl.uniform1i(gl.getUniformLocation(prog, "tex"), 0);
+                
+                gl.uniform2f(res, gl.canvas.width, gl.canvas.height);
+                gl.uniform1f(time, t * 0.001);
+                
+                gl.drawArrays(gl.TRIANGLES, 0, 6);
+                requestAnimationFrame(render);
             }
             requestAnimationFrame(render);
-        } window.onload = main;
+        }
+        window.onload = main;
     </script>
 </body>
 </html>
