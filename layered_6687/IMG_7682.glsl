@@ -93,7 +93,8 @@ vec4 layer_Wall(vec2 _uv){
     layer_Wall(p, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_WindowGrille(vec2 _uv){
@@ -107,7 +108,8 @@ vec4 layer_WindowGrille(vec2 _uv){
     layer_WindowGrille(p, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_Railing(vec2 _uv){
@@ -121,7 +123,8 @@ vec4 layer_Railing(vec2 _uv){
     layer_Railing(p, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_Dragon(vec2 _uv){
@@ -135,5 +138,6 @@ vec4 layer_Dragon(vec2 _uv){
     layer_Dragon(p, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }

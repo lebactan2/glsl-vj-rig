@@ -112,7 +112,8 @@ vec4 layer_Ground(vec2 _uv){
     layer_Ground(p, globalNoise, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_PillarBase(vec2 _uv){
@@ -128,7 +129,8 @@ vec4 layer_PillarBase(vec2 _uv){
     layer_PillarBase(p, iTime, globalNoise, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_TopColumn(vec2 _uv){
@@ -144,7 +146,8 @@ vec4 layer_TopColumn(vec2 _uv){
     layer_TopColumn(p, globalNoise, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_DecorativeTile(vec2 _uv){
@@ -160,5 +163,6 @@ vec4 layer_DecorativeTile(vec2 _uv){
     layer_DecorativeTile(p, iTime, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }

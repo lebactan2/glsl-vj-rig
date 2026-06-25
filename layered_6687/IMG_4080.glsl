@@ -80,7 +80,8 @@ vec4 layer_Fabric(vec2 _uv){
     layer_Fabric(p, iTime, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_RedSymbols(vec2 _uv){
@@ -99,7 +100,8 @@ vec4 layer_RedSymbols(vec2 _uv){
     layer_RedSymbols(p, iTime, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_WoodSlats(vec2 _uv){
@@ -118,7 +120,8 @@ vec4 layer_WoodSlats(vec2 _uv){
     layer_WoodSlats(p, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_Ground(vec2 _uv){
@@ -137,5 +140,6 @@ vec4 layer_Ground(vec2 _uv){
     layer_Ground(uv, p, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }

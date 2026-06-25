@@ -76,7 +76,8 @@ vec4 layer_Background(vec2 _uv){
     layer_Background(col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_BluePatternedDress(vec2 _uv){
@@ -96,7 +97,8 @@ vec4 layer_BluePatternedDress(vec2 _uv){
     layer_BluePatternedDress(p, iTime, bob1, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_GreySuit(vec2 _uv){
@@ -116,7 +118,8 @@ vec4 layer_GreySuit(vec2 _uv){
     layer_GreySuit(p, bob2, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_MaroonDress(vec2 _uv){
@@ -136,7 +139,8 @@ vec4 layer_MaroonDress(vec2 _uv){
     layer_MaroonDress(p, iTime, bob3, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_BlackFloralDress(vec2 _uv){
@@ -156,7 +160,8 @@ vec4 layer_BlackFloralDress(vec2 _uv){
     layer_BlackFloralDress(p, iTime, bob4, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_BlackFormalAoDai(vec2 _uv){
@@ -176,5 +181,6 @@ vec4 layer_BlackFormalAoDai(vec2 _uv){
     layer_BlackFormalAoDai(p, iTime, bob5, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }

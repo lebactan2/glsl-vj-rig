@@ -86,7 +86,8 @@ vec4 layer_BackgroundWoodPanels(vec2 _uv){
     layer_BackgroundWoodPanels(p, iTime, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_LeftObjects(vec2 _uv){
@@ -100,7 +101,8 @@ vec4 layer_LeftObjects(vec2 _uv){
     layer_LeftObjects(p, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_BottomSurface(vec2 _uv){
@@ -114,7 +116,8 @@ vec4 layer_BottomSurface(vec2 _uv){
     layer_BottomSurface(p, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_CenterWoodWheelObject(vec2 _uv){
@@ -128,7 +131,8 @@ vec4 layer_CenterWoodWheelObject(vec2 _uv){
     layer_CenterWoodWheelObject(p, iTime, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_Vignette(vec2 _uv){
@@ -142,5 +146,6 @@ vec4 layer_Vignette(vec2 _uv){
     layer_Vignette(p, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }

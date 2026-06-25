@@ -241,3 +241,35 @@ vec4 layer_Flowers(vec2 uv) {
     }
     return vec4(0.0);
 }
+
+vec4 layer_Scene(vec2 _uv){
+
+    vec2 uv = gl_FragCoord.xy / iResolution.xy;
+
+    vec3 col = vec3(0.0);
+    
+    vec4 l1 = layer_Background(uv);
+    col = mix(col, l1.rgb, l1.a);
+    
+    vec4 l2 = layer_WoodStripes(uv);
+    col = mix(col, l2.rgb, l2.a);
+    
+    vec4 l3 = layer_Watermark(uv);
+    col = mix(col, l3.rgb, l3.a);
+    
+    vec4 l4 = layer_Diamonds(uv);
+    col = mix(col, l4.rgb, l4.a);
+    
+    vec4 l5 = layer_Shelf(uv);
+    col = mix(col, l5.rgb, l5.a);
+    
+    vec4 l6 = layer_Vases(uv);
+    col = mix(col, l6.rgb, l6.a);
+    
+    vec4 l7 = layer_Branches(uv);
+    col = mix(col, l7.rgb, l7.a);
+    
+    vec4 l8 = layer_Flowers(uv);
+    col = mix(col, l8.rgb, l8.a);
+  return vec4(clamp(vec3(col),0.0,1.0), 1.0);
+}

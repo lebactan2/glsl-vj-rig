@@ -97,7 +97,8 @@ vec4 layer_BackgroundWall(vec2 _uv){
     layer_BackgroundWall(p, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_BottomStone(vec2 _uv){
@@ -111,7 +112,8 @@ vec4 layer_BottomStone(vec2 _uv){
     layer_BottomStone(p, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_TopTrim(vec2 _uv){
@@ -125,7 +127,8 @@ vec4 layer_TopTrim(vec2 _uv){
     layer_TopTrim(p, iTime, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_StrepText(vec2 _uv){
@@ -139,7 +142,8 @@ vec4 layer_StrepText(vec2 _uv){
     layer_StrepText(p, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_CartoonCharacter(vec2 _uv){
@@ -153,5 +157,6 @@ vec4 layer_CartoonCharacter(vec2 _uv){
     layer_CartoonCharacter(p, iTime, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }

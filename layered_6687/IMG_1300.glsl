@@ -88,7 +88,8 @@ vec4 layer_Background(vec2 _uv){
     
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_VestBody(vec2 _uv){
@@ -106,7 +107,8 @@ vec4 layer_VestBody(vec2 _uv){
     layer_VestBody(p, vestBase, neck, iTime, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_Pouches(vec2 _uv){
@@ -124,7 +126,8 @@ vec4 layer_Pouches(vec2 _uv){
     layer_Pouches(p, vestBase, neck, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_ArmAttachments(vec2 _uv){
@@ -142,7 +145,8 @@ vec4 layer_ArmAttachments(vec2 _uv){
     layer_ArmAttachments(p, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_Collar(vec2 _uv){
@@ -160,7 +164,8 @@ vec4 layer_Collar(vec2 _uv){
     layer_Collar(p, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_Shadows(vec2 _uv){
@@ -178,5 +183,6 @@ vec4 layer_Shadows(vec2 _uv){
     layer_Shadows(p, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }

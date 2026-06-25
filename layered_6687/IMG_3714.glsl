@@ -83,7 +83,8 @@ vec4 layer_Asphalt(vec2 _uv){
     layer_Asphalt(scrollP, iTime, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_ArrowShape(vec2 _uv){
@@ -101,7 +102,8 @@ vec4 layer_ArrowShape(vec2 _uv){
     layer_ArrowShape(scrollP, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_FeetClothes(vec2 _uv){
@@ -119,5 +121,6 @@ vec4 layer_FeetClothes(vec2 _uv){
     layer_FeetClothes(p, scrollSpeed, iTime, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }

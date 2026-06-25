@@ -115,7 +115,8 @@ vec4 layer_StorefrontStructure(vec2 _uv){
     layer_StorefrontStructure(col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_LeftDisplayPanel(vec2 _uv){
@@ -129,7 +130,8 @@ vec4 layer_LeftDisplayPanel(vec2 _uv){
     layer_LeftDisplayPanel(p, iTime, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_UpperDisplayCase(vec2 _uv){
@@ -143,7 +145,8 @@ vec4 layer_UpperDisplayCase(vec2 _uv){
     layer_UpperDisplayCase(p, iTime, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_LowerDisplayCase(vec2 _uv){
@@ -157,7 +160,8 @@ vec4 layer_LowerDisplayCase(vec2 _uv){
     layer_LowerDisplayCase(p, iTime, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_CurvyWoodenDividers(vec2 _uv){
@@ -171,7 +175,8 @@ vec4 layer_CurvyWoodenDividers(vec2 _uv){
     layer_CurvyWoodenDividers(p, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_LowerItems(vec2 _uv){
@@ -185,5 +190,6 @@ vec4 layer_LowerItems(vec2 _uv){
     layer_LowerItems(p, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }

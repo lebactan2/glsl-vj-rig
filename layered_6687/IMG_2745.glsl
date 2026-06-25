@@ -98,7 +98,8 @@ vec4 layer_Background(vec2 _uv){
     
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_LanternWire(vec2 _uv){
@@ -116,7 +117,8 @@ vec4 layer_LanternWire(vec2 _uv){
     layer_LanternWire(p, lanternCenter, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_Lantern(vec2 _uv){
@@ -134,7 +136,8 @@ vec4 layer_Lantern(vec2 _uv){
     layer_Lantern(p, lanternCenter, iTime, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_Tassel(vec2 _uv){
@@ -152,5 +155,6 @@ vec4 layer_Tassel(vec2 _uv){
     layer_Tassel(p, lanternCenter, iTime, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }

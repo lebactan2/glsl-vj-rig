@@ -85,7 +85,8 @@ vec4 layer_MosaicWall(vec2 _uv){
     layer_MosaicWall(p, iTime, frameOuter, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_GoldFrame(vec2 _uv){
@@ -104,7 +105,8 @@ vec4 layer_GoldFrame(vec2 _uv){
     layer_GoldFrame(p, iTime, frameOuter, frameInner, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_Padding(vec2 _uv){
@@ -123,7 +125,8 @@ vec4 layer_Padding(vec2 _uv){
     layer_Padding(p, iTime, frameInner, centerHoleOuter, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_WoodFrame(vec2 _uv){
@@ -142,7 +145,8 @@ vec4 layer_WoodFrame(vec2 _uv){
     layer_WoodFrame(p, frameInner, centerHoleOuter, centerHoleInner, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_InsideWall(vec2 _uv){
@@ -161,5 +165,6 @@ vec4 layer_InsideWall(vec2 _uv){
     layer_InsideWall(p, iTime, frameInner, centerHoleOuter, centerHoleInner, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }

@@ -172,7 +172,8 @@ vec4 layer_StoreInterior(vec2 _uv){
     layer_StoreInterior(p, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_CheckeredFloor(vec2 _uv){
@@ -186,7 +187,8 @@ vec4 layer_CheckeredFloor(vec2 _uv){
     layer_CheckeredFloor(p, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_MainSubjectTorso(vec2 _uv){
@@ -200,7 +202,8 @@ vec4 layer_MainSubjectTorso(vec2 _uv){
     layer_MainSubjectTorso(p, iTime, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_SkinArmsNeck(vec2 _uv){
@@ -214,7 +217,8 @@ vec4 layer_SkinArmsNeck(vec2 _uv){
     layer_SkinArmsNeck(p, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_Shorts(vec2 _uv){
@@ -228,7 +232,8 @@ vec4 layer_Shorts(vec2 _uv){
     layer_Shorts(p, iTime, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_BareLegs(vec2 _uv){
@@ -242,7 +247,8 @@ vec4 layer_BareLegs(vec2 _uv){
     layer_BareLegs(p, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_Head(vec2 _uv){
@@ -256,7 +262,8 @@ vec4 layer_Head(vec2 _uv){
     layer_Head(p, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_Phone(vec2 _uv){
@@ -270,5 +277,6 @@ vec4 layer_Phone(vec2 _uv){
     layer_Phone(p, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }

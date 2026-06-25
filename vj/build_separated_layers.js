@@ -21,19 +21,23 @@ function mainBody(src) {
 }
 // transform the file's main body to render only `fn`, sentinel alpha
 function objBody(body, fn) {
-  const out = []; let colInit = false;
+  const out = []; let colInit = false, colType = "vec3";
   for (const line of body.split("\n")) {
     const t = line.trim();
     if (/gl_FragColor/.test(t)) continue;
     if (/\blayer_\w+\s*\(/.test(t) && !new RegExp("\\b" + fn + "\\s*\\(").test(t)) continue; // drop other objects
-    const m = line.match(/^(\s*)vec3\s+col\s*=\s*[^;]*;/);
-    if (m && !colInit) { out.push(m[1] + "vec3 col = vec3(-1.0);"); colInit = true; continue; }
-    if (/^\s*col\s*=\s*vec3\(\s*[-0-9.,\s]*\)\s*;/.test(t)) continue;                          // drop bg fills
+    const m = line.match(/^(\s*)(vec[234])\s+col\s*(=[^;]*)?;/);                              // col decl (any type, init or not)
+    if (m && !colInit) { colType = m[2]; out.push(m[1] + colType + " col = " + colType + "(-1.0);"); colInit = true; continue; }
+    if (/^\s*col\s*=\s*vec[34]\(\s*[-0-9.,\s]*\)\s*;/.test(t)) continue;                       // drop bg fills
     out.push(line);
   }
   let s = out.join("\n");
   if (!colInit) s = "  vec3 col = vec3(-1.0);\n" + s;
   return s;
+}
+// raymarch / value-returning layers can't be region-split -> emit whole scene as one layer
+function sceneBody(body) {
+  return body.replace(/gl_FragColor\s*=\s*[^;]*;/, "").trimEnd();
 }
 
 if (fs.existsSync(OUT)) fs.rmSync(OUT, { recursive: true, force: true });
@@ -51,15 +55,23 @@ for (const f of fs.readdirSync(SRC).filter((x) => x.endsWith(".glsl"))) {
   const helpers = pre.replace(/\/\*\s*@layer_metadata[\s\S]*?\*\//, "").trim();   // helpers + void layer fns
   const names = [];
   let combined = helpers + "\n";
-  meta.layers.forEach((L, i) => {
-    const fn = fns[i]; if (!fn) return;
-    const nm = L.name.replace(/\s+/g, "");                                        // matches html: name w/o spaces
-    combined += `\nvec4 layer_${nm}(vec2 _uv){\n${objBody(body, fn)}\n  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));\n}\n`;
-    names.push(nm); nObj++;
-  });
+  const RET = "  vec3 _rgb = vec3(col);\n  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));";
+  const nonRegion = /=\s*layer_\w+\s*\(/.test(body);                              // layer used as a value -> SDF/raymarch
+  if (nonRegion) {
+    combined += `\nvec4 layer_Scene(vec2 _uv){\n${sceneBody(body)}\n  return vec4(clamp(vec3(col),0.0,1.0), 1.0);\n}\n`;
+    names.push("Scene"); nObj++;
+    LAYER_METADATA[id] = { title: meta.title || id, layers: [{ name: "Scene", keywords: [...new Set(meta.layers.flatMap(l => l.keywords || []))] }] };
+  } else {
+    meta.layers.forEach((L, i) => {
+      const fn = fns[i]; if (!fn) return;
+      const nm = L.name.replace(/\s+/g, "");                                      // matches html: name w/o spaces
+      combined += `\nvec4 layer_${nm}(vec2 _uv){\n${objBody(body, fn)}\n${RET}\n}\n`;
+      names.push(nm); nObj++;
+    });
+    LAYER_METADATA[id] = { title: meta.title || id, layers: meta.layers };
+  }
   FILE_GLOBALS[id] = combined;
   LAYER_SOURCES[id] = names;
-  LAYER_METADATA[id] = { title: meta.title || id, layers: meta.layers };
   fs.writeFileSync(path.join(OUT, id + ".glsl"), combined);
 }
 const bundle =

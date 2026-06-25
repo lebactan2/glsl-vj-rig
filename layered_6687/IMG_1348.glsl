@@ -122,7 +122,8 @@ vec4 layer_BackgroundWalls(vec2 _uv){
     layer_BackgroundWalls(col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_GodRays(vec2 _uv){
@@ -136,7 +137,8 @@ vec4 layer_GodRays(vec2 _uv){
     layer_GodRays(p, iTime, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_Pillar(vec2 _uv){
@@ -150,7 +152,8 @@ vec4 layer_Pillar(vec2 _uv){
     layer_Pillar(p, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_Headpiece(vec2 _uv){
@@ -164,7 +167,8 @@ vec4 layer_Headpiece(vec2 _uv){
     layer_Headpiece(p, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_VeilAndEmblem(vec2 _uv){
@@ -178,5 +182,6 @@ vec4 layer_VeilAndEmblem(vec2 _uv){
     layer_VeilAndEmblem(p, iTime, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }

@@ -70,7 +70,8 @@ vec4 layer_Road(vec2 _uv){
     layer_Road(p, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_MotorcycleParts(vec2 _uv){
@@ -84,7 +85,8 @@ vec4 layer_MotorcycleParts(vec2 _uv){
     layer_MotorcycleParts(p, iTime, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_TrousersLeg(vec2 _uv){
@@ -98,7 +100,8 @@ vec4 layer_TrousersLeg(vec2 _uv){
     layer_TrousersLeg(p, iTime, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_FootAndShoe(vec2 _uv){
@@ -112,5 +115,6 @@ vec4 layer_FootAndShoe(vec2 _uv){
     layer_FootAndShoe(p, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }

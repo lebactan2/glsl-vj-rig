@@ -123,7 +123,8 @@ vec4 layer_Panel(vec2 _uv){
     layer_Panel(p, iTime, col);
     
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_TornPoster(vec2 _uv){
@@ -137,7 +138,8 @@ vec4 layer_TornPoster(vec2 _uv){
     layer_TornPoster(p, iTime, col);
     
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_TopCenterPoster(vec2 _uv){
@@ -151,7 +153,8 @@ vec4 layer_TopCenterPoster(vec2 _uv){
     layer_TopCenterPoster(p, iTime, col);
     
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_Stickers(vec2 _uv){
@@ -165,5 +168,6 @@ vec4 layer_Stickers(vec2 _uv){
     layer_Stickers(p, col);
     
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }

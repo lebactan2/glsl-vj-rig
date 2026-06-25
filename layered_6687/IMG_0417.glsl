@@ -47,7 +47,7 @@ void layer_Vignette(in vec2 p, inout vec3 col) {
     col *= 1.0 - length(p)*0.15;
 }
 
-vec4 layer_Mapping(vec2 _uv){
+vec4 layer_Scene(vec2 _uv){
 
     vec2 uv = gl_FragCoord.xy / iResolution.xy;
     vec2 p = uv * 2.0 - 1.0;
@@ -59,65 +59,16 @@ vec4 layer_Mapping(vec2 _uv){
     float d = 0.0;
     for(int i=0; i<64; i++) {
         vec3 p3 = ro + rd * d;
+        float dist = layer_Mapping(p3);
         if (dist < 0.001) break;
         d += dist;
         if (d > 10.0) break;
     }
     
-    vec3 col = vec3(-1.0);
+    vec3 col = vec3(0.0);
     
     layer_Background(p, col);
-    
-
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
-}
-
-vec4 layer_Background(vec2 _uv){
-
-    vec2 uv = gl_FragCoord.xy / iResolution.xy;
-    vec2 p = uv * 2.0 - 1.0;
-    p.x *= iResolution.x / iResolution.y;
-
-    vec3 ro = vec3(0.0, 1.2, -2.5);
-    vec3 rd = normalize(vec3(p.x, p.y - 0.4, 1.0));
-    
-    float d = 0.0;
-    for(int i=0; i<64; i++) {
-        vec3 p3 = ro + rd * d;
-        if (dist < 0.001) break;
-        d += dist;
-        if (d > 10.0) break;
-    }
-    
-    vec3 col = vec3(-1.0);
-    
     layer_MaterialsAndLighting(ro, rd, d, iTime, col);
-    
-
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
-}
-
-vec4 layer_Lighting(vec2 _uv){
-
-    vec2 uv = gl_FragCoord.xy / iResolution.xy;
-    vec2 p = uv * 2.0 - 1.0;
-    p.x *= iResolution.x / iResolution.y;
-
-    vec3 ro = vec3(0.0, 1.2, -2.5);
-    vec3 rd = normalize(vec3(p.x, p.y - 0.4, 1.0));
-    
-    float d = 0.0;
-    for(int i=0; i<64; i++) {
-        vec3 p3 = ro + rd * d;
-        if (dist < 0.001) break;
-        d += dist;
-        if (d > 10.0) break;
-    }
-    
-    vec3 col = vec3(-1.0);
-    
     layer_Vignette(p, col);
-    
-
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  return vec4(clamp(vec3(col),0.0,1.0), 1.0);
 }

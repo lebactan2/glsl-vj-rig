@@ -80,7 +80,6 @@ void layer_GrooveAndBevel(in vec2 tileUV, inout vec3 col) {
 }
 
 vec4 layer_DarkWood(vec2 _uv){
-  vec3 col = vec3(-1.0);
 
     vec2 uv = gl_FragCoord.xy / iResolution.xy;
     float aspect = iResolution.x / iResolution.y;
@@ -95,7 +94,7 @@ vec4 layer_DarkWood(vec2 _uv){
     bool isDark = mod(tileID.x + tileID.y, 2.0) == 0.0;
     vec2 tileOffset = vec2(hash(tileID).x * 100.0, hash(tileID).y * 100.0);
     
-    vec3 col;
+    vec3 col = vec3(-1.0);
 
     if (isDark) {
         layer_DarkWood(p, tileOffset, col);
@@ -104,11 +103,11 @@ vec4 layer_DarkWood(vec2 _uv){
 
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_LightWood(vec2 _uv){
-  vec3 col = vec3(-1.0);
 
     vec2 uv = gl_FragCoord.xy / iResolution.xy;
     float aspect = iResolution.x / iResolution.y;
@@ -123,7 +122,7 @@ vec4 layer_LightWood(vec2 _uv){
     bool isDark = mod(tileID.x + tileID.y, 2.0) == 0.0;
     vec2 tileOffset = vec2(hash(tileID).x * 100.0, hash(tileID).y * 100.0);
     
-    vec3 col;
+    vec3 col = vec3(-1.0);
 
     if (isDark) {
     } else {
@@ -132,11 +131,11 @@ vec4 layer_LightWood(vec2 _uv){
 
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_GrooveandBevel(vec2 _uv){
-  vec3 col = vec3(-1.0);
 
     vec2 uv = gl_FragCoord.xy / iResolution.xy;
     float aspect = iResolution.x / iResolution.y;
@@ -151,7 +150,7 @@ vec4 layer_GrooveandBevel(vec2 _uv){
     bool isDark = mod(tileID.x + tileID.y, 2.0) == 0.0;
     vec2 tileOffset = vec2(hash(tileID).x * 100.0, hash(tileID).y * 100.0);
     
-    vec3 col;
+    vec3 col = vec3(-1.0);
 
     if (isDark) {
     } else {
@@ -160,5 +159,6 @@ vec4 layer_GrooveandBevel(vec2 _uv){
     layer_GrooveAndBevel(tileUV, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }

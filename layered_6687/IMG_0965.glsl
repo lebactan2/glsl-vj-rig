@@ -58,7 +58,8 @@ vec4 layer_BlueTiles(vec2 _uv){
     
     
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_Bird(vec2 _uv){
@@ -74,7 +75,8 @@ vec4 layer_Bird(vec2 _uv){
     layer_Bird(p, parallax, col);
     
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_Flowers(vec2 _uv){
@@ -90,7 +92,8 @@ vec4 layer_Flowers(vec2 _uv){
     layer_Flowers(p, parallax, col);
     
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_SmallCloud(vec2 _uv){
@@ -106,5 +109,6 @@ vec4 layer_SmallCloud(vec2 _uv){
     layer_SmallCloud(p, col);
     
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }

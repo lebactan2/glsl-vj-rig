@@ -97,7 +97,8 @@ vec4 layer_Background(vec2 _uv){
     layer_Background(p, iTime, col, noise);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_CarvedSymbol(vec2 _uv){
@@ -112,7 +113,8 @@ vec4 layer_CarvedSymbol(vec2 _uv){
     layer_CarvedSymbol(p, iTime, noise, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_TopLouvers(vec2 _uv){
@@ -127,7 +129,8 @@ vec4 layer_TopLouvers(vec2 _uv){
     layer_TopLouvers(p, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_BottomSurface(vec2 _uv){
@@ -142,5 +145,6 @@ vec4 layer_BottomSurface(vec2 _uv){
     layer_BottomSurface(p, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }

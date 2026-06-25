@@ -75,7 +75,8 @@ vec4 layer_Background(vec2 _uv){
     
     
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_PersonPants(vec2 _uv){
@@ -93,7 +94,8 @@ vec4 layer_PersonPants(vec2 _uv){
     
     
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_PersonShirt(vec2 _uv){
@@ -111,7 +113,8 @@ vec4 layer_PersonShirt(vec2 _uv){
     
     
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_PersonHead(vec2 _uv){
@@ -129,7 +132,8 @@ vec4 layer_PersonHead(vec2 _uv){
     
     
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_Motorcycle(vec2 _uv){
@@ -147,7 +151,8 @@ vec4 layer_Motorcycle(vec2 _uv){
     layer_Motorcycle(p, col);
     
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_GreenBasket(vec2 _uv){
@@ -165,5 +170,6 @@ vec4 layer_GreenBasket(vec2 _uv){
     layer_GreenBasket(p, col);
     
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }

@@ -111,3 +111,23 @@ vec4 layer_WallLighting(vec2 uv) {
     }
     return vec4(0.0);
 }
+
+vec4 layer_Scene(vec2 _uv){
+
+    vec2 uv = gl_FragCoord.xy / iResolution.xy;
+    
+    vec3 col = vec3(0.0);
+    
+    vec4 l_StoneBase = layer_StoneBase(uv);
+    col = mix(col, l_StoneBase.rgb, l_StoneBase.a);
+    
+    vec4 l_BreezeBlocks = layer_BreezeBlocks(uv);
+    col = mix(col, l_BreezeBlocks.rgb, l_BreezeBlocks.a);
+    
+    vec4 l_HolesBackground = layer_HolesBackground(uv);
+    col = mix(col, l_HolesBackground.rgb, l_HolesBackground.a);
+    
+    vec4 l_WallLighting = layer_WallLighting(uv);
+    col = mix(col, l_WallLighting.rgb, l_WallLighting.a);
+  return vec4(clamp(vec3(col),0.0,1.0), 1.0);
+}

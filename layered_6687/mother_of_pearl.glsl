@@ -115,14 +115,13 @@ void layer_FacialFeatures(in vec2 p, inout vec4 col) {
 }
 
 vec4 layer_Background(vec2 _uv){
-  vec3 col = vec3(-1.0);
 
     vec2 uv = gl_FragCoord.xy / iResolution.xy;
     vec2 p = uv * 2.0 - 1.0;
     p.x *= iResolution.x / iResolution.y;
     p *= 1.1;
     
-    vec4 col = vec4(0.0);
+    vec4 col = vec4(-1.0);
     layer_Background(uv, col);
     
     vec3 cYel = vec3(0.85, 0.85, 0.2);
@@ -143,18 +142,18 @@ vec4 layer_Background(vec2 _uv){
 
     
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_Halo(vec2 _uv){
-  vec3 col = vec3(-1.0);
 
     vec2 uv = gl_FragCoord.xy / iResolution.xy;
     vec2 p = uv * 2.0 - 1.0;
     p.x *= iResolution.x / iResolution.y;
     p *= 1.1;
     
-    vec4 col = vec4(0.0);
+    vec4 col = vec4(-1.0);
     
     vec3 cYel = vec3(0.85, 0.85, 0.2);
     vec3 cRed = vec3(0.8, 0.15, 0.15);
@@ -175,18 +174,18 @@ vec4 layer_Halo(vec2 _uv){
     layer_Halo(p, cYel, col);
     
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_SideFigures(vec2 _uv){
-  vec3 col = vec3(-1.0);
 
     vec2 uv = gl_FragCoord.xy / iResolution.xy;
     vec2 p = uv * 2.0 - 1.0;
     p.x *= iResolution.x / iResolution.y;
     p *= 1.1;
     
-    vec4 col = vec4(0.0);
+    vec4 col = vec4(-1.0);
     
     vec3 cYel = vec3(0.85, 0.85, 0.2);
     vec3 cRed = vec3(0.8, 0.15, 0.15);
@@ -207,18 +206,18 @@ vec4 layer_SideFigures(vec2 _uv){
     layer_SideFigures(p, shellWht, cRed, cSkin, col);
     
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_MainFigure(vec2 _uv){
-  vec3 col = vec3(-1.0);
 
     vec2 uv = gl_FragCoord.xy / iResolution.xy;
     vec2 p = uv * 2.0 - 1.0;
     p.x *= iResolution.x / iResolution.y;
     p *= 1.1;
     
-    vec4 col = vec4(0.0);
+    vec4 col = vec4(-1.0);
     
     vec3 cYel = vec3(0.85, 0.85, 0.2);
     vec3 cRed = vec3(0.8, 0.15, 0.15);
@@ -239,18 +238,18 @@ vec4 layer_MainFigure(vec2 _uv){
     layer_MainFigure(p, shellRed, shellGrn, shellWht, cRed, cYel, cSkin, col);
     
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_FacialFeatures(vec2 _uv){
-  vec3 col = vec3(-1.0);
 
     vec2 uv = gl_FragCoord.xy / iResolution.xy;
     vec2 p = uv * 2.0 - 1.0;
     p.x *= iResolution.x / iResolution.y;
     p *= 1.1;
     
-    vec4 col = vec4(0.0);
+    vec4 col = vec4(-1.0);
     
     vec3 cYel = vec3(0.85, 0.85, 0.2);
     vec3 cRed = vec3(0.8, 0.15, 0.15);
@@ -271,5 +270,6 @@ vec4 layer_FacialFeatures(vec2 _uv){
     layer_FacialFeatures(p, col);
     
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }

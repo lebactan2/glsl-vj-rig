@@ -84,3 +84,63 @@ float layer_Lighting(vec3 pos, vec3 n) {
     }
     return amb + diff * sh;
 }
+
+vec4 layer_Scene(vec2 _uv){
+
+    vec2 uv = gl_FragCoord.xy / iResolution.xy;
+    vec2 p = uv * 2.0 - 1.0;
+    p.x *= iResolution.x / iResolution.y;
+    
+    vec3 ro = vec3(1.5, 1.0, 1.5);
+    vec3 target = vec3(0.0, 0.0, 0.0);
+    vec3 cw = normalize(target - ro);
+    vec3 cu = normalize(cross(cw, vec3(0.0, 1.0, 0.0)));
+    vec3 cv = cross(cu, cw);
+    vec3 rd = normalize(p.x * cu + p.y * cv + 1.5 * cw);
+    
+    float d = 0.0, t = 0.0;
+    vec3 pos;
+    for(int i = 0; i < 100; i++) {
+        pos = ro + rd * t;
+        d = layer_Mapping(pos);
+        if(d < 0.001 || t > 20.0) break;
+        t += d;
+    }
+    
+    vec3 col = vec3(0.0);
+    if(t < 20.0) {
+        vec2 e = vec2(0.001, 0.0);
+        vec3 n = normalize(vec3(
+            layer_Mapping(pos + e.xyy) - layer_Mapping(pos - e.xyy),
+            layer_Mapping(pos + e.yxy) - layer_Mapping(pos - e.yxy),
+            layer_Mapping(pos + e.yyx) - layer_Mapping(pos - e.yyx)
+        ));
+        
+        vec3 matCol = vec3(0.5);
+        
+        float isBox = step(sdBox(pos - vec3(-1.0, 0.0, -1.0), vec3(1.2, 0.8, 1.2)), 0.01);
+        float isTop = step(sdBox(pos - vec3(-1.0, 0.85, -1.0), vec3(1.25, 0.05, 1.25)), 0.01);
+        float isPillar = step(sdBox(pos - vec3(-1.0, 1.5, -1.0), vec3(1.0, 0.6, 1.0)), 0.01);
+        float isGround = step(abs(pos.y + 0.8), 0.01);
+        
+        if (isBox > 0.5) {
+            vec2 tileUV = vec2(0.0);
+            if (abs(n.z) > 0.5) tileUV = pos.xy;
+            else if (abs(n.x) > 0.5) tileUV = vec2(pos.z, pos.y);
+            else tileUV = pos.xz;
+            matCol = layer_TileMaterial(tileUV);
+        } else if (isTop > 0.5 || isPillar > 0.5) {
+            matCol = layer_PillarMaterial(pos);
+        } else if (isGround > 0.5) {
+            matCol = layer_GroundMaterial(pos);
+        }
+        
+        float lightIntensity = layer_Lighting(pos, n);
+        col = matCol * lightIntensity;
+    } else {
+        col = vec3(0.05);
+    }
+    
+    col = pow(col, vec3(0.4545));
+  return vec4(clamp(vec3(col),0.0,1.0), 1.0);
+}

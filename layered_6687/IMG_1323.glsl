@@ -90,7 +90,8 @@ vec4 layer_SignBox(vec2 _uv){
     layer_SignBox(tp, signBoxTilted, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_TextALOC(vec2 _uv){
@@ -108,7 +109,8 @@ vec4 layer_TextALOC(vec2 _uv){
     layer_TextALoc(tp, signBoxTilted, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_TextCHAOLONG(vec2 _uv){
@@ -126,7 +128,8 @@ vec4 layer_TextCHAOLONG(vec2 _uv){
     layer_TextChaoLong(tp, signBoxTilted, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_TreeBark(vec2 _uv){
@@ -144,7 +147,8 @@ vec4 layer_TreeBark(vec2 _uv){
     layer_TreeBark(p, signBoxTilted, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_NeonReflections(vec2 _uv){
@@ -162,5 +166,6 @@ vec4 layer_NeonReflections(vec2 _uv){
     layer_NeonReflections(p, signBoxTilted, iTime, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }

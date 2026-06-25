@@ -52,7 +52,8 @@ vec4 layer_SurroundingWall(vec2 _uv){
     layer_SurroundingWall(col);
     
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_BlueTiles(vec2 _uv){
@@ -66,7 +67,8 @@ vec4 layer_BlueTiles(vec2 _uv){
     layer_BlueTiles(p, col);
     
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_ScissorGate(vec2 _uv){
@@ -80,7 +82,8 @@ vec4 layer_ScissorGate(vec2 _uv){
     layer_ScissorGate(p, iTime, col);
     
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_RightPillar(vec2 _uv){
@@ -94,5 +97,6 @@ vec4 layer_RightPillar(vec2 _uv){
     layer_RightPillar(p, col);
     
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }

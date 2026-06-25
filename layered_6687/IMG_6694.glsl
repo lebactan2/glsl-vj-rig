@@ -122,7 +122,8 @@ vec4 layer_Shelves(vec2 _uv){
     bool isFigure;
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_SideObject(vec2 _uv){
@@ -138,7 +139,8 @@ vec4 layer_SideObject(vec2 _uv){
     bool isFigure;
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_Figure(vec2 _uv){
@@ -154,7 +156,8 @@ vec4 layer_Figure(vec2 _uv){
     layer_Figure(p, iTime, col, isFigure);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_Shadow(vec2 _uv){
@@ -170,5 +173,6 @@ vec4 layer_Shadow(vec2 _uv){
     layer_Shadow(p, isFigure, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }

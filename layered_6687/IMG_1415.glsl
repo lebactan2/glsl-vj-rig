@@ -184,7 +184,8 @@ vec4 layer_RunwayBackground(vec2 _uv){
     
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_ModelSharedFeatures(vec2 _uv){
@@ -202,7 +203,8 @@ vec4 layer_ModelSharedFeatures(vec2 _uv){
     layer_ModelSharedFeatures(localP, modelId, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_ModelLeft(vec2 _uv){
@@ -220,7 +222,8 @@ vec4 layer_ModelLeft(vec2 _uv){
     layer_ModelLeft(localP, modelId, iTime, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_ModelCenter(vec2 _uv){
@@ -238,7 +241,8 @@ vec4 layer_ModelCenter(vec2 _uv){
     layer_ModelCenter(localP, modelId, iTime, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
 
 vec4 layer_ModelRight(vec2 _uv){
@@ -256,5 +260,6 @@ vec4 layer_ModelRight(vec2 _uv){
     layer_ModelRight(localP, modelId, iTime, col);
 
 
-  return vec4(clamp(col,0.0,1.0), step(0.0, max(col.r, max(col.g, col.b))));
+  vec3 _rgb = vec3(col);
+  return vec4(clamp(_rgb,0.0,1.0), step(0.0, max(_rgb.r, max(_rgb.g, _rgb.b))));
 }
