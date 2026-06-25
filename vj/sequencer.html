@@ -25,6 +25,10 @@
   .lane select.nlen { background:#1c1c22; color:#ddd; border:1px solid #3a3a44; border-radius:4px; padding:2px; font-size:10px; }
   .lane .lsel { width:120px; background:#1c1c22; color:#ddd; border:1px solid #3a3a44; border-radius:4px; padding:2px; font-size:10px; }
   .lane .mv { width:16px; padding:0; background:#1c1c22; color:#9aa; border:1px solid #3a3a44; border-radius:3px; cursor:pointer; font-size:9px; line-height:14px; }
+  .lane .grip { cursor:grab; color:#666; padding:0 3px; user-select:none; font-size:11px; }
+  .lane.dragover { outline:1px dashed #8cf; outline-offset:1px; }
+  .lane select.nmsel { width:118px; background:#1c1c22; color:#cdd; border:1px solid #3a3a44; border-radius:4px; padding:2px; font-size:10px; }
+  .lane input.env { width:54px; vertical-align:middle; }
   .lane .eye { width:20px; }
   .lane .eye.off { color:#555; background:#141418; }
   .transport select { background:#1c1c22; color:#ddd; border:1px solid #3a3a44; border-radius:5px; padding:4px; }
@@ -235,19 +239,16 @@ void main(){
         }
     }
 
-    // SEPARATED LAYERS — chosen layer always shows its shape; on a beat hit the segment scales up + highlights
+    // SEPARATED LAYERS — placed natively, alpha-over ON TOP (transparent elsewhere = underlayers show).
+    // No geometry scaling; the hit segment only brightens.
     for (int c = 0; c < 8; c++){
         if (float(c) >= uChannels) break;
         if (uHasLayer[c] < 0.5 || uVis[c] < 0.5) continue;
         float cc = mod(float(c), 4.0), rr = floor(float(c) / 4.0);
-        float segN = clamp(uv.x, 0.0, 0.999);
-        float seg = floor(segN * uSteps);
+        float seg = floor(clamp(uv.x, 0.0, 0.999) * uSteps);
         float p = pulseAt(float(c), seg);
-        float segC = (seg + 0.5) / uSteps;
-        float sx = (segN - segC) / (1.0 + p * 0.6) + segC;          // hit segment bulges ~160%
-        vec4 lc = texture2D(uAtlas, vec2((sx + cc) / 4.0, (uv.y + rr) / 2.0));
-        if (lc.a < 0.5) continue;                                   // keep the layer's shape
-        col = lc.rgb * (1.0 + p * 0.9);                             // always visible; brighten on hit
+        vec4 lc = texture2D(uAtlas, vec2((uv.x + cc) / 4.0, (uv.y + rr) / 2.0));
+        col = mix(col, lc.rgb * (1.0 + p * 0.9), lc.a);            // on top; hit segment brightens, no scaling
     }
 
     col = satb(col, 1.22, 1.0);
@@ -373,6 +374,8 @@ const FULL_NAMES = INSTRUMENTS.map(i => i[0]);
 const DEFAULT_NAMES = FULL_NAMES.slice();
 const NP = PAT.length;
 const NOTE_OPTS = [["1/32",0.03125],["1/16",0.0625],["1/8",0.125],["1/4",0.25],["1/2",0.5],["1",1],["4",4],["8",8],["16",16],["32",32]];
+// built-in pattern shaders (inline <script id="layer-*">), offered as default layers
+const DEFAULT_PATTERNS = ["arrows","rings","blossom","grid","waves","scales","dots","star","spiral","white_gate"];
 // separated object-layers loaded from vj/layers_manifest.json (built from layered_glsl/*)
 let LAYERS = {};          // key (id#fn) -> {id,file,fn,name,call,keywords,label}
 let layerSearch = {};     // searchable datalist string -> key
@@ -390,7 +393,9 @@ state.noteLen = Array.from({length: state.channels}, () => 0.25);// per-channel 
 state.layer = Array.from({length: state.channels}, () => "");    // per-channel object-layer id ("" = built-in element)
 state.inst  = Array.from({length: state.channels}, (_,c) => INSTRUMENTS[c%8][1]); // synth voice per channel
 state.vis   = Array.from({length: state.channels}, () => 1);     // 1 = visible
+state.env   = Array.from({length: state.channels}, () => 0.5);   // per-channel audio envelope (release amount 0..1)
 let echoOn = false, fxFilter = 0;
+let dragFrom = null;                                             // lane being dragged (reorder)
 
 // ---------- WebGL ----------
 const canvas = $("glcanvas");
@@ -426,12 +431,28 @@ function uploadPulse(){
 
 // ---------- multi-pass: render each channel's chosen shader (whole, native position) into an atlas ----------
 const LAYER_HEADER = "precision highp float;\nuniform vec2 iResolution;\nuniform float iTime;\nuniform float iBass,iMid,iTreble,iLevel,iBeat;\n";
+// built-in patterns use h2() noise; give them their own header
+const PATTERN_HEADER = LAYER_HEADER + "float h2(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }\n";
 const layerProgs = {};   // id -> compiled program / 'pending' / 'error'
 function compileLayer(id){
   if (!id || layerProgs[id]) return;
   const L = LAYERS[id];
   if (!L){ layerProgs[id] = "error"; return; }
-  
+
+  if (L.builtin){                                   // inline default-pattern shader (already has its own main)
+    const el = document.getElementById("layer-" + L.builtin);
+    if (!el){ layerProgs[id] = "error"; return; }
+    try {
+      const prog = gl.createProgram();
+      gl.attachShader(prog, compile(gl.VERTEX_SHADER, VERT));
+      gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, PATTERN_HEADER + "\n" + el.textContent));
+      gl.linkProgram(prog);
+      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+      layerProgs[id] = prog;
+    } catch (e) { console.error("pattern " + id, e); layerProgs[id] = "error"; }
+    return;
+  }
+
   const src = window.FILE_GLOBALS && window.FILE_GLOBALS[L.fileBase];
   if (!src) { layerProgs[id] = "error"; return; }
 
@@ -454,6 +475,15 @@ function loadLayersManifest() {
   return new Promise(resolve => {
     const dl = document.createElement("datalist"); dl.id = "layerlist";
     const BATCH = window.LAYER_BATCH || {};
+    // ---- default built-in patterns, listed FIRST in the dropdown ----
+    { const s = "▪ default (lane element)  none clear reset"; layerSearch[s] = "__clear__";
+      const opt = document.createElement("option"); opt.value = s; dl.appendChild(opt); }
+    DEFAULT_PATTERNS.forEach((name) => {
+      const key = "pat:" + name, label = "▪ Pattern · " + name;
+      LAYERS[key] = { id: key, builtin: name, fn: null, title: label, tags: [], label };
+      const s = label + "  pattern default builtin " + name; layerSearch[s] = key;
+      const opt = document.createElement("option"); opt.value = s; dl.appendChild(opt);
+    });
     for (const [fileBase, layerNames] of Object.entries(window.LAYER_SOURCES || {})) {
       const meta = (window.LAYER_METADATA && window.LAYER_METADATA[fileBase]) || { layers: [] };
       layerNames.forEach((layerName) => {
@@ -557,7 +587,8 @@ function blip(ch){
   const type = (state.inst[ch] !== undefined) ? state.inst[ch] : 0;
   const semi = state.pitch[ch] || 0;
   const ft = (base) => base * Math.pow(2, semi / 12);
-  const dur = Math.max(0.04, (state.noteLen[ch] || 0.25) * 4 * 60 / state.bpm);
+  const en = (state.env[ch] !== undefined ? state.env[ch] : 0.5);   // envelope: stretches the release/decay tail
+  const dur = Math.max(0.04, (state.noteLen[ch] || 0.25) * 4 * 60 / state.bpm) * (0.4 + en * 1.6);
   const t = actx.currentTime, g = actx.createGain(); g.connect(master);
   const noise = (cut, q, gain, d) => {
     const src = actx.createBufferSource(); src.buffer = noiseBuf;
@@ -636,18 +667,25 @@ function updateBands(){
 function buildGrid(){
   const wrap = $("grid"); wrap.innerHTML = "";
   for (let c=0;c<state.channels;c++){
-    const lane = document.createElement("div"); lane.className = "lane";
+    const lane = document.createElement("div"); lane.className = "lane"; lane.dataset.c = c;
+    // ---- drag to reorder (move up/down) ----
+    lane.draggable = true;
+    lane.addEventListener("dragstart", () => { dragFrom = c; lane.style.opacity = "0.4"; });
+    lane.addEventListener("dragend",   () => { lane.style.opacity = ""; document.querySelectorAll(".lane.dragover").forEach(e=>e.classList.remove("dragover")); });
+    lane.addEventListener("dragover",  (e) => { e.preventDefault(); lane.classList.add("dragover"); });
+    lane.addEventListener("dragleave", () => lane.classList.remove("dragover"));
+    lane.addEventListener("drop",      (e) => { e.preventDefault(); lane.classList.remove("dragover"); if (dragFrom!==null && dragFrom!==c) reorderChannel(dragFrom, c); dragFrom = null; });
+    const grip = document.createElement("span"); grip.className = "grip"; grip.textContent = "⋮⋮"; grip.title = "drag to reorder";
     // visible/invisible toggle
     const eye = document.createElement("button"); eye.className = "mv eye"; eye.title = "show/hide";
     eye.textContent = state.vis[c] ? "👁" : "∅"; eye.classList.toggle("off", !state.vis[c]);
     eye.onclick = () => { state.vis[c] = state.vis[c] ? 0 : 1; eye.textContent = state.vis[c] ? "👁" : "∅"; eye.classList.toggle("off", !state.vis[c]); save(); };
+    eye.draggable = false;
     const sw = document.createElement("div"); sw.className = "swatch"; sw.style.background = PAT_COLOR[c%NP];
-    const nm = document.createElement("div"); nm.className = "nm";
-    nm.textContent = (state.names[c] || ("Ch "+(c+1))); nm.title = PAT[c%NP];
-    // instrument (synth voice) picker
-    const isel = document.createElement("select"); isel.className = "nlen"; isel.title = "instrument";
-    INSTRUMENTS.forEach(([nme,ty]) => { const o=document.createElement("option"); o.value=ty; o.textContent=nme; if (state.inst[c]===ty) o.selected=true; isel.appendChild(o); });
-    isel.onchange = () => { state.inst[c] = +isel.value; save(); };
+    // track NAME = instrument dropdown (choosing the instrument names the track)
+    const nm = document.createElement("select"); nm.className = "nm nmsel"; nm.title = "instrument / track name";
+    INSTRUMENTS.forEach(([nme,ty]) => { const o=document.createElement("option"); o.value=ty; o.textContent=nme; if (state.inst[c]===ty) o.selected=true; nm.appendChild(o); });
+    nm.onchange = () => { state.inst[c] = +nm.value; state.names[c] = nm.options[nm.selectedIndex].textContent; save(); };
     // per-channel pitch (semitones) + note length
     const pit = document.createElement("input"); pit.type = "number"; pit.className = "pit";
     pit.min = -24; pit.max = 24; pit.value = state.pitch[c] || 0; pit.title = "pitch (semitones)";
@@ -655,17 +693,18 @@ function buildGrid(){
     const nsel = document.createElement("select"); nsel.className = "nlen"; nsel.title = "note length";
     NOTE_OPTS.forEach(([lab,val]) => { const o=document.createElement("option"); o.value=val; o.textContent=lab; if (Math.abs(val-(state.noteLen[c]||0.25))<1e-6) o.selected=true; nsel.appendChild(o); });
     nsel.onchange = () => { state.noteLen[c] = +nsel.value; save(); };
-    // reorder (z-order, lower lane draws on top) + per-channel object-layer search
-    const up = document.createElement("button"); up.textContent = "▲"; up.className = "mv"; up.title = "move up";
-    up.onclick = () => moveChannel(c, -1);
-    const dn = document.createElement("button"); dn.textContent = "▼"; dn.className = "mv"; dn.title = "move down";
-    dn.onclick = () => moveChannel(c, +1);
+    // audio envelope knob (release/decay shape) — distinct from note length
+    const envk = document.createElement("input"); envk.type = "range"; envk.className = "env";
+    envk.min = 0; envk.max = 1; envk.step = 0.01; envk.value = (state.env[c]!==undefined?state.env[c]:0.5);
+    envk.title = "audio envelope · release " + Math.round(envk.value*100) + "%";
+    envk.oninput = () => { state.env[c] = +envk.value; envk.title = "audio envelope · release " + Math.round(envk.value*100) + "%"; save(); };
+    // per-channel object-layer search (datalist lists default patterns first, then 6687 objects)
     const gsel = document.createElement("input"); gsel.className = "lsel"; gsel.setAttribute("list", "layerlist");
     gsel.placeholder = "layer (type to search)"; gsel.title = "graphic layer (replaces element)";
     gsel.value = state.layer[c] && LAYERS[state.layer[c]] ? LAYERS[state.layer[c]].label : "";
     gsel.onchange = () => {
       const key = layerSearch[gsel.value];
-      if (!gsel.value) { state.layer[c] = ""; }
+      if (!gsel.value || key === "__clear__") { state.layer[c] = ""; gsel.value = ""; }
       else if (key) { state.layer[c] = key; compileLayer(key); gsel.value = LAYERS[key].label; }
       else { gsel.value = state.layer[c] && LAYERS[state.layer[c]] ? LAYERS[state.layer[c]].label : ""; return; }
       save();
@@ -684,23 +723,22 @@ function buildGrid(){
       };
       cells.appendChild(cell);
     }
-    lane.appendChild(eye); lane.appendChild(up); lane.appendChild(dn);
-    lane.appendChild(sw); lane.appendChild(nm); lane.appendChild(isel); lane.appendChild(pit); lane.appendChild(nsel);
+    lane.appendChild(grip); lane.appendChild(eye);
+    lane.appendChild(sw); lane.appendChild(nm); lane.appendChild(pit); lane.appendChild(nsel); lane.appendChild(envk);
     lane.appendChild(gsel);
     lane.appendChild(cells); wrap.appendChild(lane);
   }
 }
-// move a channel up/down — reorders draw/z order (lower index draws first = behind)
-function moveChannel(c, dir){
-  const j = c + dir;
-  if (j < 0 || j >= state.channels) return;
+// drag a channel to a new position — reorders draw/z order (lower index draws first = behind)
+function reorderChannel(from, to){
+  if (from === to) return;
   const S = state.steps;
-  const swapArr = (a) => { const t=a[c]; a[c]=a[j]; a[j]=t; };
-  swapArr(state.names); swapArr(state.pitch); swapArr(state.noteLen); swapArr(state.layer); swapArr(state.inst); swapArr(state.vis);
-  for (let s=0;s<S;s++){                                  // swap grid + pulse rows
-    let t=state.grid[c*S+s]; state.grid[c*S+s]=state.grid[j*S+s]; state.grid[j*S+s]=t;
-    let u=pulses2d[c*S+s]; pulses2d[c*S+s]=pulses2d[j*S+s]; pulses2d[j*S+s]=u;
-  }
+  const move = (a) => { const v = a.splice(from,1)[0]; a.splice(to,0,v); };
+  move(state.names); move(state.pitch); move(state.noteLen); move(state.layer); move(state.inst); move(state.vis); move(state.env);
+  const rows = (buf, Ctor) => { const r=[]; for (let c=0;c<state.channels;c++) r.push(buf.slice(c*S,(c+1)*S)); const v=r.splice(from,1)[0]; r.splice(to,0,v);
+    const out = new Ctor(state.channels*S); r.forEach((row,c)=>out.set(row,c*S)); return out; };
+  state.grid = rows(state.grid, Uint8Array);
+  pulses2d  = rows(pulses2d, Float32Array);
   buildGrid(); save();
 }
 // change steps per pattern (16 / 32 / 64), preserving existing hits
@@ -719,7 +757,7 @@ function markPlayhead(step){
 // ---------- persistence ----------
 function save(){ try{ localStorage.setItem("scene6687seq3", JSON.stringify({
   steps:state.steps, channels:state.channels, names:state.names, bpm:state.bpm,
-  pitch:state.pitch, noteLen:state.noteLen, layer:state.layer, inst:state.inst, vis:state.vis, fxFilter, echoOn, grid:Array.from(state.grid) })); }catch(e){} }
+  pitch:state.pitch, noteLen:state.noteLen, layer:state.layer, inst:state.inst, vis:state.vis, env:state.env, fxFilter, echoOn, grid:Array.from(state.grid) })); }catch(e){} }
 function load(){ try{ const d = JSON.parse(localStorage.getItem("scene6687seq3")); if(!d) return;
   state.steps=d.steps; state.channels=d.channels; state.names=d.names||FULL_NAMES.slice(0,state.channels);
   state.bpm=d.bpm||120; state.grid=Uint8Array.from(d.grid);
@@ -728,6 +766,7 @@ function load(){ try{ const d = JSON.parse(localStorage.getItem("scene6687seq3")
   state.layer=d.layer||Array.from({length:state.channels},()=>"");
   state.inst=d.inst||Array.from({length:state.channels},(_,c)=>INSTRUMENTS[c%8][1]);
   state.vis=d.vis||Array.from({length:state.channels},()=>1);
+  state.env=d.env||Array.from({length:state.channels},()=>0.5);
   fxFilter=d.fxFilter||0; echoOn=!!d.echoOn;
   pulses2d = new Float32Array(state.channels*state.steps); }catch(e){} }
 
@@ -752,7 +791,7 @@ $("add").onclick = () => {
   pulses2d = new Float32Array((state.channels+1)*state.steps);
   state.names.push(FULL_NAMES[state.channels] || ("Ch " + (state.channels+1)));
   state.pitch.push(0); state.noteLen.push(0.25); state.layer.push("");
-  state.inst.push(INSTRUMENTS[state.channels%8][1]); state.vis.push(1);
+  state.inst.push(INSTRUMENTS[state.channels%8][1]); state.vis.push(1); state.env.push(0.5);
   state.channels++;
   buildGrid(); save();
 };
