@@ -78,16 +78,18 @@ for (const f of fs.readdirSync(SRC).filter((x) => x.endsWith(".glsl"))) {
   LAYER_SOURCES[id] = names;
   fs.writeFileSync(path.join(OUT, id + ".glsl"), combined);
 }
-// original reference photo per shader (from index.html's ALL_FILES img_path)
-const PHOTOS = {};
+// reference photo + batch + shader path per shader (from index.html's ALL_FILES)
+const PHOTOS = {}, BATCH = {}, PATHS = {};
 try {
   const h = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
   const m = h.match(/const ALL_FILES\s*=\s*(\[[\s\S]*?\]);/);
   const arr = JSON.parse(m[1]); const byName = {};
-  arr.forEach((f) => { if (f.img_path) byName[f.name] = f.img_path; });
+  arr.forEach((f) => { byName[f.name] = f; });
   Object.keys(FILE_GLOBALS).forEach((id) => {
-    const p = byName[id] || byName["IMG_" + id] || byName[id + "_manual"];
-    if (p) PHOTOS[id] = p;
+    const f = byName[id] || byName["IMG_" + id] || byName[id + "_manual"];
+    if (f && f.img_path) PHOTOS[id] = f.img_path;
+    BATCH[id] = (f && f.batch) || "Procedural";
+    PATHS[id] = (f && f.path) || ("layered_glsl/" + id + ".glsl");
   });
 } catch (e) { console.warn("no photos:", e.message); }
 const bundle =
@@ -95,6 +97,8 @@ const bundle =
   "window.FILE_GLOBALS = " + JSON.stringify(FILE_GLOBALS) + ";\n" +
   "window.LAYER_SOURCES = " + JSON.stringify(LAYER_SOURCES) + ";\n" +
   "window.LAYER_METADATA = " + JSON.stringify(LAYER_METADATA) + ";\n" +
-  "window.LAYER_PHOTOS = " + JSON.stringify(PHOTOS) + ";\n";
+  "window.LAYER_PHOTOS = " + JSON.stringify(PHOTOS) + ";\n" +
+  "window.LAYER_BATCH = " + JSON.stringify(BATCH) + ";\n" +
+  "window.LAYER_PATHS = " + JSON.stringify(PATHS) + ";\n";
 fs.writeFileSync(path.join(ROOT, "layers_bundle.js"), bundle);   // root: referenced as ../layers_bundle.js
 console.log(`layers_bundle.js: ${nObj} objects from ${Object.keys(FILE_GLOBALS).length} shaders`);

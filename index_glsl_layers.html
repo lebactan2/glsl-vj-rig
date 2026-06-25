@@ -28,7 +28,16 @@ body{
 #searchInput{width:100%;padding:10px 12px;margin-top:14px;background:rgba(0,0,0,.2);border:1px solid var(--border);
   border-radius:8px;color:var(--text-main);outline:none;font-size:14px;transition:all .3s ease}
 #searchInput:focus{border-color:var(--accent);box-shadow:0 0 10px var(--accent-glow);background:rgba(0,0,0,.4)}
+#batchFilter{width:100%;padding:10px 12px;margin-top:10px;background:rgba(0,0,0,.2);border:1px solid var(--border);
+  border-radius:8px;color:var(--text-main);outline:none;font-size:14px}
+#batchFilter option{background:var(--bg-dark);color:var(--text-main)}
+.custom-row{display:flex;gap:8px;margin-top:12px}
+.custom-row button{flex:1;padding:9px;background:rgba(56,189,248,.12);border:1px solid var(--accent-glow);
+  color:var(--accent);border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;transition:all .2s ease}
+.custom-row button:hover{background:rgba(56,189,248,.25)}
 .hint-keys{margin-top:10px;color:var(--text-muted);font-size:11px}
+.tag{cursor:pointer}.tag:hover{background:rgba(56,189,248,.2);color:var(--accent)}
+.tag.renamed{border:1px solid var(--accent-glow)}
 .item-list{flex:1;overflow-y:auto;padding:14px}
 .item-list::-webkit-scrollbar{width:6px}.item-list::-webkit-scrollbar-thumb{background:rgba(255,255,255,.2);border-radius:10px}
 .item{padding:10px;margin-bottom:8px;border-radius:12px;cursor:pointer;transition:all .25s cubic-bezier(.4,0,.2,1);
@@ -71,7 +80,17 @@ body{
     <h1>6687 Layer Preview</h1>
     <p id="stats">0 shaders</p>
     <input type="text" id="searchInput" placeholder="Search shader, object or tag (e.g. chair, forest)…">
-    <div class="hint-keys">↑ / ↓ cycle shaders · click a layer chip to preview only that object</div>
+    <select id="batchFilter">
+      <option value="all">All Batches</option>
+      <option value="claude made">Claude made</option>
+      <option value="codex made">Codex made</option>
+      <option value="antigravity">Antigravity</option>
+    </select>
+    <div class="custom-row">
+      <button id="openShaderBtn">📂 Open shader</button>
+      <button id="openImageBtn">🖼 Open image</button>
+    </div>
+    <div class="hint-keys">↑ / ↓ cycle shaders · click a layer chip to isolate it · double-click a tag to rename it everywhere</div>
   </div>
   <div class="item-list" id="itemList"></div>
 </div>
@@ -85,28 +104,48 @@ body{
 <script>
 const H="precision highp float;\nuniform vec2 iResolution;\nuniform float iTime;\nuniform float iBass,iMid,iTreble,iLevel,iBeat;\n";
 const VERT="attribute vec2 p;void main(){gl_Position=vec4(p,0.0,1.0);}";
-const SRC=window.FILE_GLOBALS||{}, IDX=window.LAYER_SOURCES||{}, META=window.LAYER_METADATA||{}, PHOTOS=window.LAYER_PHOTOS||{};
+const SRC=window.FILE_GLOBALS||{}, IDX=window.LAYER_SOURCES||{}, META=window.LAYER_METADATA||{},
+      PHOTOS=window.LAYER_PHOTOS||{}, BATCH=window.LAYER_BATCH||{}, PATHS=window.LAYER_PATHS||{};
 const ids=Object.keys(IDX).sort();
 const itemList=document.getElementById("itemList"), stage=document.getElementById("stage"), chipbar=document.getElementById("chipbar");
 const titleEl=document.getElementById("title"), subEl=document.getElementById("subtitle"), statsEl=document.getElementById("stats");
+const batchFilter=document.getElementById("batchFilter");
+const searchEl=document.getElementById("searchInput");
 let active=null, curLayer=null, raf=0, glLost=null;
+
+// --- global tag renames (consistent across the whole DB; keyed by ORIGINAL token) ---
+let tagRenames={}; try{ tagRenames=JSON.parse(localStorage.getItem("layerTagRenames")||"{}"); }catch(e){}
+function dispTag(t){ return tagRenames[t]||t; }
+function saveRenames(){ localStorage.setItem("layerTagRenames",JSON.stringify(tagRenames)); }
+function renameTag(orig){
+  const cur=dispTag(orig);
+  const v=prompt(`Rename tag "${orig}" everywhere in the database:`, cur);
+  if(v===null) return;
+  const nv=v.trim().toLowerCase();
+  if(!nv || nv===orig){ delete tagRenames[orig]; } else { tagRenames[orig]=nv; }
+  saveRenames(); buildList(searchEl.value); renderStage();
+}
 
 function tagsOf(id){ const t=new Set(); (META[id]&&META[id].layers||[]).forEach(L=>(L.keywords||[]).forEach(k=>t.add(String(k).toLowerCase()))); return [...t]; }
 function metaName(id,nm){ const L=(META[id]&&META[id].layers||[]).find(x=>x.name.replace(/\s+/g,'')===nm); return L?L.name:nm; }
-function metaTags(id,nm){ const L=(META[id]&&META[id].layers||[]).find(x=>x.name.replace(/\s+/g,'')===nm); return L?(L.keywords||[]):[]; }
+function metaTags(id,nm){ const L=(META[id]&&META[id].layers||[]).find(x=>x.name.replace(/\s+/g,'')===nm); return L?(L.keywords||[]).map(k=>String(k).toLowerCase()):[]; }
+function tagHTML(t){ const d=dispTag(t); return `<span class="tag${d!==t?' renamed':''}" data-orig="${t}" title="double-click to rename">${d}</span>`; }
 
 function buildList(filter){
-  itemList.innerHTML=""; filter=(filter||"").trim().toLowerCase(); let shown=0;
+  itemList.innerHTML=""; filter=(filter||"").trim().toLowerCase();
+  const bv=batchFilter.value.toLowerCase(); let shown=0;
   ids.forEach(id=>{
     const m=META[id]||{title:id};
-    const hay=(id+" "+(m.title||"")+" "+IDX[id].join(" ")+" "+tagsOf(id).join(" ")).toLowerCase();
+    if(bv!=="all" && (BATCH[id]||"").toLowerCase()!==bv) return;
+    const tagStr=tagsOf(id).map(dispTag).join(" ")+" "+tagsOf(id).join(" ");
+    const hay=(id+" "+(m.title||"")+" "+IDX[id].join(" ")+" "+tagStr+" "+(BATCH[id]||"")).toLowerCase();
     if(filter && !hay.includes(filter)) return;
     shown++;
     const el=document.createElement("div"); el.className="item"+(id===active?" active":""); el.dataset.id=id;
     const ph=PHOTOS[id];
     const thumb=ph?`<img class="thumb" src="${ph}" onerror="this.outerHTML='&lt;div class=\\'thumb ph\\'&gt;no photo&lt;/div&gt;'">`
                   :`<div class="thumb ph">no photo</div>`;
-    el.innerHTML=thumb+`<div class="meta"><div class="title">${m.title||id}</div><div class="sub">${id} · ${IDX[id].length} layers</div></div>`;
+    el.innerHTML=thumb+`<div class="meta"><div class="title">${m.title||id}</div><div class="sub">${id} · ${IDX[id].length} layers · ${BATCH[id]||""}</div></div>`;
     el.onclick=()=>select(id);
     itemList.appendChild(el);
   });
@@ -130,8 +169,9 @@ function renderStage(){
   const label=curLayer?metaName(id,curLayer):"Full composite";
   const tags=curLayer?metaTags(id,curLayer):tagsOf(id).slice(0,10);
   live.innerHTML=`<div class="pane-head">${label}</div><div class="pane-body live"><canvas></canvas></div>`+
-    `<div style="padding:10px 16px;border-top:1px solid var(--border)"><div class="tags-line">${tags.map(t=>`<span class="tag">${t}</span>`).join("")}</div></div>`;
+    `<div style="padding:10px 16px;border-top:1px solid var(--border)"><div class="tags-line">${tags.map(tagHTML).join("")}</div></div>`;
   stage.appendChild(ref); stage.appendChild(live);
+  live.querySelectorAll(".tag").forEach(el=>el.addEventListener("dblclick",()=>renameTag(el.dataset.orig)));
   const canvas=live.querySelector("canvas");
   const gl=canvas.getContext("webgl",{premultipliedAlpha:false,alpha:true}); if(!gl)return;
   glLost=gl.getExtension("WEBGL_lose_context");
@@ -171,7 +211,27 @@ function select(id){
   [...itemList.children].forEach(el=>el.classList.toggle("active",el.dataset.id===id));
 }
 
-document.getElementById("searchInput").addEventListener("input",e=>buildList(e.target.value));
+searchEl.addEventListener("input",e=>buildList(e.target.value));
+batchFilter.addEventListener("change",()=>buildList(searchEl.value));
+
+// --- open the selected shader's folder (local) or GitHub page (online) ---
+const GITHUB_REPO="https://github.com/lebactan2/glsl-vj-rig";
+const isOnline=()=>location.hostname.endsWith("github.io")||/\.(app|dev|com|net|io)$/.test(location.hostname);
+function openLocation(src){
+  if(!src){ alert("Select a shader first."); return; }
+  const u=new URL(src,location.href);
+  if(isOnline()){
+    const parts=u.pathname.split("/").filter(Boolean);
+    if(parts.length&&parts[0]==="glsl-vj-rig")parts.shift();
+    parts.pop();
+    window.open(`${GITHUB_REPO}/tree/main/${parts.join("/")}`,"_blank");
+  } else {
+    u.pathname=u.pathname.replace(/[^/]*$/,""); u.search=""; u.hash="";
+    window.open(u.href,"_blank");
+  }
+}
+document.getElementById("openShaderBtn").onclick=()=>openLocation(active?PATHS[active]:null);
+document.getElementById("openImageBtn").onclick=()=>openLocation(active&&PHOTOS[active]?PHOTOS[active]:null);
 document.addEventListener("keydown",e=>{
   if(e.target.tagName==="INPUT")return;
   if(e.key!=="ArrowDown"&&e.key!=="ArrowUp")return;
