@@ -631,6 +631,9 @@ function renderLayers(now){
 
 // ---------- Audio synth ----------
 let actx = null, noiseBuf = null, master = null, outGain = null, gateGain = null, fxFilterNode = null, fxDelay = null, fxDelayMix = null, revMix = null;
+let eqLo = null, eqMid = null, eqHi = null, shaper = null, tremGain = null, tremDepth = null, tremLFO = null;
+function distCurve(a){ const k = a*120, n = 256, c = new Float32Array(n);
+  for (let i=0;i<n;i++){ const x = i/(n-1)*2-1; c[i] = (3+k)*x*0.3 / (1 + k*Math.abs(x)); } return c; }
 function makeIR(){                                   // short decaying-noise reverb impulse
   const len = (actx.sampleRate * 1.6) | 0; const b = actx.createBuffer(2, len, actx.sampleRate);
   for (let ch=0; ch<2; ch++){ const d = b.getChannelData(ch);
@@ -652,12 +655,25 @@ function initAudio(){
   const conv = actx.createConvolver(); conv.buffer = makeIR();
   revMix = actx.createGain(); revMix.gain.value = state.reverb;
   gateGain = actx.createGain();                                   // rhythmic GATE chop on the whole mix
-  master.connect(fxFilterNode); fxFilterNode.connect(outGain); outGain.connect(gateGain); gateGain.connect(actx.destination);
+  eqLo = actx.createBiquadFilter(); eqLo.type="lowshelf"; eqLo.frequency.value=120;
+  eqMid = actx.createBiquadFilter(); eqMid.type="peaking"; eqMid.frequency.value=1000; eqMid.Q.value=0.8;
+  eqHi = actx.createBiquadFilter(); eqHi.type="highshelf"; eqHi.frequency.value=4000;
+  shaper = actx.createWaveShaper(); shaper.oversample="2x"; shaper.curve = distCurve(state.fx.distort||0);
+  tremGain = actx.createGain(); tremGain.gain.value=1;
+  tremDepth = actx.createGain(); tremDepth.gain.value=(state.fx.tremolo||0)*0.5;
+  tremLFO = actx.createOscillator(); tremLFO.type="sine"; tremLFO.frequency.value=6; tremLFO.connect(tremDepth); tremDepth.connect(tremGain.gain); tremLFO.start();
+  // chain: master -> colour filter -> EQ(lo,mid,hi) -> distort -> tremolo -> master vol -> gate -> out
+  master.connect(fxFilterNode); fxFilterNode.connect(eqLo); eqLo.connect(eqMid); eqMid.connect(eqHi);
+  eqHi.connect(shaper); shaper.connect(tremGain); tremGain.connect(outGain); outGain.connect(gateGain); gateGain.connect(actx.destination);
   fxFilterNode.connect(fxDelay); fxDelay.connect(fb); fb.connect(fxDelay); fxDelay.connect(fxDelayMix); fxDelayMix.connect(outGain);
   fxFilterNode.connect(conv); conv.connect(revMix); revMix.connect(outGain);
   applyFilter(fxFilter); applyEcho(echoLevel);
+  applyEQ(); applyDistort(state.fx.distort||0); applyTremolo(state.fx.tremolo||0);
 }
 function applyReverb(v){ if (revMix) revMix.gain.setTargetAtTime(v, actx.currentTime, 0.05); }
+function applyEQ(){ if(!eqLo) return; eqLo.gain.value=(state.fx.lo||0)*15; eqMid.gain.value=(state.fx.mid||0)*15; eqHi.gain.value=(state.fx.hi||0)*15; }
+function applyDistort(v){ if(shaper) shaper.curve = distCurve(v||0); }
+function applyTremolo(v){ if(tremDepth) tremDepth.gain.value = (v||0)*0.5; }
 function applyMaster(v){ if (outGain) outGain.gain.setTargetAtTime(v, actx.currentTime, 0.02); }
 // schedule ADSR on a voice gain node; returns stop time
 function applyEnv(g, t, peak, dur, ch){
@@ -991,12 +1007,15 @@ const FX_SPEC = [
   { k:"reverb",  label:"REVERB",  min:0, max:1, def:0, fmt:pct, wired:true, set:v=>{ state.reverb=v; initAudio(); applyReverb(v); } },
   { k:"swing",   label:"SWING",   min:0, max:1, def:0, fmt:pct, wired:true, set:v=>{ state.swing=v; } },
   { k:"master",  label:"VOL",     min:0, max:1.5, def:1, fmt:pct, wired:true, set:v=>{ state.master=v; initAudio(); applyMaster(v); } },
+  { k:"tremolo", label:"TREMOLO", min:0, max:1, def:0, fmt:pct, wired:true, set:v=>{ state.fx.tremolo=v; initAudio(); applyTremolo(v); } },
+  { k:"distort", label:"DISTORT", min:0, max:1, def:0, fmt:pct, wired:true, set:v=>{ state.fx.distort=v; initAudio(); applyDistort(v); } },
+  { k:"hi", label:"HI", min:-1, max:1, def:0, fmt:pct, wired:true, set:v=>{ state.fx.hi=v; initAudio(); applyEQ(); } },
+  { k:"mid", label:"MID", min:-1, max:1, def:0, fmt:pct, wired:true, set:v=>{ state.fx.mid=v; initAudio(); applyEQ(); } },
+  { k:"lo", label:"LO", min:-1, max:1, def:0, fmt:pct, wired:true, set:v=>{ state.fx.lo=v; initAudio(); applyEQ(); } },
   // --- UI only for now (stored in state.fx, wired next week) ---
-  { k:"tremolo", label:"TREMOLO" }, { k:"trans", label:"TRANS", min:-12, max:12, def:0, fmt:v=>Math.round(v) },
+  { k:"trans", label:"TRANS", min:-12, max:12, def:0, fmt:v=>Math.round(v) },
   { k:"flanger", label:"FLANGER" }, { k:"phaser", label:"PHASER" }, { k:"roll", label:"ROLL" },
   { k:"pitch",   label:"PITCH", min:-12, max:12, def:0, fmt:v=>Math.round(v) }, { k:"spiral", label:"SPIRAL" },
-  { k:"distort", label:"DISTORT" }, { k:"hi", label:"HI", min:-1, max:1, def:0, fmt:pct },
-  { k:"mid", label:"MID", min:-1, max:1, def:0, fmt:pct }, { k:"lo", label:"LO", min:-1, max:1, def:0, fmt:pct },
   { k:"gate", label:"GATE", min:0, max:1, def:0, fmt:v=>v<0.02?"off":gateDiv(v), wired:true, set:v=>{ state.fx.gate=v; } },
   { k:"stutter", label:"SLICE", min:0, max:1, def:0.25, fmt:v=>gateDiv(v) },  // stutter slice size (held via STUTTER button)
 ];
