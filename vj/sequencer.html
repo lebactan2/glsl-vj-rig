@@ -27,22 +27,26 @@
   .lane .mv { width:16px; padding:0; background:#1c1c22; color:#9aa; border:1px solid #3a3a44; border-radius:3px; cursor:pointer; font-size:9px; line-height:14px; }
   .lane .grip { cursor:grab; color:#666; padding:0 3px; user-select:none; font-size:11px; }
   .lane.dragover { outline:1px dashed #8cf; outline-offset:1px; }
-  .lane select.nmsel { width:118px; background:#1c1c22; color:#cdd; border:1px solid #3a3a44; border-radius:4px; padding:2px; font-size:10px; }
+  .lane select.nmsel { width:96px; background:#1c1c22; color:#cdd; border:1px solid #3a3a44; border-radius:4px; padding:2px; font-size:10px; }
   .lane .eye { width:20px; }
-  .knob { display:inline-flex; flex-direction:column; align-items:center; width:30px; flex:none; }
-  .knob .dial { width:22px; height:22px; border-radius:50%; background:#1c1c22; border:1px solid #3a3a44; position:relative; cursor:ns-resize; touch-action:none; }
-  .knob .dial::after { content:""; position:absolute; left:50%; top:2px; width:2px; height:8px; background:#caa23a; transform-origin:50% 9px; transform:translateX(-50%) rotate(var(--a,0deg)); border-radius:1px; }
+  .knob { display:inline-flex; flex-direction:column; align-items:center; width:28px; flex:none; }
+  .knob .dial { width:20px; height:20px; border-radius:50%; background:#1c1c22; border:1px solid #3a3a44; position:relative; cursor:ns-resize; touch-action:none; }
+  .knob .dial::after { content:""; position:absolute; left:50%; top:2px; width:2px; height:7px; background:#caa23a; transform-origin:50% 8px; transform:translateX(-50%) rotate(var(--a,0deg)); border-radius:1px; }
   .knob .klabel { font-size:8px; color:#9aa; margin-top:1px; letter-spacing:.5px; }
-  .lane .ms { width:16px; padding:0; background:#1c1c22; border:1px solid #3a3a44; border-radius:3px; cursor:pointer; font-size:9px; line-height:14px; color:#9aa; }
+  .lane .ms { width:15px; padding:0; background:#1c1c22; border:1px solid #3a3a44; border-radius:3px; cursor:pointer; font-size:9px; line-height:14px; color:#9aa; flex:none; }
   .lane .ms.on { background:#caa23a; color:#111; border-color:#caa23a; font-weight:700; }
   .lane .ms.solo.on { background:#4ad; border-color:#4ad; }
-  .transport .knob { margin:0 2px; }
+  .lane .ms.fx.on { background:#3a3a44; color:#caa23a; border-color:#caa23a; }
+  .fxpop { position:absolute; bottom:100%; left:120px; margin-bottom:4px; display:none; gap:6px; z-index:20;
+           background:#15151b; border:1px solid #3a3a44; border-radius:6px; padding:6px 8px; box-shadow:0 4px 14px rgba(0,0,0,.6); }
+  .fxpop.open { display:flex; }
+  .transport .knob { margin:0 1px; }
   .lane .eye.off { color:#555; background:#141418; }
   .transport select { background:#1c1c22; color:#ddd; border:1px solid #3a3a44; border-radius:5px; padding:4px; }
   .transport .title { font-weight:700; color:#8cf; letter-spacing:1px; margin-right:6px; }
   .transport label { color:#999; }
-  #grid { display:flex; flex-direction:column; gap:5px; }
-  .lane { display:flex; align-items:center; gap:6px; }
+  #grid { display:flex; flex-direction:column; gap:4px; }
+  .lane { display:flex; align-items:center; gap:4px; position:relative; }
   .swatch { width:12px; height:12px; border-radius:3px; flex:none; }
   .lane .nm { width:64px; flex:none; color:#cdd; font-size:11px; }
   .cells { display:grid; grid-auto-flow:column; gap:3px; flex:1; }
@@ -279,8 +283,7 @@ void main(){
     <span id="bpmv">120</span>
     <label>steps <select id="steps"><option>8</option><option>16</option><option selected>32</option><option>64</option></select></label>
     <label>filter <input type="range" id="filter" min="-100" max="100" step="1" value="0" style="width:90px"></label>
-    <button id="echo">echo</button>
-    <span id="swingK"></span><span id="reverbK"></span><span id="masterK"></span>
+    <span id="echoK"></span><span id="swingK"></span><span id="reverbK"></span><span id="masterK"></span>
     <button id="rand">🎲 rand</button>
     <button id="patA" title="click = recall · double-click = save">A</button>
     <button id="patB" title="click = recall · double-click = save">B</button>
@@ -414,10 +417,10 @@ state.opacity = Array.from({length: state.channels}, () => 1);   // per-channel 
 state.mute  = Array.from({length: state.channels}, () => 0);     // 1 = audio muted
 state.solo  = Array.from({length: state.channels}, () => 0);     // 1 = soloed
 state.swing = 0; state.reverb = 0; state.master = 1;             // global groove + FX + volume
-let echoOn = false, fxFilter = 0;
+let echoLevel = 0, fxFilter = 0;                                 // echo now a 0..1 knob
 let dragFrom = null;                                             // lane being dragged (reorder)
 const ADSR_DEF = {a:0.01, d:0.1, s:0.7, r:0.3};
-const DEFAULTS = { pitch:0, noteLen:0.25, opacity:1, vis:1, mute:0, solo:0, swing:0, reverb:0, master:1, bpm:120, filter:0 };
+const DEFAULTS = { pitch:0, noteLen:0.25, opacity:1, vis:1, mute:0, solo:0, swing:0, reverb:0, master:1, echo:0, bpm:120, filter:0 };
 
 // ---------- WebGL ----------
 const canvas = $("glcanvas");
@@ -506,6 +509,9 @@ function loadLayersManifest() {
       const s = label + "  pattern default builtin " + name; layerSearch[s] = key;
       const opt = document.createElement("option"); opt.value = s; dl.appendChild(opt);
     });
+    // ---- 6687 objects, grouped by category with a non-selectable header per group ----
+    const CAT = window.LAYER_CATEGORY || {};
+    const groups = { background: [], patterns: [], objects: [], misc: [] };
     for (const [fileBase, layerNames] of Object.entries(window.LAYER_SOURCES || {})) {
       const meta = (window.LAYER_METADATA && window.LAYER_METADATA[fileBase]) || { layers: [] };
       layerNames.forEach((layerName) => {
@@ -514,21 +520,23 @@ function loadLayersManifest() {
         const nameStr = layerMeta.name || layerName;
         const keywords = (layerMeta.keywords || []).map(k => String(k).toLowerCase());
         const shownTags = keywords.map(dispTag);
-        const o = {
-          id: id,
-          fileBase: fileBase,
-          fn: "layer_" + layerName,
-          title: (meta.title || fileBase) + " - " + nameStr,
-          tags: shownTags,
-          label: id + " · " + (meta.title || fileBase) + " - " + nameStr
-        };
+        const o = { id, fileBase, fn: "layer_" + layerName,
+          title: (meta.title || fileBase) + " - " + nameStr, tags: shownTags,
+          label: id + " · " + (meta.title || fileBase) + " - " + nameStr };
         LAYERS[o.id] = o;
-        // search matches renamed tags, original tags (alias) and the batch
-        const s = o.id + "  " + o.title + "  " + [...new Set([...shownTags, ...keywords])].join(" ") + "  " + (BATCH[fileBase] || "");
+        // search matches renamed tags, original tags (alias), category and the batch
+        const cat = CAT[id] || "misc";
+        const s = o.id + "  " + o.title + "  " + [...new Set([...shownTags, ...keywords])].join(" ") + "  " + cat + "  " + (BATCH[fileBase] || "");
         layerSearch[s] = o.id;
-        const opt = document.createElement("option"); opt.value = s; dl.appendChild(opt);
+        (groups[cat] || groups.misc).push(s);
       });
     }
+    [["background","BACKGROUND"],["patterns","PATTERNS"],["objects","OBJECTS"],["misc","MISC"]].forEach(([k,lab]) => {
+      const items = groups[k]; if (!items.length) return;
+      const hs = "──────  " + lab + " (" + items.length + ")  ──────"; layerSearch[hs] = "__hdr__";
+      const ho = document.createElement("option"); ho.value = hs; dl.appendChild(ho);   // group header (selecting it does nothing)
+      items.sort().forEach(s => { const opt = document.createElement("option"); opt.value = s; dl.appendChild(opt); });
+    });
     document.body.appendChild(dl);
     resolve();
   });
@@ -601,7 +609,7 @@ function initAudio(){
   master.connect(fxFilterNode); fxFilterNode.connect(outGain); outGain.connect(actx.destination);
   fxFilterNode.connect(fxDelay); fxDelay.connect(fb); fb.connect(fxDelay); fxDelay.connect(fxDelayMix); fxDelayMix.connect(outGain);
   fxFilterNode.connect(conv); conv.connect(revMix); revMix.connect(outGain);
-  applyFilter(fxFilter); applyEcho(echoOn);
+  applyFilter(fxFilter); applyEcho(echoLevel);
 }
 function applyReverb(v){ if (revMix) revMix.gain.setTargetAtTime(v, actx.currentTime, 0.05); }
 function applyMaster(v){ if (outGain) outGain.gain.setTargetAtTime(v, actx.currentTime, 0.02); }
@@ -625,10 +633,10 @@ function applyFilter(v){            // v in -1..1 : <0 low-pass, >0 high-pass, ~
   if (v < 0){ fxFilterNode.type = "lowpass";  fxFilterNode.frequency.value = 200 * Math.pow(100, 1.0 + v); }
   else      { fxFilterNode.type = "highpass"; fxFilterNode.frequency.value = 20  * Math.pow(300, v); }
 }
-function applyEcho(on){
+function applyEcho(level){
   if (!fxDelay) return;
   fxDelay.delayTime.value = 60 / state.bpm / 2;   // 1/8-note echo
-  fxDelayMix.gain.setTargetAtTime(on ? 0.4 : 0.0, actx.currentTime, 0.05);
+  fxDelayMix.gain.setTargetAtTime(level * 0.6, actx.currentTime, 0.05);
 }
 function blip(ch){
   if (!actx) return;
@@ -780,6 +788,11 @@ function buildGrid(){
     const kS = makeKnob({label:"S", value:adsr.s, def:ADSR_DEF.s, onInput:v=>{adsr.s=v;save();}});
     const kR = makeKnob({label:"R", value:adsr.r, def:ADSR_DEF.r, onInput:v=>{adsr.r=v;save();}});
     const kOp = makeKnob({label:"OP", value:(state.opacity[c]!==undefined?state.opacity[c]:1), def:DEFAULTS.opacity, onInput:v=>{state.opacity[c]=v;save();}});
+    // collapse the knobs into a ⚙ popover to keep the lane compact
+    const fxBtn = document.createElement("button"); fxBtn.className = "ms fx"; fxBtn.textContent = "⚙"; fxBtn.title = "ADSR + opacity"; fxBtn.draggable = false;
+    const fxPop = document.createElement("div"); fxPop.className = "fxpop";
+    [kA, kD, kS, kR, kOp].forEach(k => fxPop.appendChild(k.el));
+    fxBtn.onclick = () => { const open = fxPop.classList.toggle("open"); fxBtn.classList.toggle("on", open); };
     // per-channel object-layer search (datalist lists default patterns first, then 6687 objects)
     const gsel = document.createElement("input"); gsel.className = "lsel"; gsel.setAttribute("list", "layerlist");
     gsel.placeholder = "layer (click to choose)"; gsel.title = "graphic layer (replaces element) · right-click clear";
@@ -788,6 +801,7 @@ function buildGrid(){
     gsel.addEventListener("blur",  () => { if (!gsel.value) gsel.value = state.layer[c] && LAYERS[state.layer[c]] ? LAYERS[state.layer[c]].label : ""; });
     gsel.onchange = () => {
       const key = layerSearch[gsel.value];
+      if (key === "__hdr__") { gsel.value = state.layer[c] && LAYERS[state.layer[c]] ? LAYERS[state.layer[c]].label : ""; return; }  // group header
       if (!gsel.value || key === "__clear__") { state.layer[c] = ""; gsel.value = ""; }
       else if (key) { state.layer[c] = key; compileLayer(key); gsel.value = LAYERS[key].label; }
       else { gsel.value = state.layer[c] && LAYERS[state.layer[c]] ? LAYERS[state.layer[c]].label : ""; return; }
@@ -810,10 +824,9 @@ function buildGrid(){
     }
     lane.appendChild(grip); lane.appendChild(eye);
     lane.appendChild(sw); lane.appendChild(nm); lane.appendChild(mute); lane.appendChild(solo);
-    lane.appendChild(pit); lane.appendChild(nsel);
-    lane.appendChild(kA.el); lane.appendChild(kD.el); lane.appendChild(kS.el); lane.appendChild(kR.el); lane.appendChild(kOp.el);
+    lane.appendChild(pit); lane.appendChild(nsel); lane.appendChild(fxBtn);
     lane.appendChild(gsel);
-    lane.appendChild(cells); wrap.appendChild(lane);
+    lane.appendChild(cells); lane.appendChild(fxPop); wrap.appendChild(lane);
   }
 }
 // drag a channel to a new position — reorders draw/z order (lower index draws first = behind)
@@ -847,7 +860,7 @@ function save(){ try{ localStorage.setItem("scene6687seq3", JSON.stringify({
   steps:state.steps, channels:state.channels, names:state.names, bpm:state.bpm,
   pitch:state.pitch, noteLen:state.noteLen, layer:state.layer, inst:state.inst, vis:state.vis,
   adsr:state.adsr, opacity:state.opacity, mute:state.mute, solo:state.solo,
-  swing:state.swing, reverb:state.reverb, master:state.master, fxFilter, echoOn, grid:Array.from(state.grid) })); }catch(e){} }
+  swing:state.swing, reverb:state.reverb, master:state.master, fxFilter, echo:echoLevel, grid:Array.from(state.grid) })); }catch(e){} }
 function load(){ try{ const d = JSON.parse(localStorage.getItem("scene6687seq3")); if(!d) return;
   const N = d.channels;
   state.steps=d.steps; state.channels=N; state.names=d.names||FULL_NAMES.slice(0,N);
@@ -862,7 +875,7 @@ function load(){ try{ const d = JSON.parse(localStorage.getItem("scene6687seq3")
   state.mute = d.mute || Array.from({length:N},()=>0);
   state.solo = d.solo || Array.from({length:N},()=>0);
   state.swing = d.swing||0; state.reverb = d.reverb||0; state.master = (d.master!==undefined?d.master:1);
-  fxFilter=d.fxFilter||0; echoOn=!!d.echoOn;
+  fxFilter=d.fxFilter||0; echoLevel = (d.echo!==undefined ? d.echo : (d.echoOn ? 0.4 : 0));   // migrate old toggle
   pulses2d = new Float32Array(state.channels*state.steps); }catch(e){} }
 
 // ---------- transport ----------
@@ -897,13 +910,14 @@ $("steps").onchange = (e) => setSteps(+e.target.value);
 $("loadBtn").onclick = () => $("audioFile").click();
 $("audioFile").onchange = (e) => { if (e.target.files[0]) loadAudioFile(e.target.files[0]); };
 $("filter").oninput = (e) => { fxFilter = +e.target.value/100; applyFilter(fxFilter); save(); };
-$("echo").onclick = () => { echoOn = !echoOn; $("echo").classList.toggle("on", echoOn); initAudio(); applyEcho(echoOn); save(); };
 // right-click reset on transport controls
 bindReset($("bpm"), DEFAULTS.bpm, v => { state.bpm=v; $("bpm").value=v; $("bpmv").textContent=v; });
 bindReset($("filter"), DEFAULTS.filter, () => { fxFilter=0; $("filter").value=0; applyFilter(0); });
 bindReset($("steps"), 32, () => { $("steps").value="32"; setSteps(32); });
 
-// global knobs: swing, reverb, master volume
+// global knobs: echo, swing, reverb, master volume
+const echoKnob   = makeKnob({label:"ECHO", value:echoLevel, def:DEFAULTS.echo, fmt:v=>Math.round(v*100)+"%", onInput:v=>{ echoLevel=v; initAudio(); applyEcho(v); save(); }});
+$("echoK").appendChild(echoKnob.el);
 const swingKnob  = makeKnob({label:"SWG", value:state.swing,  def:DEFAULTS.swing,  fmt:v=>Math.round(v*100)+"%", onInput:v=>{ state.swing=v; save(); }});
 const reverbKnob = makeKnob({label:"REV", value:state.reverb, def:DEFAULTS.reverb, fmt:v=>Math.round(v*100)+"%", onInput:v=>{ state.reverb=v; initAudio(); applyReverb(v); save(); }});
 const masterKnob = makeKnob({label:"VOL", value:state.master, def:DEFAULTS.master, fmt:v=>Math.round(v*100)+"%", onInput:v=>{ state.master=v; initAudio(); applyMaster(v); save(); }});
@@ -965,7 +979,6 @@ load();
 $("bpm").value = state.bpm; $("bpmv").textContent = state.bpm;
 $("steps").value = String(state.steps);
 $("filter").value = Math.round(fxFilter*100);
-$("echo").classList.toggle("on", echoOn);
 loadLayersManifest().then(() => { state.layer.forEach((id)=>compileLayer(id)); buildGrid(); });
 buildGrid();
 window.__ready = true;

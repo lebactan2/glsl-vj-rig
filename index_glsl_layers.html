@@ -28,9 +28,10 @@ body{
 #searchInput{width:100%;padding:10px 12px;margin-top:14px;background:rgba(0,0,0,.2);border:1px solid var(--border);
   border-radius:8px;color:var(--text-main);outline:none;font-size:14px;transition:all .3s ease}
 #searchInput:focus{border-color:var(--accent);box-shadow:0 0 10px var(--accent-glow);background:rgba(0,0,0,.4)}
-#batchFilter{width:100%;padding:10px 12px;margin-top:10px;background:rgba(0,0,0,.2);border:1px solid var(--border);
+#batchFilter,#catFilter{width:100%;padding:10px 12px;margin-top:10px;background:rgba(0,0,0,.2);border:1px solid var(--border);
   border-radius:8px;color:var(--text-main);outline:none;font-size:14px}
-#batchFilter option{background:var(--bg-dark);color:var(--text-main)}
+#batchFilter option,#catFilter option{background:var(--bg-dark);color:var(--text-main)}
+.card-cat,.chip-cat{font-size:.62rem;text-transform:uppercase;letter-spacing:.5px;color:var(--accent);opacity:.8}
 .custom-row{display:flex;gap:8px;margin-top:12px}
 .custom-row button{flex:1;padding:9px;background:rgba(56,189,248,.12);border:1px solid var(--accent-glow);
   color:var(--accent);border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;transition:all .2s ease}
@@ -86,6 +87,13 @@ body{
       <option value="codex made">Codex made</option>
       <option value="antigravity">Antigravity</option>
     </select>
+    <select id="catFilter">
+      <option value="all">All Categories</option>
+      <option value="background">Background</option>
+      <option value="patterns">Patterns</option>
+      <option value="objects">Objects</option>
+      <option value="misc">Misc</option>
+    </select>
     <div class="custom-row">
       <button id="openShaderBtn">📂 Open shader</button>
       <button id="openImageBtn">🖼 Open image</button>
@@ -110,6 +118,10 @@ const ids=Object.keys(IDX).sort();
 const itemList=document.getElementById("itemList"), stage=document.getElementById("stage"), chipbar=document.getElementById("chipbar");
 const titleEl=document.getElementById("title"), subEl=document.getElementById("subtitle"), statsEl=document.getElementById("stats");
 const batchFilter=document.getElementById("batchFilter");
+const catFilter=document.getElementById("catFilter");
+const CAT=window.LAYER_CATEGORY||{};
+const catOf=(id,nm)=>CAT[id+"#"+nm]||"misc";
+const objsIn=(id)=>{ const cf=catFilter.value; return IDX[id].filter(nm=>cf==="all"||catOf(id,nm)===cf); };
 const searchEl=document.getElementById("searchInput");
 let active=null, curLayer=null, raf=0, glLost=null;
 
@@ -137,6 +149,7 @@ function buildList(filter){
   ids.forEach(id=>{
     const m=META[id]||{title:id};
     if(bv!=="all" && (BATCH[id]||"").toLowerCase()!==bv) return;
+    if(catFilter.value!=="all" && objsIn(id).length===0) return;     // no object of the chosen category
     const tagStr=tagsOf(id).map(dispTag).join(" ")+" "+tagsOf(id).join(" ");
     const hay=(id+" "+(m.title||"")+" "+IDX[id].join(" ")+" "+tagStr+" "+(BATCH[id]||"")).toLowerCase();
     if(filter && !hay.includes(filter)) return;
@@ -177,7 +190,7 @@ function renderStage(){
   glLost=gl.getExtension("WEBGL_lose_context");
   let body;
   if(curLayer){ body=`gl_FragColor=layer_${curLayer}(uv);`; }
-  else { body="vec3 col=vec3(0.0);float a=0.0;"+IDX[id].map((n,i)=>`vec4 _l${i}=layer_${n}(uv);col=mix(col,_l${i}.rgb,_l${i}.a);a=max(a,_l${i}.a);`).join("")+"gl_FragColor=vec4(col,a);"; }
+  else { const set=objsIn(id); body="vec3 col=vec3(0.0);float a=0.0;"+set.map((n,i)=>`vec4 _l${i}=layer_${n}(uv);col=mix(col,_l${i}.rgb,_l${i}.a);a=max(a,_l${i}.a);`).join("")+"gl_FragColor=vec4(col,a);"; }
   const fsrc=H+SRC[id]+`\nvoid main(){vec2 uv=gl_FragCoord.xy/iResolution.xy;${body}}`;
   function sh(type,s){const o=gl.createShader(type);gl.shaderSource(o,s);gl.compileShader(o);
     if(!gl.getShaderParameter(o,gl.COMPILE_STATUS))console.warn(id+"#"+(curLayer||"composite"),gl.getShaderInfoLog(o));return o;}
@@ -197,10 +210,10 @@ function renderStage(){
 
 function buildChips(){
   chipbar.innerHTML="";
-  const mk=(nm,label)=>{const c=document.createElement("div");c.className="chip"+((curLayer===nm)?" active":"");
-    c.textContent=label;c.onclick=()=>{curLayer=nm;buildChips();renderStage();};chipbar.appendChild(c);};
+  const mk=(nm,label,cat)=>{const c=document.createElement("div");c.className="chip"+((curLayer===nm)?" active":"");
+    c.innerHTML=label+(cat?` <span class="chip-cat">${cat}</span>`:"");c.onclick=()=>{curLayer=nm;buildChips();renderStage();};chipbar.appendChild(c);};
   mk(null,"● Composite");
-  IDX[active].forEach(nm=>mk(nm,metaName(active,nm)));
+  objsIn(active).forEach(nm=>mk(nm,metaName(active,nm),catOf(active,nm)));
 }
 
 function select(id){
@@ -213,6 +226,7 @@ function select(id){
 
 searchEl.addEventListener("input",e=>buildList(e.target.value));
 batchFilter.addEventListener("change",()=>buildList(searchEl.value));
+catFilter.addEventListener("change",()=>{ buildList(searchEl.value); if(active){ curLayer=null; buildChips(); renderStage(); } });
 
 // --- open the selected shader's folder (local) or GitHub page (online) ---
 const GITHUB_REPO="https://github.com/lebactan2/glsl-vj-rig";
