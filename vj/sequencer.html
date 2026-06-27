@@ -638,6 +638,7 @@ function renderLayers(now){
 // ---------- Audio synth ----------
 let actx = null, noiseBuf = null, master = null, outGain = null, gateGain = null, fxFilterNode = null, fxDelay = null, fxDelayMix = null, revMix = null;
 let eqLo = null, eqMid = null, eqHi = null, shaper = null, tremGain = null, tremDepth = null, tremLFO = null;
+let flIn = null, flOut = null, flWet = null, phIn = null, phOut = null, phWet = null;   // flanger / phaser wet/dry
 function distCurve(a){ const k = a*120, n = 256, c = new Float32Array(n);
   for (let i=0;i<n;i++){ const x = i/(n-1)*2-1; c[i] = (3+k)*x*0.3 / (1 + k*Math.abs(x)); } return c; }
 function makeIR(){                                   // short decaying-noise reverb impulse
@@ -668,18 +669,35 @@ function initAudio(){
   tremGain = actx.createGain(); tremGain.gain.value=1;
   tremDepth = actx.createGain(); tremDepth.gain.value=(state.fx.tremolo||0)*0.5;
   tremLFO = actx.createOscillator(); tremLFO.type="sine"; tremLFO.frequency.value=6; tremLFO.connect(tremDepth); tremDepth.connect(tremGain.gain); tremLFO.start();
-  // chain: master -> colour filter -> EQ(lo,mid,hi) -> distort -> tremolo -> master vol -> gate -> out
+  // flanger block (short modulated delay + feedback, wet/dry)
+  flIn = actx.createGain(); flOut = actx.createGain(); flWet = actx.createGain(); flWet.gain.value = (state.fx.flanger||0);
+  const flDelay = actx.createDelay(0.05), flFb = actx.createGain(); flFb.gain.value = 0.5; flDelay.delayTime.value = 0.003;
+  flIn.connect(flOut); flIn.connect(flDelay); flDelay.connect(flFb); flFb.connect(flDelay); flDelay.connect(flWet); flWet.connect(flOut);
+  const flLFO = actx.createOscillator(), flLFOg = actx.createGain(); flLFO.frequency.value = 0.25; flLFOg.gain.value = 0.0018;
+  flLFO.connect(flLFOg); flLFOg.connect(flDelay.delayTime); flLFO.start();
+  // phaser block (cascaded allpass swept by an LFO, wet/dry)
+  phIn = actx.createGain(); phOut = actx.createGain(); phWet = actx.createGain(); phWet.gain.value = (state.fx.phaser||0);
+  phIn.connect(phOut); let node = phIn; const aps = [];
+  for (let i=0;i<4;i++){ const ap = actx.createBiquadFilter(); ap.type="allpass"; ap.frequency.value = 400 + i*250; node.connect(ap); node = ap; aps.push(ap); }
+  node.connect(phWet); phWet.connect(phOut);
+  const phLFO = actx.createOscillator(), phLFOg = actx.createGain(); phLFO.frequency.value = 0.3; phLFOg.gain.value = 300;
+  phLFO.connect(phLFOg); aps.forEach(ap => phLFOg.connect(ap.frequency)); phLFO.start();
+  // chain: master -> colour filter -> EQ -> distort -> flanger -> phaser -> tremolo -> master vol -> gate -> out
   master.connect(fxFilterNode); fxFilterNode.connect(eqLo); eqLo.connect(eqMid); eqMid.connect(eqHi);
-  eqHi.connect(shaper); shaper.connect(tremGain); tremGain.connect(outGain); outGain.connect(gateGain); gateGain.connect(actx.destination);
+  eqHi.connect(shaper); shaper.connect(flIn); flOut.connect(phIn); phOut.connect(tremGain);
+  tremGain.connect(outGain); outGain.connect(gateGain); gateGain.connect(actx.destination);
   fxFilterNode.connect(fxDelay); fxDelay.connect(fb); fb.connect(fxDelay); fxDelay.connect(fxDelayMix); fxDelayMix.connect(outGain);
   fxFilterNode.connect(conv); conv.connect(revMix); revMix.connect(outGain);
   applyFilter(fxFilter); applyEcho(echoLevel);
   applyEQ(); applyDistort(state.fx.distort||0); applyTremolo(state.fx.tremolo||0);
+  applyFlanger(state.fx.flanger||0); applyPhaser(state.fx.phaser||0);
 }
 function applyReverb(v){ if (revMix) revMix.gain.setTargetAtTime(v, actx.currentTime, 0.05); }
 function applyEQ(){ if(!eqLo) return; eqLo.gain.value=(state.fx.lo||0)*15; eqMid.gain.value=(state.fx.mid||0)*15; eqHi.gain.value=(state.fx.hi||0)*15; }
 function applyDistort(v){ if(shaper) shaper.curve = distCurve(v||0); }
 function applyTremolo(v){ if(tremDepth) tremDepth.gain.value = (v||0)*0.5; }
+function applyFlanger(v){ if(flWet) flWet.gain.value = (v||0); }
+function applyPhaser(v){ if(phWet) phWet.gain.value = (v||0); }
 function applyMaster(v){ if (outGain) outGain.gain.setTargetAtTime(v, actx.currentTime, 0.02); }
 // schedule ADSR on a voice gain node; returns stop time
 function applyEnv(g, t, peak, dur, ch){
@@ -996,7 +1014,7 @@ $("audioFile").onchange = (e) => { if (e.target.files[0]) loadAudioFile(e.target
 bindReset($("steps"), 32, () => { $("steps").value="32"; setSteps(32); });
 
 // ---------- live performance FX (strobe / tape-stop / stutter / gate) ----------
-let strobeOn = false, tapeStop = false, tapeFactor = 1, stutterOn = false, stutterAnchor = 0, playAccum = 0;
+let strobeOn = false, tapeStop = false, tapeFactor = 1, stutterOn = false, stutterAnchor = 0, playAccum = 0, rollActive = false, rollAnchor = 0;
 // note divisions -> size in 1/16 steps (a step = 1/16 note; min 1/32, max 32 notes)
 const NOTE_DIVS = [["1/32",0.5],["1/16",1],["1/8",2],["1/4",4],["1/2",8],["1",16],["2",32],["4",64],["8",128],["16",256],["32",512]];
 function gateInfo(v){ const i = Math.min(NOTE_DIVS.length-1, Math.max(0, Math.round(v*(NOTE_DIVS.length-1)))); return NOTE_DIVS[i]; }
@@ -1021,10 +1039,11 @@ const FX_SPEC = [
   { k:"trans", label:"TRANS", min:-12, max:12, def:0, fmt:v=>Math.round(v), wired:true, set:v=>{ state.fx.trans=Math.round(v); } },
   { k:"pitch", label:"PITCH", min:-12, max:12, def:0, fmt:v=>Math.round(v), wired:true, set:v=>{ state.fx.pitch=Math.round(v); } },
   { k:"spiral", label:"SPIRAL", min:0, max:1, def:0, fmt:pct, wired:true, set:v=>{ state.fx.spiral=v; } },   // visual swirl
-  // --- UI only for now (stored in state.fx, wired next week) ---
-  { k:"flanger", label:"FLANGER" }, { k:"phaser", label:"PHASER" }, { k:"roll", label:"ROLL" },
+  { k:"flanger", label:"FLANGER", min:0, max:1, def:0, fmt:pct, wired:true, set:v=>{ state.fx.flanger=v; initAudio(); applyFlanger(v); } },
+  { k:"phaser", label:"PHASER", min:0, max:1, def:0, fmt:pct, wired:true, set:v=>{ state.fx.phaser=v; initAudio(); applyPhaser(v); } },
+  { k:"roll", label:"ROLL", min:0, max:1, def:0, fmt:v=>v<0.02?"off":gateDiv(v), wired:true, set:v=>{ state.fx.roll=v; } },
   { k:"gate", label:"GATE", min:0, max:1, def:0, fmt:v=>v<0.02?"off":gateDiv(v), wired:true, set:v=>{ state.fx.gate=v; } },
-  { k:"stutter", label:"SLICE", min:0, max:1, def:0.25, fmt:v=>gateDiv(v) },  // stutter slice size (held via STUTTER button)
+  { k:"stutter", label:"SLICE", min:0, max:1, def:0.25, fmt:v=>gateDiv(v), wired:true, set:v=>{ state.fx.stutter=v; } },  // STUTTER button slice size
 ];
 const fxKnobs = {};
 const fxrack = $("fxrack");
@@ -1148,6 +1167,10 @@ let lastT = performance.now()/1000;
     // STUTTER: loop a small slice of the sequence while held
     if (stutterOn){ const sz = gateSteps(state.fx.stutter !== undefined ? state.fx.stutter : 0.25);
       state.playhead = stutterAnchor + (((state.playhead - stutterAnchor) % sz) + sz) % sz; }
+    // ROLL: knob-engaged beat-roll — repeats a slice continuously
+    else if ((state.fx.roll||0) > 0.02){ if(!rollActive){ rollActive=true; rollAnchor=Math.floor(state.playhead); }
+      const sz = gateSteps(state.fx.roll); state.playhead = rollAnchor + (((state.playhead - rollAnchor) % sz) + sz) % sz; }
+    else rollActive = false;
     // swing: delay odd steps by up to half a step
     const base = Math.floor(state.playhead), frac = state.playhead - base;
     const off = (base % 2 === 1) ? state.swing * 0.5 : 0.0;
