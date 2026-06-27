@@ -101,11 +101,16 @@
   .scroll-layer-item { font-size: 9px; background: rgba(255,255,255,0.03); color: #d4d4d8; padding: 4px 6px; border-radius: 4px; cursor: pointer; user-select: none; border: 1px solid transparent; }
   .scroll-layer-item:hover { background: rgba(249,115,22,0.12); border-color: rgba(249,115,22,0.2); color: #fff; }
   .scroll-layer-item.active { background: rgba(249,115,22,0.2); color: #fb923c; font-weight: 700; border-color: rgba(249,115,22,0.4); }
-  .controls-grid { padding: 10px; display: flex; flex-direction: column; gap: 8px; height: 100%; justify-content: flex-start; overflow-y: auto; }
-  .controls-row { display: flex; justify-content: space-around; gap: 6px; }
-  .bottom-controls { display: grid; grid-template-columns: auto auto 1fr; gap: 10px; min-height: 90px; align-items: center; margin-top: 6px; }
-  .eq-col { display: flex; flex-direction: column; align-items: center; gap: 4px; }
-  .be-col { display: flex; flex-direction: column; gap: 6px; justify-content: center; }
+  .controls-grid { padding: 10px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px 4px;
+    align-content: start; justify-items: center; align-items: center; height: 100%; overflow-y: auto; }
+  /* HI/MID/LO under PITCH (col 1) */
+  .g-hi { grid-column: 1; grid-row: 4; } .g-mid { grid-column: 1; grid-row: 5; } .g-lo { grid-column: 1; grid-row: 6; }
+  /* BPM fader under SPIRAL (col 2), spanning the 3 bottom rows */
+  .g-fader { grid-column: 2; grid-row: 4 / 7; }
+  /* A/B/C/D squeezed across cols 3-4 */
+  .g-banks { grid-column: 3 / 5; grid-row: 4; width: 100%; }
+  .g-strobe { grid-column: 3; grid-row: 5; } .g-stutter { grid-column: 4; grid-row: 5; }
+  .g-tape { grid-column: 3; grid-row: 6; } .g-gate { grid-column: 4; grid-row: 6; }
   .filter-eq-stack { display: flex; flex-direction: column; align-items: center; gap: 1px; }
   .fader-col { display: flex; justify-content: center; align-items: center; height: 100%; }
   .fader-container { display: flex; flex-direction: column; align-items: center; gap: 4px; height: 75px; justify-content: center; }
@@ -114,15 +119,15 @@
   .fader-thumb-overlay { position: absolute; left: -3px; width: 20px; height: 10px; background: linear-gradient(to bottom, #fff 0%, #d4d4d8 100%); border: 1px solid #27272a; border-radius: 2px; box-shadow: 0 2px 5px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.8); pointer-events: none; bottom: calc(50% - 5px); transition: bottom 0.05s linear; }
   .fader-label { font-size: 8px; font-weight: 700; color: #3b82f6; text-transform: uppercase; }
   .buttons-col { display: flex; flex-direction: column; gap: 6px; justify-content: space-around; height: 100%; }
-  .bank-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
-  .bank-grid button.bank { background: rgba(16,185,129,0.1); color: #34d399; border: 1px solid rgba(16,185,129,0.3); border-radius: 5px; padding: 4px 0; font-size: 9px; font-weight: 700; cursor: pointer; text-align: center; }
+  .bank-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; }
+  .bank-grid button.bank { background: rgba(16,185,129,0.1); color: #34d399; border: 1px solid rgba(16,185,129,0.3); border-radius: 4px; padding: 3px 0; font-size: 8px; font-weight: 700; cursor: pointer; text-align: center; min-width: 0; }
   .bank-grid button.bank:hover { background: rgba(16,185,129,0.2); border-color: rgba(16,185,129,0.5); }
   .bank-grid button.bank.on { background: rgba(34,197,94,0.3); border-color: #4ade80; box-shadow: 0 0 10px rgba(34,197,94,0.4); color: #fff; }
   .bank-grid button.bank.filled { color: #cdd; }
   .bank-grid button.bank.store { background:#4ad; color:#111; }
   .effect-buttons { display: flex; flex-direction: row; flex-wrap: wrap; gap: 4px; }
   .effect-btn-row { display: flex; align-items: center; gap: 6px; }
-  .yellow-btn { background: rgba(234,179,8,0.1); color: #fbbf24; border: 1px solid rgba(234,179,8,0.3); border-radius: 5px; padding: 4px 8px; font-size: 8px; font-weight: 700; cursor: pointer; min-width: 55px; text-align: center; text-transform: uppercase; letter-spacing: 0.5px; }
+  .yellow-btn { background: rgba(234,179,8,0.1); color: #fbbf24; border: 1px solid rgba(234,179,8,0.3); border-radius: 5px; padding: 4px 4px; font-size: 8px; font-weight: 700; cursor: pointer; min-width: 0; width: 100%; text-align: center; text-transform: uppercase; letter-spacing: 0.3px; }
   .yellow-btn:hover { background: rgba(234,179,8,0.2); border-color: rgba(234,179,8,0.5); }
   .yellow-btn.on { background: rgba(250,204,21,0.25); border-color: #fde68a; box-shadow: 0 0 12px rgba(234,179,8,0.4); color: #fff; }
   .effect-label { font-size: 8px; font-weight: 700; color: #9ca3af; }
@@ -434,28 +439,22 @@ void main(){
         <div class="scroll-title">Layers · click → focused lane</div>
         <div class="scroll-list" id="scrollList"></div>
       </div>
+      <!-- single 4-column grid; col1=SWING/REVERB/PITCH, col2=DELAY/FLANGER/SPIRAL, col3-4=rest.
+           HI/MID/LO under PITCH (col1), BPM under SPIRAL (col2), A/B/C/D + buttons/knobs under cols 3-4 -->
       <div class="controls-grid">
-        <!-- 3 rows x 4 columns of FX knobs -->
-        <div class="knob-grid">
-          <div id="slot-swing"></div><div id="slot-delay"></div><div id="slot-tremolo"></div><div id="slot-trans"></div>
-          <div id="slot-reverb"></div><div id="slot-flanger"></div><div id="slot-phaser"></div><div id="slot-roll"></div>
-          <div id="slot-pitch"></div><div id="slot-spiral"></div><div id="slot-filter"></div><div id="slot-distort"></div>
+        <div id="slot-swing"></div><div id="slot-delay"></div><div id="slot-tremolo"></div><div id="slot-trans"></div>
+        <div id="slot-reverb"></div><div id="slot-flanger"></div><div id="slot-phaser"></div><div id="slot-roll"></div>
+        <div id="slot-pitch"></div><div id="slot-spiral"></div><div id="slot-filter"></div><div id="slot-distort"></div>
+        <div id="slot-hi" class="g-hi"></div><div id="slot-mid" class="g-mid"></div><div id="slot-lo" class="g-lo"></div>
+        <div class="fader-col g-fader"><div class="fader-container">
+          <div id="bpm-fader-track" class="fader-track-wrap"><div id="bpm-fader-bar" class="fader-blue-bar"></div><div id="bpm-fader-thumb" class="fader-thumb-overlay"></div></div>
+          <div class="fader-label">BPM</div>
+        </div></div>
+        <div class="bank-grid g-banks">
+          <button id="bankA" class="bank">A</button><button id="bankB" class="bank">B</button><button id="bankC" class="bank">C</button><button id="bankD" class="bank">D</button>
         </div>
-        <!-- bottom: EQ stack | BPM fader | banks + effect buttons -->
-        <div class="bottom-controls">
-          <div class="eq-col"><div id="slot-hi"></div><div id="slot-mid"></div><div id="slot-lo"></div></div>
-          <div class="fader-col"><div class="fader-container">
-            <div id="bpm-fader-track" class="fader-track-wrap"><div id="bpm-fader-bar" class="fader-blue-bar"></div><div id="bpm-fader-thumb" class="fader-thumb-overlay"></div></div>
-            <div class="fader-label">BPM</div>
-          </div></div>
-          <div class="be-col">
-            <div class="bank-grid">
-              <button id="bankA" class="bank">A</button><button id="bankB" class="bank">B</button><button id="bankC" class="bank">C</button><button id="bankD" class="bank">D</button>
-            </div>
-            <div class="effect-btn-row"><button id="strobe-btn" class="yellow-btn">Strobe</button><div id="slot-stutter"></div></div>
-            <div class="effect-btn-row"><button id="tapestop-btn" class="yellow-btn">Tape stop</button><div id="slot-gate"></div></div>
-          </div>
-        </div>
+        <button id="strobe-btn" class="yellow-btn g-strobe">Strobe</button><div id="slot-stutter" class="g-stutter"></div>
+        <button id="tapestop-btn" class="yellow-btn g-tape">Tape stop</button><div id="slot-gate" class="g-gate"></div>
       </div>
     </div>
   </div>
@@ -1343,8 +1342,9 @@ function renderPreview(now){
   const prog=previewCompile(id);
   if(!prog){ cv.style.display="none"; if(ph){ph.style.display="block";} return; }
   cv.style.display="block"; if(ph) ph.style.display="none";
-  const g=prevGL;                                            // fixed 16:9 backing (matches Output); CSS scales to fill panel
-  if(cv.width!==1280||cv.height!==720){ cv.width=1280; cv.height=720; }
+  const g=prevGL; const dpr=Math.min(2,window.devicePixelRatio||1);   // backing = panel size -> layer fills the panel (CSS sets stable client size)
+  const w=Math.max(16,Math.round((cv.clientWidth||320)*dpr)), h=Math.max(16,Math.round((cv.clientHeight||180)*dpr));
+  if(cv.width!==w||cv.height!==h){ cv.width=w; cv.height=h; }
   g.viewport(0,0,cv.width,cv.height); g.clearColor(0,0,0,0); g.clear(g.COLOR_BUFFER_BIT);
   g.useProgram(prog); g.bindBuffer(g.ARRAY_BUFFER,prevQuad);
   const lp=g.getAttribLocation(prog,"position"); g.enableVertexAttribArray(lp); g.vertexAttribPointer(lp,2,g.FLOAT,false,0,0);
