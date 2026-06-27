@@ -7,14 +7,10 @@
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
-  body { margin: 0; overflow: hidden; background: #000; font: 12px/1.4 ui-monospace, monospace; color: #ddd; }
-  #glcanvas { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
-  #editor {
-    position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
-    background: rgba(12,12,16,0.86); backdrop-filter: blur(6px);
-    border-top: 1px solid #2a2a30; padding: 10px 12px;
-  }
+  body { margin: 0; overflow: hidden; background: #0b0f19; font: 12px/1.4 ui-monospace, monospace; color: #ddd; }
+  #editor { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 16px; background: #090d16; padding: 16px; overflow: hidden; z-index: 10; }
   #editor.hidden { display: none; }
+  #glcanvas { aspect-ratio: 16 / 9; width: 100%; height: auto; max-height: 100%; display: block; object-fit: contain; background: #000; border-radius: 4px; }
   .transport { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
   .transport button { background:#1c1c22; color:#ddd; border:1px solid #3a3a44; border-radius:5px; padding:5px 10px; cursor:pointer; }
   .transport button:hover { background:#26262e; }
@@ -82,11 +78,90 @@
   .cell.play { outline:2px solid #fff6; }
   .hint { color:#666; font-size:10px; margin-top:8px; }
   kbd { background:#222; border:1px solid #444; border-radius:3px; padding:0 4px; }
+
+  /* ===== adapted dashboard UI (from cutout_sequencer) ===== */
+  .dashboard-top { display: grid; grid-template-columns: 280px 280px 1fr; gap: 16px; height: 340px; flex-shrink: 0; }
+  .controls-grid .knob { width: 26px; } .controls-grid .knob .dial { width: 18px; height: 18px; }
+  .controls-row { gap: 4px !important; }
+  .panel-output { position: relative; background: rgba(15,18,28,0.85); backdrop-filter: blur(12px); border-radius: 12px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.04); border: 1px solid rgba(234,88,12,0.35); display: flex; justify-content: center; align-items: center; }
+  .panel-output .output-label { position: absolute; top: 8px; left: 8px; background: rgba(234,88,12,0.2); padding: 3px 8px; border-radius: 4px; font-size: 9px; color: #fb923c; font-weight: 700; z-index: 2; letter-spacing: 1px; text-transform: uppercase; border: 1px solid rgba(234,88,12,0.25); cursor: pointer; display: flex; align-items: center; gap: 4px; }
+  .panel-output .output-label:hover { background: rgba(234,88,12,0.35); border-color: rgba(234,88,12,0.5); }
+  .panel-output .output-label svg { width: 11px; height: 11px; fill: currentColor; }
+  .panel-preview { position: relative; background: rgba(15,18,28,0.85); backdrop-filter: blur(12px); border-radius: 12px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.04); border: 1px solid rgba(16,185,129,0.3); display: flex; justify-content: center; align-items: center; padding: 10px; background-image: conic-gradient(rgba(255,255,255,0.03) 0.25turn, transparent 0.25turn 0.5turn, rgba(255,255,255,0.03) 0.5turn 0.75turn, transparent 0.75turn); background-size: 16px 16px; }
+  .panel-preview .preview-label { position: absolute; top: 8px; left: 8px; background: rgba(16,185,129,0.15); padding: 3px 8px; border-radius: 4px; font-size: 9px; color: #34d399; font-weight: 700; pointer-events: none; z-index: 2; letter-spacing: 1px; text-transform: uppercase; border: 1px solid rgba(16,185,129,0.2); }
+  .panel-preview canvas { max-width: 100%; max-height: 100%; object-fit: contain; }
+  .panel-preview .placeholder { color: #4ade80; font-size: 11px; font-weight: 500; opacity: 0.6; }
+  .panel-controls { background: rgba(15,18,28,0.85); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.04); display: grid; grid-template-columns: 180px 1fr; overflow: hidden; height: 100%; }
+  .scroll-selection { background: rgba(249,115,22,0.08); border-right: 1px solid rgba(249,115,22,0.15); display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+  .scroll-selection .scroll-title { padding: 8px 10px; font-size: 9px; font-weight: 700; background: rgba(249,115,22,0.12); color: #fb923c; letter-spacing: 1px; text-transform: uppercase; border-bottom: 1px solid rgba(249,115,22,0.15); }
+  .scroll-list { flex: 1; overflow-y: auto; padding: 6px; display: flex; flex-direction: column; gap: 3px; }
+  .scroll-list::-webkit-scrollbar { width: 4px; } .scroll-list::-webkit-scrollbar-thumb { background: rgba(249,115,22,0.3); border-radius: 2px; }
+  .scroll-photo-group { margin-bottom: 6px; }
+  .scroll-photo-header { font-size: 9px; font-weight: 700; color: #fb923c; padding: 2px 4px; border-bottom: 1px solid rgba(249,115,22,0.2); margin-bottom: 3px; position: sticky; top: 0; background: #16110b; }
+  .scroll-layer-item { font-size: 9px; background: rgba(255,255,255,0.03); color: #d4d4d8; padding: 4px 6px; border-radius: 4px; cursor: pointer; user-select: none; border: 1px solid transparent; }
+  .scroll-layer-item:hover { background: rgba(249,115,22,0.12); border-color: rgba(249,115,22,0.2); color: #fff; }
+  .scroll-layer-item.active { background: rgba(249,115,22,0.2); color: #fb923c; font-weight: 700; border-color: rgba(249,115,22,0.4); }
+  .controls-grid { padding: 10px; display: flex; flex-direction: column; gap: 8px; height: 100%; justify-content: flex-start; overflow-y: auto; }
+  .controls-row { display: flex; justify-content: space-around; gap: 6px; }
+  .bottom-controls { display: grid; grid-template-columns: 50px 1fr; gap: 8px; min-height: 90px; align-items: center; margin-top: 4px; }
+  .filter-eq-stack { display: flex; flex-direction: column; align-items: center; gap: 1px; }
+  .fader-col { display: flex; justify-content: center; align-items: center; height: 100%; }
+  .fader-container { display: flex; flex-direction: column; align-items: center; gap: 4px; height: 75px; justify-content: center; }
+  .fader-track-wrap { position: relative; width: 14px; height: 70px; background: #18181b; border-radius: 6px; border: 1px solid #27272a; box-shadow: inset 0 2px 4px rgba(0,0,0,0.5); cursor: pointer; touch-action: none; }
+  .fader-blue-bar { position: absolute; bottom: 0; left: 0; width: 100%; background: linear-gradient(to top, #1e3a8a, #3b82f6, #60a5fa); height: 50%; border-radius: 0 0 5px 5px; transition: height 0.05s linear; pointer-events: none; }
+  .fader-thumb-overlay { position: absolute; left: -3px; width: 20px; height: 10px; background: linear-gradient(to bottom, #fff 0%, #d4d4d8 100%); border: 1px solid #27272a; border-radius: 2px; box-shadow: 0 2px 5px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.8); pointer-events: none; bottom: calc(50% - 5px); transition: bottom 0.05s linear; }
+  .fader-label { font-size: 8px; font-weight: 700; color: #3b82f6; text-transform: uppercase; }
+  .buttons-col { display: flex; flex-direction: column; gap: 6px; justify-content: space-around; height: 100%; }
+  .bank-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+  .bank-grid button.bank { background: rgba(16,185,129,0.1); color: #34d399; border: 1px solid rgba(16,185,129,0.3); border-radius: 5px; padding: 4px 0; font-size: 9px; font-weight: 700; cursor: pointer; text-align: center; }
+  .bank-grid button.bank:hover { background: rgba(16,185,129,0.2); border-color: rgba(16,185,129,0.5); }
+  .bank-grid button.bank.on { background: rgba(34,197,94,0.3); border-color: #4ade80; box-shadow: 0 0 10px rgba(34,197,94,0.4); color: #fff; }
+  .bank-grid button.bank.filled { color: #cdd; }
+  .bank-grid button.bank.store { background:#4ad; color:#111; }
+  .effect-buttons { display: flex; flex-direction: column; gap: 4px; }
+  .effect-btn-row { display: flex; align-items: center; gap: 6px; }
+  .yellow-btn { background: rgba(234,179,8,0.1); color: #fbbf24; border: 1px solid rgba(234,179,8,0.3); border-radius: 5px; padding: 4px 8px; font-size: 8px; font-weight: 700; cursor: pointer; min-width: 55px; text-align: center; text-transform: uppercase; letter-spacing: 0.5px; }
+  .yellow-btn:hover { background: rgba(234,179,8,0.2); border-color: rgba(234,179,8,0.5); }
+  .yellow-btn.on { background: rgba(250,204,21,0.25); border-color: #fde68a; box-shadow: 0 0 12px rgba(234,179,8,0.4); color: #fff; }
+  .effect-label { font-size: 8px; font-weight: 700; color: #9ca3af; }
+  /* orange circle knobs */
+  .knob { display: inline-flex; flex-direction: column; align-items: center; width: 28px; flex: none; }
+  .knob .dial { width: 22px; height: 22px; border-radius: 50%; background: radial-gradient(circle, #ff7e39 30%, #e04f00 100%); border: 2px solid #232329; position: relative; cursor: ns-resize; touch-action: none; box-shadow: inset 0 1px 2px rgba(255,255,255,0.5), 0 2px 4px rgba(0,0,0,0.6); }
+  .knob .dial::after { content: ""; position: absolute; left: 50%; top: 1.5px; width: 2px; height: 7px; background: #fff; box-shadow: 0 0 3px #fff; transform-origin: 50% 9.5px; transform: translateX(-50%) rotate(var(--a,0deg)); border-radius: 1px; }
+  .knob.inert .dial { background: radial-gradient(circle,#666 30%,#333 100%); }
+  .knob .klabel { font-size: 8px; color: #9ca3af; margin-top: 1px; letter-spacing: .5px; }
+  /* tracks */
+  #grid { flex: 1; overflow-y: auto; padding-right: 4px; display: flex; flex-direction: column; gap: 4px; }
+  .lane { display: flex; align-items: center; gap: 4px; position: relative; padding: 4px; border-radius: 6px; border: 1px solid transparent; }
+  .lane.active-lane { background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.3); }
+  .lane.dragover { outline: 1px dashed #8cf; outline-offset: 1px; }
+  .swatch { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+  .cells { display: grid; grid-auto-flow: column; gap: 3px; flex: 1; }
+  .cell { height: 16px; border-radius: 3px; background: #23232b; border: 1px solid #34343e; cursor: pointer; }
+  .cell.beat { background: #3a3a46; }
+  .cell.on { background: #10b981; border-color: #34d399; box-shadow: 0 0 7px rgba(16,185,129,0.85); }
+  .cell.play { outline: 2px solid #fff6; }
+  .transport { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 6px 0; margin: 0; border-top: 1px solid #2a2a30; border-bottom: 1px solid #2a2a30; flex-shrink: 0; }
+  .transport .title { font-weight: 700; color: #10b981; letter-spacing: 1px; margin-right: 6px; font-size: 11px; }
+  .lane .nm { width: 56px; flex: none; color: #cdd; font-size: 10px; }
+  .lane select.nmsel { width: 80px; font-size: 9px; }
+  .lane .grip { cursor: grab; color: #666; padding: 0 2px; user-select: none; font-size: 10px; }
+  .lane .ms { width: 14px; padding: 0; background: #1c1c22; border: 1px solid #3a3a44; border-radius: 3px; cursor: pointer; font-size: 8px; line-height: 12px; color: #9aa; flex: none; }
+  .lane .ms.on { background: #10b981; color: #111; border-color: #10b981; font-weight: 700; }
+  .lane .ms.solo.on { background: #4ad; border-color: #4ad; }
+  .lane .ms.fx.on { background: #3a3a44; color: #10b981; border-color: #10b981; }
+  .lane .fxslot { width: 24px; height: 16px; flex: none; display: flex; align-items: center; justify-content: center; font-size: 8px; color: #888; background: #15151b; border: 1px dashed #3a3a44; border-radius: 4px; overflow: hidden; }
+  .lane .fxslot.set { color: #10b981; border-style: solid; border-color: #10b981; }
+  .lane .fxslot.over { background: #26323a; border-color: #8cf; }
+  @media (max-width:1024px), (max-height:820px){
+    .dashboard-top { grid-template-columns: 1fr 1fr 1.4fr; height: 180px; }
+    body { font-size: 11px; } #editor { gap: 8px; padding: 8px; }
+    .knob { width: 24px; } .knob .dial { width: 18px; height: 18px; }
+  }
 </style>
 <script src="../layers_bundle.js"></script>
 </head>
 <body>
-<canvas id="glcanvas"></canvas>
 
 <!-- ===== Scene 6687 composition; each element is stepped, hit steps scale 120% ===== -->
 <script type="x-shader/x-fragment" id="fs">
@@ -308,6 +383,52 @@ void main(){
 </script>
 
 <div id="editor">
+  <div class="dashboard-top">
+    <!-- Output preview (the live render) -->
+    <div class="panel-output">
+      <div class="output-label" id="output"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h7l-2 3v1h8v-1l-2-3h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z"/></svg>Output</div>
+      <canvas id="glcanvas"></canvas>
+    </div>
+    <!-- Focused-lane layer preview -->
+    <div class="panel-preview">
+      <div class="preview-label">Layer Preview</div>
+      <canvas id="previewCanvas" style="display:none;"></canvas>
+      <div id="preview-placeholder" class="placeholder">Select a layer</div>
+    </div>
+    <!-- Controls rack: layer browser + FX grid -->
+    <div class="panel-controls">
+      <div class="scroll-selection">
+        <div class="scroll-title">Layers · click → focused lane</div>
+        <div class="scroll-list" id="scrollList"></div>
+      </div>
+      <div class="controls-grid">
+        <div class="controls-row"><div id="slot-swing"></div><div id="slot-delay"></div><div id="slot-tremolo"></div><div id="slot-trans"></div></div>
+        <div class="controls-row"><div id="slot-reverb"></div><div id="slot-flanger"></div><div id="slot-phaser"></div><div id="slot-roll"></div></div>
+        <div class="controls-row">
+          <div id="slot-pitch"></div><div id="slot-spiral"></div><div id="slot-distort"></div>
+          <div class="filter-eq-stack"><div id="slot-filter"></div><div id="slot-hi"></div><div id="slot-mid"></div><div id="slot-lo"></div></div>
+        </div>
+        <div class="bottom-controls">
+          <div class="fader-col"><div class="fader-container">
+            <div id="bpm-fader-track" class="fader-track-wrap"><div id="bpm-fader-bar" class="fader-blue-bar"></div><div id="bpm-fader-thumb" class="fader-thumb-overlay"></div></div>
+            <div class="fader-label">BPM</div>
+          </div></div>
+          <div class="buttons-col">
+            <div class="bank-grid">
+              <button id="bankA" class="bank">A</button><button id="bankB" class="bank">B</button><button id="bankC" class="bank">C</button><button id="bankD" class="bank">D</button>
+            </div>
+            <div class="effect-buttons">
+              <div class="effect-btn-row"><button id="strobe-btn" class="yellow-btn">Strobe</button><div id="slot-gate"></div><span class="effect-label">GATE</span></div>
+              <div class="effect-btn-row"><button id="tapestop-btn" class="yellow-btn">Tape stop</button><div id="slot-stutter"></div><span class="effect-label">SLICE</span></div>
+              <div class="effect-btn-row"><button id="stutter-btn" class="yellow-btn">Stutter</button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Transport bar -->
   <div class="transport">
     <span class="title">GLSL SEQUENCER</span>
     <button id="play">▶ play</button>
@@ -317,14 +438,12 @@ void main(){
     <input type="file" id="audioFile" accept="audio/*" hidden>
     <label>steps <select id="steps"><option>8</option><option>16</option><option selected>32</option><option>64</option></select></label>
     <button id="rand">🎲 rand</button>
-    <span class="banks" title="pattern banks — click = switch live · double-click = store current">
-      <button id="bankA" class="bank">A</button><button id="bankB" class="bank">B</button><button id="bankC" class="bank">C</button><button id="bankD" class="bank">D</button>
-    </span>
-    <button id="output">⧉ output</button>
     <span style="flex:1"></span>
-    <span class="hint"><kbd>Space</kbd> play · <kbd>H</kbd> hide · right-click a knob to reset</span>
+    <span class="hint"><kbd>Space</kbd> play · <kbd>H</kbd> hide · banks dbl-click=store · right-click knob=reset</span>
   </div>
-  <div class="fxrack" id="fxrack"></div>
+
+  <div id="slot-bpm" style="display:none;"></div>
+  <div class="fxrack" id="fxrack" style="display:none;"></div>
   <div id="grid"></div>
 </div>
 
@@ -913,12 +1032,14 @@ function buildGrid(){
       };
       cells.appendChild(cell);
     }
+    lane.addEventListener("mousedown", () => setActiveChannel(c));     // focus this lane (preview + scroll target)
     lane.appendChild(grip);
     lane.appendChild(sw); lane.appendChild(nm); lane.appendChild(mute); lane.appendChild(solo);
     lane.appendChild(kVol.el); lane.appendChild(nsel); lane.appendChild(fxBtn); lane.appendChild(fxslot);
     lane.appendChild(gsel);
     lane.appendChild(cells); lane.appendChild(fxPop); wrap.appendChild(lane);
   }
+  document.querySelectorAll(".lane").forEach((l,i)=>l.classList.toggle("active-lane", i===activeChannelIndex));
 }
 // drag a channel to a new position — reorders draw/z order (lower index draws first = behind)
 function reorderChannel(from, to){
@@ -1057,21 +1178,20 @@ FX_SPEC.forEach(sp => {
   kn.el.dataset.fx = sp.k; kn.el.classList.toggle("inert", !sp.wired);
   kn.el.setAttribute("draggable","true");                                  // drag a master knob onto a lane FX slot
   kn.el.addEventListener("dragstart", e => e.dataTransfer.setData("text/fx", sp.k));
-  fxKnobs[sp.k] = kn; fxrack.appendChild(kn.el);
+  fxKnobs[sp.k] = kn; const slot = $("slot-" + sp.k); (slot || fxrack).appendChild(kn.el);
 });
 // live FX buttons: STROBE (toggle), TAPE STOP + STUTTER (hold)
-function fxButton(lab, hold, on, off){
-  const btn=document.createElement("button"); btn.className="fxbtn"; btn.textContent=lab; btn.title=lab;
+function fxButton(id, hold, on, off){
+  const btn=$(id); if(!btn) return;
   if (hold){
     const dn=e=>{ e.preventDefault(); btn.classList.add("on"); initAudio(); on(); };
     const up=()=>{ btn.classList.remove("on"); off(); };
     btn.addEventListener("pointerdown",dn); btn.addEventListener("pointerup",up); btn.addEventListener("pointerleave",up);
   } else { btn.onclick=()=>{ const v=!btn.classList.contains("on"); btn.classList.toggle("on",v); on(v); }; }
-  fxrack.appendChild(btn); return btn;
 }
-fxButton("STROBE", false, v => { strobeOn = v; });
-fxButton("TAPE STOP", true, () => { tapeStop = true; }, () => { tapeStop = false; });
-fxButton("STUTTER", true, () => { stutterOn = true; stutterAnchor = Math.floor(state.playhead); }, () => { stutterOn = false; });
+fxButton("strobe-btn", false, v => { strobeOn = v; });
+fxButton("tapestop-btn", true, () => { tapeStop = true; }, () => { tapeStop = false; });
+fxButton("stutter-btn", true, () => { stutterOn = true; stutterAnchor = Math.floor(state.playhead); }, () => { stutterOn = false; });
 
 // randomize a musical pattern (more hits on beats) + random visual layers and their sizes
 $("rand").onclick = () => {
@@ -1142,11 +1262,83 @@ addEventListener("keydown", (e) => {
   if (e.key.toLowerCase() === "h") $("editor").classList.toggle("hidden");
 });
 
+// ---------- focused lane + layer browser + live preview ----------
+let activeChannelIndex = 0;
+function setActiveChannel(idx){
+  activeChannelIndex = Math.max(0, Math.min(state.channels-1, idx));
+  document.querySelectorAll(".lane").forEach((l,i)=>l.classList.toggle("active-lane", i===activeChannelIndex));
+  const id = state.layer[activeChannelIndex];
+  document.querySelectorAll(".scroll-layer-item").forEach(el=>el.classList.toggle("active", el.dataset.layerId===id));
+  const ph=$("preview-placeholder"); if(ph && (!id || !LAYERS[id])){ ph.style.display="block"; ph.textContent=`Lane ${activeChannelIndex+1}: no layer`; }
+}
+function buildScrollSelectionList(){
+  const list=$("scrollList"); if(!list) return; list.innerHTML="";
+  const CAT=window.LAYER_CATEGORY||{}, groups={background:[],patterns:[],objects:[],misc:[]};
+  Object.keys(LAYERS).forEach(id=>{ if(!id.includes("#")) return; (groups[CAT[id]||"misc"]||groups.misc).push(id); });
+  [["background","BACKGROUND"],["patterns","PATTERNS"],["objects","OBJECTS"],["misc","MISC"]].forEach(([k,lab])=>{
+    const ids=groups[k]; if(!ids.length) return;
+    const g=document.createElement("div"); g.className="scroll-photo-group";
+    const h=document.createElement("div"); h.className="scroll-photo-header"; h.textContent=`${lab} (${ids.length})`; g.appendChild(h);
+    ids.sort().forEach(id=>{ const it=document.createElement("div"); it.className="scroll-layer-item"; it.dataset.layerId=id;
+      it.textContent=(LAYERS[id]&&LAYERS[id].title)||id; it.title="click → load into focused lane";
+      it.onclick=()=>{ const a=activeChannelIndex; state.layer[a]=id; compileLayer(id);
+        const gsel=document.querySelector(`.lane[data-c="${a}"] .lsel`); if(gsel) gsel.value=LAYERS[id]?LAYERS[id].label:"";
+        document.querySelectorAll(".scroll-layer-item").forEach(e=>e.classList.remove("active")); it.classList.add("active"); save(); };
+      g.appendChild(it); });
+    list.appendChild(g);
+  });
+}
+// preview the focused lane's layer in its own GL context
+let prevGL=null, prevQuad=null, prevProgs={}, prevPos=0;
+function previewCompile(id){
+  if(prevProgs[id]!==undefined) return prevProgs[id];
+  const L=LAYERS[id]; const g=prevGL; let frag=null;
+  if(L && L.builtin){ const el=$("layer-"+L.builtin); if(el) frag=PATTERN_HEADER+"\n"+el.textContent; }
+  else if(L){ const src=window.FILE_GLOBALS && window.FILE_GLOBALS[L.fileBase]; if(src) frag=LAYER_HEADER+"\n"+src+`\nvoid main(){ gl_FragColor=${L.fn}(gl_FragCoord.xy/iResolution.xy); }`; }
+  if(!frag){ return prevProgs[id]=null; }
+  const v=g.createShader(g.VERTEX_SHADER); g.shaderSource(v,VERT); g.compileShader(v);
+  const f=g.createShader(g.FRAGMENT_SHADER); g.shaderSource(f,frag); g.compileShader(f);
+  if(!g.getShaderParameter(f,g.COMPILE_STATUS)){ return prevProgs[id]=null; }
+  const p=g.createProgram(); g.attachShader(p,v); g.attachShader(p,f); g.linkProgram(p);
+  return prevProgs[id] = g.getProgramParameter(p,g.LINK_STATUS) ? p : null;
+}
+function renderPreview(now){
+  const cv=$("previewCanvas"), ph=$("preview-placeholder"); if(!cv) return;
+  const id=state.layer[activeChannelIndex];
+  if(!id || !LAYERS[id]){ cv.style.display="none"; if(ph){ph.style.display="block";} return; }
+  if(!prevGL){ prevGL=cv.getContext("webgl",{premultipliedAlpha:false,alpha:true}); if(!prevGL) return;
+    prevQuad=prevGL.createBuffer(); prevGL.bindBuffer(prevGL.ARRAY_BUFFER,prevQuad);
+    prevGL.bufferData(prevGL.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),prevGL.STATIC_DRAW); }
+  const prog=previewCompile(id);
+  if(!prog){ cv.style.display="none"; if(ph){ph.style.display="block";} return; }
+  cv.style.display="block"; if(ph) ph.style.display="none";
+  const g=prevGL; const w=cv.clientWidth||240, h=cv.clientHeight||135;
+  if(cv.width!==w||cv.height!==h){ cv.width=w; cv.height=h; }
+  g.viewport(0,0,cv.width,cv.height); g.clearColor(0,0,0,0); g.clear(g.COLOR_BUFFER_BIT);
+  g.useProgram(prog); g.bindBuffer(g.ARRAY_BUFFER,prevQuad);
+  const lp=g.getAttribLocation(prog,"position"); g.enableVertexAttribArray(lp); g.vertexAttribPointer(lp,2,g.FLOAT,false,0,0);
+  g.uniform2f(g.getUniformLocation(prog,"iResolution"),cv.width,cv.height); g.uniform1f(g.getUniformLocation(prog,"iTime"),now);
+  ["iBass","iMid","iTreble","iLevel","iBeat"].forEach(u=>{ const l=g.getUniformLocation(prog,u); if(l) g.uniform1f(l,0.0); });
+  g.drawArrays(g.TRIANGLES,0,3);
+}
+function updateBpmFaderUI(val){ const min=60,max=200,p=(val-min)/(max-min);
+  const bar=$("bpm-fader-bar"), th=$("bpm-fader-thumb"); if(bar)bar.style.height=(p*100)+"%"; if(th)th.style.bottom=`calc(${p*100}% - 3px)`; }
+
 // ---------- boot ----------
 load();
 $("steps").value = String(state.steps);
-loadLayersManifest().then(() => { state.layer.forEach((id)=>compileLayer(id)); buildGrid(); });
+loadLayersManifest().then(() => { state.layer.forEach((id)=>compileLayer(id)); buildScrollSelectionList(); buildGrid(); setActiveChannel(0); });
 buildGrid();
+updateBpmFaderUI(state.bpm);
+// BPM vertical fader
+(function(){ const track=$("bpm-fader-track"); if(!track) return; let drag=false;
+  const setY=y=>{ const r=track.getBoundingClientRect(); const p=Math.max(0,Math.min(1,1-(y-r.top)/r.height));
+    const bpm=Math.round(60+p*140); state.bpm=bpm; if(fxKnobs.bpm) fxKnobs.bpm.set(bpm);
+    if(state.playing) state.startTime=performance.now()/1000 - state.playhead*stepDur(); updateBpmFaderUI(bpm); save(); };
+  track.addEventListener("pointerdown",e=>{drag=true;track.setPointerCapture(e.pointerId);setY(e.clientY);e.preventDefault();});
+  track.addEventListener("pointermove",e=>{if(drag)setY(e.clientY);});
+  track.addEventListener("pointerup",()=>drag=false);
+})();
 window.__ready = true;
 let lastT = performance.now()/1000;
 
@@ -1222,8 +1414,10 @@ let lastT = performance.now()/1000;
   uploadPulse();
   const energy = (row) => { if (row >= state.channels) return 0; let m=0; for (let s=0;s<state.steps;s++) m=Math.max(m, pulses2d[row*state.steps+s]); return m; };
 
-  if (canvas.width !== innerWidth || canvas.height !== innerHeight){ canvas.width=innerWidth; canvas.height=innerHeight; }
+  { const w = canvas.clientWidth||960, h = canvas.clientHeight||540;   // canvas now lives in the output panel
+    if (canvas.width !== w || canvas.height !== h){ canvas.width=w; canvas.height=h; } }
   renderLayers(now);                                          // multi-pass: object-layers -> atlas
+  renderPreview(now);                                         // focused-lane layer preview
 
   gl.viewport(0,0,canvas.width,canvas.height);
   gl.useProgram(prog);
