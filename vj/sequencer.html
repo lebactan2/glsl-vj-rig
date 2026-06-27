@@ -1312,8 +1312,9 @@ function renderPreview(now){
   const prog=previewCompile(id);
   if(!prog){ cv.style.display="none"; if(ph){ph.style.display="block";} return; }
   cv.style.display="block"; if(ph) ph.style.display="none";
-  const g=prevGL; const w=cv.clientWidth||240, h=cv.clientHeight||135;
-  if(cv.width!==w||cv.height!==h){ cv.width=w; cv.height=h; }
+  const g=prevGL; const dpr=Math.min(2,window.devicePixelRatio||1);
+  const w=Math.round((cv.clientWidth||240)*dpr), h=Math.round((cv.clientHeight||135)*dpr);
+  if(w>0&&h>0&&(cv.width!==w||cv.height!==h)){ cv.width=w; cv.height=h; }
   g.viewport(0,0,cv.width,cv.height); g.clearColor(0,0,0,0); g.clear(g.COLOR_BUFFER_BIT);
   g.useProgram(prog); g.bindBuffer(g.ARRAY_BUFFER,prevQuad);
   const lp=g.getAttribLocation(prog,"position"); g.enableVertexAttribArray(lp); g.vertexAttribPointer(lp,2,g.FLOAT,false,0,0);
@@ -1414,8 +1415,8 @@ let lastT = performance.now()/1000;
   uploadPulse();
   const energy = (row) => { if (row >= state.channels) return 0; let m=0; for (let s=0;s<state.steps;s++) m=Math.max(m, pulses2d[row*state.steps+s]); return m; };
 
-  { const w = canvas.clientWidth||960, h = canvas.clientHeight||540;   // canvas now lives in the output panel
-    if (canvas.width !== w || canvas.height !== h){ canvas.width=w; canvas.height=h; } }
+  // render at full HD (CSS scales it into the panel; 2nd-screen output stays sharp)
+  if (canvas.width !== 1920 || canvas.height !== 1080){ canvas.width = 1920; canvas.height = 1080; }
   renderLayers(now);                                          // multi-pass: object-layers -> atlas
   renderPreview(now);                                         // focused-lane layer preview
 
