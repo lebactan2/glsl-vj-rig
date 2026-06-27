@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Scene 6687 Sequencer — GLSL VJ</title>
+<title>GLSL Sequencer</title>
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
@@ -41,6 +41,27 @@
            background:#15151b; border:1px solid #3a3a44; border-radius:6px; padding:6px 8px; box-shadow:0 4px 14px rgba(0,0,0,.6); }
   .fxpop.open { display:flex; }
   .transport .knob { margin:0 1px; }
+  .fxrack { display:flex; flex-wrap:wrap; align-items:flex-end; gap:6px 8px; padding:6px 4px 8px; margin-bottom:6px; border-bottom:1px solid #2a2a30; }
+  .fxrack .knob.inert .dial { opacity:.55; }
+  .fxrack .knob.inert .dial::after { background:#777; }
+  .fxbtn { height:34px; padding:0 8px; background:#1c1c22; color:#cdd; border:1px solid #3a3a44; border-radius:5px; cursor:pointer; font-size:10px; }
+  .fxbtn.on { background:#caa23a; color:#111; border-color:#caa23a; font-weight:700; }
+  .fxbtn.inert { opacity:.65; }
+  .lane .fxslot { width:30px; height:18px; flex:none; display:flex; align-items:center; justify-content:center;
+    font-size:8px; color:#888; background:#15151b; border:1px dashed #3a3a44; border-radius:4px; overflow:hidden; }
+  .lane .fxslot.set { color:#caa23a; border-style:solid; border-color:#caa23a; }
+  .lane .fxslot.over { background:#26323a; border-color:#8cf; }
+  /* small-screen (down to ~8 inch) adaptability */
+  @media (max-width:1024px), (max-height:820px){
+    body { font-size:11px; }
+    #editor { max-height:62vh; overflow:auto; padding:6px 8px; }
+    .transport { gap:6px; }
+    .fxrack { gap:4px 5px; }
+    .knob { width:24px; } .knob .dial { width:17px; height:17px; }
+    .knob .dial::after { height:6px; transform-origin:50% 7px; }
+    .lane { gap:3px; } .lane select.nmsel { width:78px; } .lane .cell { height:14px; }
+    .lane .fxslot { width:26px; }
+  }
   .lane .eye.off { color:#555; background:#141418; }
   .transport select { background:#1c1c22; color:#ddd; border:1px solid #3a3a44; border-radius:5px; padding:4px; }
   .transport .title { font-weight:700; color:#8cf; letter-spacing:1px; margin-right:6px; }
@@ -260,10 +281,12 @@ void main(){
         float xN = clamp(uv.x, 0.0, 0.999);
         float seg = floor(xN * uSteps);
         float p = pulseAt(float(c), seg);
+        if (p < 0.02) continue;                                    // reveal only the hit segments, not the whole layer
         float segC = (seg + 0.5) / uSteps;
-        float sx = (xN - segC) / (1.0 + p * 0.2) + segC;          // hit segment zooms to ~120%
+        float sx = (xN - segC) / (1.0 + p * 1.0) + segC;          // hit segment zooms to ~200%
         vec4 lc = texture2D(uAtlas, vec2((sx + cc) / 4.0, (uv.y + rr) / 2.0));
-        col = mix(col, lc.rgb * (1.0 + p * 0.6), lc.a * uOpacity[c]);
+        col = mix(col, lc.rgb * (0.6 + p * 0.8), lc.a * uOpacity[c] * p);  // alpha follows the (ADSR) pulse envelope
+
     }
 
     col = satb(col, 1.22, 1.0);
@@ -273,28 +296,35 @@ void main(){
 
 <div id="editor">
   <div class="transport">
-    <span class="title">6687 SEQUENCER</span>
+    <span class="title">GLSL SEQUENCER</span>
     <button id="play">▶ play</button>
     <button id="clear">clear</button>
     <button id="add">+ channel</button>
     <button id="loadBtn">♪ load audio</button>
     <input type="file" id="audioFile" accept="audio/*" hidden>
-    <label>BPM <input type="range" id="bpm" min="60" max="200" step="1" value="120"></label>
-    <span id="bpmv">120</span>
     <label>steps <select id="steps"><option>8</option><option>16</option><option selected>32</option><option>64</option></select></label>
-    <label>filter <input type="range" id="filter" min="-100" max="100" step="1" value="0" style="width:90px"></label>
-    <span id="echoK"></span><span id="swingK"></span><span id="reverbK"></span><span id="masterK"></span>
     <button id="rand">🎲 rand</button>
     <button id="patA" title="click = recall · double-click = save">A</button>
     <button id="patB" title="click = recall · double-click = save">B</button>
     <button id="output">⧉ output</button>
     <span style="flex:1"></span>
-    <span class="hint"><kbd>Space</kbd> play · <kbd>H</kbd> hide · pitch/note per lane →</span>
+    <span class="hint"><kbd>Space</kbd> play · <kbd>H</kbd> hide · right-click a knob to reset</span>
   </div>
+  <div class="fxrack" id="fxrack"></div>
   <div id="grid"></div>
 </div>
 
 <!-- ===== separated object-layers (each outputs vec4(rgb, alpha=silhouette)); engine prepends a header ===== -->
+<script type="x-shader/x-fragment" id="layer-cement">
+void main(){
+  vec2 uv=gl_FragCoord.xy/iResolution.xy;
+  float fine=h2(floor(gl_FragCoord.xy/1.5)), med=h2(floor(uv*320.0)), coarse=h2(floor(uv*90.0));
+  float spec=fine*0.5+med*0.3+coarse*0.2;
+  vec3 c=mix(vec3(0.42,0.42,0.45), vec3(0.76,0.76,0.80), spec);
+  c+=(step(0.93,med)-step(0.985,med))*0.20; c-=step(0.965,coarse)*0.16;
+  gl_FragColor=vec4(c,1.0);   // full-screen cement (default background, now selectable)
+}
+</script>
 <script type="x-shader/x-fragment" id="layer-white_gate">
 void main(){
   vec2 uv=gl_FragCoord.xy/iResolution.xy; vec2 p=uv*2.0-1.0; p.x*=iResolution.x/iResolution.y;
@@ -394,7 +424,7 @@ const DEFAULT_NAMES = FULL_NAMES.slice();
 const NP = PAT.length;
 const NOTE_OPTS = [["1/32",0.03125],["1/16",0.0625],["1/8",0.125],["1/4",0.25],["1/2",0.5],["1",1],["4",4],["8",8],["16",16],["32",32]];
 // built-in pattern shaders (inline <script id="layer-*">), offered as default layers
-const DEFAULT_PATTERNS = ["arrows","rings","blossom","grid","waves","scales","dots","star","spiral","white_gate"];
+const DEFAULT_PATTERNS = ["cement","arrows","rings","blossom","grid","waves","scales","dots","star","spiral","white_gate"];
 // separated object-layers loaded from vj/layers_manifest.json (built from layered_glsl/*)
 let LAYERS = {};          // key (id#fn) -> {id,file,fn,name,call,keywords,label}
 let layerSearch = {};     // searchable datalist string -> key
@@ -406,18 +436,25 @@ const state = {
   grid: null, playing: false, startTime: 0, playhead: 0, lastStep: -1,
 };
 state.grid = new Uint8Array(state.channels * state.steps);
-let pulses2d = new Float32Array(state.channels * state.steps);   // per-step pulse, decays each frame
+let pulses2d = new Float32Array(state.channels * state.steps);   // per-step pulse (visual ADSR envelope value)
+let rise2d   = new Float32Array(state.channels * state.steps);   // 1 = this step is in its attack ramp
 state.pitch = Array.from({length: state.channels}, () => 0);     // per-channel semitone transpose
 state.noteLen = Array.from({length: state.channels}, () => 0.25);// per-channel note length (whole-notes)
 state.layer = Array.from({length: state.channels}, () => "");    // per-channel object-layer id ("" = built-in element)
 state.inst  = Array.from({length: state.channels}, (_,c) => INSTRUMENTS[c%8][1]); // synth voice per channel
-state.vis   = Array.from({length: state.channels}, () => 1);     // 1 = visible
 state.adsr  = Array.from({length: state.channels}, () => ({a:0.01, d:0.1, s:0.7, r:0.3})); // per-channel ADSR (knob pos 0..1)
 state.opacity = Array.from({length: state.channels}, () => 1);   // per-channel layer opacity
-state.mute  = Array.from({length: state.channels}, () => 0);     // 1 = audio muted
-state.solo  = Array.from({length: state.channels}, () => 0);     // 1 = soloed
+state.vol   = Array.from({length: state.channels}, () => 1);     // per-channel volume
+state.mute  = Array.from({length: state.channels}, () => 0);     // 1 = muted (audio + visual)
+state.solo  = Array.from({length: state.channels}, () => 0);     // 1 = soloed (audio + visual)
+state.trackFx = Array.from({length: state.channels}, () => "");  // per-track FX assigned via drop slot
 state.swing = 0; state.reverb = 0; state.master = 1;             // global groove + FX + volume
+state.fx = {};                                                   // FX-rack knob values (UI; wired ones act, rest stored for next week)
 let echoLevel = 0, fxFilter = 0;                                 // echo now a 0..1 knob
+// seed a visual hit with its attack ramp (ADSR drives the layer reveal)
+function hitPulse(c, s){ const i = c*state.steps + s; const A = state.adsr[c] ? state.adsr[c].a : 0.01;
+  if (A < 0.02){ pulses2d[i] = 1.0; rise2d[i] = 0; } else { pulses2d[i] = Math.max(pulses2d[i], 0.02); rise2d[i] = 1; } }
+function visible(c){ const anySolo = state.solo.some(s=>s); return !state.mute[c] && (!anySolo || state.solo[c]); }
 let dragFrom = null;                                             // lane being dragged (reorder)
 const ADSR_DEF = {a:0.01, d:0.1, s:0.7, r:0.3};
 const DEFAULTS = { pitch:0, noteLen:0.25, opacity:1, vis:1, mute:0, solo:0, swing:0, reverb:0, master:1, echo:0, bpm:120, filter:0 };
@@ -646,7 +683,9 @@ function blip(ch){
   const semi = state.pitch[ch] || 0;
   const ft = (base) => base * Math.pow(2, semi / 12);
   const dur = Math.max(0.04, (state.noteLen[ch] || 0.25) * 4 * 60 / state.bpm); // ADSR shapes the tail
-  const t = actx.currentTime, g = actx.createGain(); g.connect(master);
+  const t = actx.currentTime, g = actx.createGain();
+  const gv = actx.createGain(); gv.gain.value = (state.vol[ch] !== undefined ? state.vol[ch] : 1);  // per-track volume
+  g.connect(gv); gv.connect(master);
   const noiseSrc = (cut, q) => {
     const src = actx.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
     const f = actx.createBiquadFilter(); f.type = "bandpass"; f.frequency.value = cut; f.Q.value = q;
@@ -755,44 +794,47 @@ function buildGrid(){
     lane.addEventListener("dragleave", () => lane.classList.remove("dragover"));
     lane.addEventListener("drop",      (e) => { e.preventDefault(); lane.classList.remove("dragover"); if (dragFrom!==null && dragFrom!==c) reorderChannel(dragFrom, c); dragFrom = null; });
     const grip = document.createElement("span"); grip.className = "grip"; grip.textContent = "⋮⋮"; grip.title = "drag to reorder";
-    // visible/invisible toggle
-    const eye = document.createElement("button"); eye.className = "mv eye"; eye.title = "show/hide";
-    eye.textContent = state.vis[c] ? "👁" : "∅"; eye.classList.toggle("off", !state.vis[c]);
-    eye.onclick = () => { state.vis[c] = state.vis[c] ? 0 : 1; eye.textContent = state.vis[c] ? "👁" : "∅"; eye.classList.toggle("off", !state.vis[c]); save(); };
-    eye.draggable = false;
     const sw = document.createElement("div"); sw.className = "swatch"; sw.style.background = PAT_COLOR[c%NP];
     // track NAME = instrument dropdown (choosing the instrument names the track)
     const nm = document.createElement("select"); nm.className = "nm nmsel"; nm.title = "instrument / track name";
     INSTRUMENTS.forEach(([nme,ty]) => { const o=document.createElement("option"); o.value=ty; o.textContent=nme; if (state.inst[c]===ty) o.selected=true; nm.appendChild(o); });
     nm.onchange = () => { state.inst[c] = +nm.value; state.names[c] = nm.options[nm.selectedIndex].textContent; save(); };
-    // per-channel pitch (semitones) + note length
-    const pit = document.createElement("input"); pit.type = "number"; pit.className = "pit";
-    pit.min = -24; pit.max = 24; pit.value = state.pitch[c] || 0; pit.title = "pitch (semitones) · right-click reset";
-    pit.onchange = () => { state.pitch[c] = +pit.value || 0; save(); };
-    bindReset(pit, DEFAULTS.pitch, v => { state.pitch[c] = v; pit.value = v; });
+    // note length
     const nsel = document.createElement("select"); nsel.className = "nlen"; nsel.title = "note length · right-click reset";
     NOTE_OPTS.forEach(([lab,val]) => { const o=document.createElement("option"); o.value=val; o.textContent=lab; if (Math.abs(val-(state.noteLen[c]||0.25))<1e-6) o.selected=true; nsel.appendChild(o); });
     nsel.onchange = () => { state.noteLen[c] = +nsel.value; save(); };
     bindReset(nsel, DEFAULTS.noteLen, v => { state.noteLen[c] = v; nsel.value = String(v); });
-    // mute / solo (audio)
-    const mute = document.createElement("button"); mute.className = "ms" + (state.mute[c]?" on":""); mute.textContent = "M"; mute.title = "mute (audio)"; mute.draggable = false;
+    // mute / solo (audio + visual)
+    const mute = document.createElement("button"); mute.className = "ms" + (state.mute[c]?" on":""); mute.textContent = "M"; mute.title = "mute (audio + visual)"; mute.draggable = false;
     mute.onclick = () => { state.mute[c] = state.mute[c]?0:1; mute.classList.toggle("on", !!state.mute[c]); save(); };
     bindReset(mute, DEFAULTS.mute, v => { state.mute[c]=v; mute.classList.toggle("on", !!v); });
-    const solo = document.createElement("button"); solo.className = "ms solo" + (state.solo[c]?" on":""); solo.textContent = "S"; solo.title = "solo (audio)"; solo.draggable = false;
+    const solo = document.createElement("button"); solo.className = "ms solo" + (state.solo[c]?" on":""); solo.textContent = "S"; solo.title = "solo (audio + visual)"; solo.draggable = false;
     solo.onclick = () => { state.solo[c] = state.solo[c]?0:1; solo.classList.toggle("on", !!state.solo[c]); save(); };
     bindReset(solo, DEFAULTS.solo, v => { state.solo[c]=v; solo.classList.toggle("on", !!v); });
-    // ADSR knobs (right-click any knob to reset) + layer opacity knob
+    // per-track volume knob
+    const kVol = makeKnob({label:"VOL", value:(state.vol[c]!==undefined?state.vol[c]:1), def:1, fmt:v=>Math.round(v*100)+"%", onInput:v=>{state.vol[c]=v;save();}});
+    // ADSR + pitch + opacity knobs (right-click any to reset)
     const adsr = state.adsr[c] || (state.adsr[c] = {...ADSR_DEF});
     const kA = makeKnob({label:"A", value:adsr.a, def:ADSR_DEF.a, onInput:v=>{adsr.a=v;save();}});
+    const kPit = makeKnob({label:"PIT", min:-24, max:24, value:state.pitch[c]||0, def:DEFAULTS.pitch, fmt:v=>Math.round(v), onInput:v=>{state.pitch[c]=Math.round(v);save();}});
     const kD = makeKnob({label:"D", value:adsr.d, def:ADSR_DEF.d, onInput:v=>{adsr.d=v;save();}});
     const kS = makeKnob({label:"S", value:adsr.s, def:ADSR_DEF.s, onInput:v=>{adsr.s=v;save();}});
     const kR = makeKnob({label:"R", value:adsr.r, def:ADSR_DEF.r, onInput:v=>{adsr.r=v;save();}});
     const kOp = makeKnob({label:"OP", value:(state.opacity[c]!==undefined?state.opacity[c]:1), def:DEFAULTS.opacity, onInput:v=>{state.opacity[c]=v;save();}});
-    // collapse the knobs into a ⚙ popover to keep the lane compact
-    const fxBtn = document.createElement("button"); fxBtn.className = "ms fx"; fxBtn.textContent = "⚙"; fxBtn.title = "ADSR + opacity"; fxBtn.draggable = false;
+    // collapse the knobs into a ⚙ popover to keep the lane compact (pitch sits next to attack)
+    const fxBtn = document.createElement("button"); fxBtn.className = "ms fx"; fxBtn.textContent = "⚙"; fxBtn.title = "ADSR + pitch + opacity"; fxBtn.draggable = false;
     const fxPop = document.createElement("div"); fxPop.className = "fxpop";
-    [kA, kD, kS, kR, kOp].forEach(k => fxPop.appendChild(k.el));
+    [kA, kPit, kD, kS, kR, kOp].forEach(k => fxPop.appendChild(k.el));
     fxBtn.onclick = () => { const open = fxPop.classList.toggle("open"); fxBtn.classList.toggle("on", open); };
+    // per-track FX drop-slot (drag a master-FX knob here) — comment #2
+    const fxslot = document.createElement("div"); fxslot.className = "fxslot" + (state.trackFx[c] ? " set" : "");
+    fxslot.textContent = state.trackFx[c] || "FX";
+    fxslot.title = "drop a master-FX knob here to apply it to this track · right-click clear";
+    fxslot.addEventListener("dragover", e => { e.preventDefault(); fxslot.classList.add("over"); });
+    fxslot.addEventListener("dragleave", () => fxslot.classList.remove("over"));
+    fxslot.addEventListener("drop", e => { e.preventDefault(); fxslot.classList.remove("over");
+      const k = e.dataTransfer.getData("text/fx"); if(!k) return; state.trackFx[c]=k; fxslot.textContent=k; fxslot.classList.add("set"); save(); });
+    fxslot.addEventListener("contextmenu", e => { e.preventDefault(); state.trackFx[c]=""; fxslot.textContent="FX"; fxslot.classList.remove("set"); save(); });
     // per-channel object-layer search (datalist lists default patterns first, then 6687 objects)
     const gsel = document.createElement("input"); gsel.className = "lsel"; gsel.setAttribute("list", "layerlist");
     gsel.placeholder = "layer (click to choose)"; gsel.title = "graphic layer (replaces element) · right-click clear";
@@ -822,9 +864,9 @@ function buildGrid(){
       };
       cells.appendChild(cell);
     }
-    lane.appendChild(grip); lane.appendChild(eye);
+    lane.appendChild(grip);
     lane.appendChild(sw); lane.appendChild(nm); lane.appendChild(mute); lane.appendChild(solo);
-    lane.appendChild(pit); lane.appendChild(nsel); lane.appendChild(fxBtn);
+    lane.appendChild(kVol.el); lane.appendChild(nsel); lane.appendChild(fxBtn); lane.appendChild(fxslot);
     lane.appendChild(gsel);
     lane.appendChild(cells); lane.appendChild(fxPop); wrap.appendChild(lane);
   }
@@ -834,19 +876,20 @@ function reorderChannel(from, to){
   if (from === to) return;
   const S = state.steps;
   const move = (a) => { const v = a.splice(from,1)[0]; a.splice(to,0,v); };
-  move(state.names); move(state.pitch); move(state.noteLen); move(state.layer); move(state.inst); move(state.vis);
-  move(state.adsr); move(state.opacity); move(state.mute); move(state.solo);
+  move(state.names); move(state.pitch); move(state.noteLen); move(state.layer); move(state.inst);
+  move(state.adsr); move(state.opacity); move(state.vol); move(state.mute); move(state.solo); move(state.trackFx);
   const rows = (buf, Ctor) => { const r=[]; for (let c=0;c<state.channels;c++) r.push(buf.slice(c*S,(c+1)*S)); const v=r.splice(from,1)[0]; r.splice(to,0,v);
     const out = new Ctor(state.channels*S); r.forEach((row,c)=>out.set(row,c*S)); return out; };
   state.grid = rows(state.grid, Uint8Array);
   pulses2d  = rows(pulses2d, Float32Array);
+  rise2d    = rows(rise2d, Float32Array);
   buildGrid(); save();
 }
 // change steps per pattern (16 / 32 / 64), preserving existing hits
 function setSteps(n){
   const old = state.steps, g = new Uint8Array(state.channels*n);
   for (let c=0;c<state.channels;c++) for (let s=0;s<Math.min(old,n);s++) g[c*n+s]=state.grid[c*old+s];
-  state.steps = n; state.grid = g; pulses2d = new Float32Array(state.channels*n);
+  state.steps = n; state.grid = g; pulses2d = new Float32Array(state.channels*n); rise2d = new Float32Array(state.channels*n);
   state.lastStep = -1; buildGrid(); save();
 }
 function markPlayhead(step){
@@ -858,9 +901,9 @@ function markPlayhead(step){
 // ---------- persistence ----------
 function save(){ try{ localStorage.setItem("scene6687seq3", JSON.stringify({
   steps:state.steps, channels:state.channels, names:state.names, bpm:state.bpm,
-  pitch:state.pitch, noteLen:state.noteLen, layer:state.layer, inst:state.inst, vis:state.vis,
-  adsr:state.adsr, opacity:state.opacity, mute:state.mute, solo:state.solo,
-  swing:state.swing, reverb:state.reverb, master:state.master, fxFilter, echo:echoLevel, grid:Array.from(state.grid) })); }catch(e){} }
+  pitch:state.pitch, noteLen:state.noteLen, layer:state.layer, inst:state.inst,
+  adsr:state.adsr, opacity:state.opacity, vol:state.vol, mute:state.mute, solo:state.solo, trackFx:state.trackFx,
+  swing:state.swing, reverb:state.reverb, master:state.master, fx:state.fx, fxFilter, echo:echoLevel, grid:Array.from(state.grid) })); }catch(e){} }
 function load(){ try{ const d = JSON.parse(localStorage.getItem("scene6687seq3")); if(!d) return;
   const N = d.channels;
   state.steps=d.steps; state.channels=N; state.names=d.names||FULL_NAMES.slice(0,N);
@@ -869,14 +912,15 @@ function load(){ try{ const d = JSON.parse(localStorage.getItem("scene6687seq3")
   state.noteLen=d.noteLen||Array.from({length:N},()=>0.25);
   state.layer=d.layer||Array.from({length:N},()=>"");
   state.inst=d.inst||Array.from({length:N},(_,c)=>INSTRUMENTS[c%8][1]);
-  state.vis=d.vis||Array.from({length:N},()=>1);
   state.adsr = d.adsr || Array.from({length:N},(_,c)=> d.env ? {...ADSR_DEF, r:d.env[c]} : {...ADSR_DEF});  // migrate old env -> release
   state.opacity = d.opacity || Array.from({length:N},()=>1);
+  state.vol = d.vol || Array.from({length:N},()=>1);
   state.mute = d.mute || Array.from({length:N},()=>0);
   state.solo = d.solo || Array.from({length:N},()=>0);
-  state.swing = d.swing||0; state.reverb = d.reverb||0; state.master = (d.master!==undefined?d.master:1);
+  state.trackFx = d.trackFx || Array.from({length:N},()=>"");
+  state.swing = d.swing||0; state.reverb = d.reverb||0; state.master = (d.master!==undefined?d.master:1); state.fx = d.fx||{};
   fxFilter=d.fxFilter||0; echoLevel = (d.echo!==undefined ? d.echo : (d.echoOn ? 0.4 : 0));   // migrate old toggle
-  pulses2d = new Float32Array(state.channels*state.steps); }catch(e){} }
+  pulses2d = new Float32Array(state.channels*state.steps); rise2d = new Float32Array(state.channels*state.steps); }catch(e){} }
 
 // ---------- transport ----------
 const stepDur = () => 60 / state.bpm / state.stepsPerBeat;
@@ -892,46 +936,90 @@ function playStop(){
 
 // ---------- controls ----------
 $("play").onclick = playStop;
-$("clear").onclick = () => { state.grid.fill(0); buildGrid(); save(); };
+// Clear: stop + silence audio, empty the grid, and reset every track to its default visuals
+$("clear").onclick = () => {
+  if (state.playing) playStop();
+  if (fileLoaded && audioEl){ audioEl.pause(); }
+  if (actx) applyMaster(state.master);                       // (re)assert master; voices already stopped
+  state.grid.fill(0); pulses2d.fill(0); rise2d.fill(0); state.lastStep = -1;
+  for (let c=0;c<state.channels;c++){
+    state.layer[c] = ""; state.pitch[c] = 0; state.vol[c] = 1; state.opacity[c] = 1;
+    state.adsr[c] = {...ADSR_DEF}; state.mute[c] = 0; state.solo[c] = 0; state.trackFx[c] = "";
+  }
+  buildGrid(); save();
+};
 $("add").onclick = () => {
   if (state.channels >= 8) return;
   const ng = new Uint8Array((state.channels+1)*state.steps); ng.set(state.grid); state.grid = ng;
-  pulses2d = new Float32Array((state.channels+1)*state.steps);
+  pulses2d = new Float32Array((state.channels+1)*state.steps); rise2d = new Float32Array((state.channels+1)*state.steps);
   state.names.push(FULL_NAMES[state.channels] || ("Ch " + (state.channels+1)));
   state.pitch.push(0); state.noteLen.push(0.25); state.layer.push("");
-  state.inst.push(INSTRUMENTS[state.channels%8][1]); state.vis.push(1);
-  state.adsr.push({...ADSR_DEF}); state.opacity.push(1); state.mute.push(0); state.solo.push(0);
+  state.inst.push(INSTRUMENTS[state.channels%8][1]);
+  state.adsr.push({...ADSR_DEF}); state.opacity.push(1); state.vol.push(1); state.mute.push(0); state.solo.push(0); state.trackFx.push("");
   state.channels++;
   buildGrid(); save();
 };
-$("bpm").oninput = (e) => { state.bpm = +e.target.value; $("bpmv").textContent = e.target.value;
-  if(state.playing) state.startTime = performance.now()/1000 - state.playhead*stepDur(); save(); };
 $("steps").onchange = (e) => setSteps(+e.target.value);
 $("loadBtn").onclick = () => $("audioFile").click();
 $("audioFile").onchange = (e) => { if (e.target.files[0]) loadAudioFile(e.target.files[0]); };
-$("filter").oninput = (e) => { fxFilter = +e.target.value/100; applyFilter(fxFilter); save(); };
-// right-click reset on transport controls
-bindReset($("bpm"), DEFAULTS.bpm, v => { state.bpm=v; $("bpm").value=v; $("bpmv").textContent=v; });
-bindReset($("filter"), DEFAULTS.filter, () => { fxFilter=0; $("filter").value=0; applyFilter(0); });
 bindReset($("steps"), 32, () => { $("steps").value="32"; setSteps(32); });
 
-// global knobs: echo, swing, reverb, master volume
-const echoKnob   = makeKnob({label:"ECHO", value:echoLevel, def:DEFAULTS.echo, fmt:v=>Math.round(v*100)+"%", onInput:v=>{ echoLevel=v; initAudio(); applyEcho(v); save(); }});
-$("echoK").appendChild(echoKnob.el);
-const swingKnob  = makeKnob({label:"SWG", value:state.swing,  def:DEFAULTS.swing,  fmt:v=>Math.round(v*100)+"%", onInput:v=>{ state.swing=v; save(); }});
-const reverbKnob = makeKnob({label:"REV", value:state.reverb, def:DEFAULTS.reverb, fmt:v=>Math.round(v*100)+"%", onInput:v=>{ state.reverb=v; initAudio(); applyReverb(v); save(); }});
-const masterKnob = makeKnob({label:"VOL", value:state.master, def:DEFAULTS.master, fmt:v=>Math.round(v*100)+"%", onInput:v=>{ state.master=v; initAudio(); applyMaster(v); save(); }});
-$("swingK").appendChild(swingKnob.el); $("reverbK").appendChild(reverbKnob.el); $("masterK").appendChild(masterKnob.el);
+// ---------- master FX rack (diagram layout). Wired = real effect now; others are UI for next week ----------
+const pct = v => Math.round(v*100) + "%";
+const FX_SPEC = [
+  { k:"bpm",     label:"BPM",     min:60, max:200, def:120, fmt:v=>Math.round(v), wired:true,
+    set:v=>{ state.bpm=Math.round(v); if(state.playing) state.startTime=performance.now()/1000 - state.playhead*stepDur(); } },
+  { k:"filter",  label:"FILTER",  min:-1, max:1, def:0, fmt:pct, wired:true, set:v=>{ fxFilter=v; initAudio(); applyFilter(v); } },
+  { k:"delay",   label:"DELAY",   min:0, max:1, def:0, fmt:pct, wired:true, set:v=>{ echoLevel=v; initAudio(); applyEcho(v); } },
+  { k:"reverb",  label:"REVERB",  min:0, max:1, def:0, fmt:pct, wired:true, set:v=>{ state.reverb=v; initAudio(); applyReverb(v); } },
+  { k:"swing",   label:"SWING",   min:0, max:1, def:0, fmt:pct, wired:true, set:v=>{ state.swing=v; } },
+  { k:"master",  label:"VOL",     min:0, max:1.5, def:1, fmt:pct, wired:true, set:v=>{ state.master=v; initAudio(); applyMaster(v); } },
+  // --- UI only for now (stored in state.fx, wired next week) ---
+  { k:"tremolo", label:"TREMOLO" }, { k:"trans", label:"TRANS", min:-12, max:12, def:0, fmt:v=>Math.round(v) },
+  { k:"flanger", label:"FLANGER" }, { k:"phaser", label:"PHASER" }, { k:"roll", label:"ROLL" },
+  { k:"pitch",   label:"PITCH", min:-12, max:12, def:0, fmt:v=>Math.round(v) }, { k:"spiral", label:"SPIRAL" },
+  { k:"distort", label:"DISTORT" }, { k:"hi", label:"HI", min:-1, max:1, def:0, fmt:pct },
+  { k:"mid", label:"MID", min:-1, max:1, def:0, fmt:pct }, { k:"lo", label:"LO", min:-1, max:1, def:0, fmt:pct },
+  { k:"gate", label:"GATE" }, { k:"stutter", label:"STUTTER" },
+];
+const fxKnobs = {};
+const fxrack = $("fxrack");
+const fxCurrent = (sp) => sp.k==="bpm"?state.bpm : sp.k==="filter"?fxFilter : sp.k==="delay"?echoLevel
+  : sp.k==="reverb"?state.reverb : sp.k==="swing"?state.swing : sp.k==="master"?state.master
+  : (state.fx[sp.k]!==undefined?state.fx[sp.k]:(sp.def||0));
+FX_SPEC.forEach(sp => {
+  const kn = makeKnob({ label:sp.label, min:(sp.min!==undefined?sp.min:0), max:(sp.max!==undefined?sp.max:1),
+    value:fxCurrent(sp), def:(sp.def!==undefined?sp.def:0), fmt:sp.fmt,
+    onInput:v=>{ if(sp.wired) sp.set(v); else state.fx[sp.k]=v; save(); } });
+  kn.el.dataset.fx = sp.k; kn.el.classList.toggle("inert", !sp.wired);
+  kn.el.setAttribute("draggable","true");                                  // drag a master knob onto a lane FX slot
+  kn.el.addEventListener("dragstart", e => e.dataTransfer.setData("text/fx", sp.k));
+  fxKnobs[sp.k] = kn; fxrack.appendChild(kn.el);
+});
+// inert FX buttons from the diagram (function next week)
+[["strobe","STROBE"],["tapestop","TAPE STOP"],["macroA","A"],["macroB","B"],["macroC","C"],["macroD","D"]].forEach(([k,lab])=>{
+  const btn=document.createElement("button"); btn.className="fxbtn inert"; btn.textContent=lab; btn.title=lab+" (coming soon)";
+  btn.onclick=()=>{ state.fx[k]=!state.fx[k]; btn.classList.toggle("on", !!state.fx[k]); save(); };
+  fxrack.appendChild(btn);
+});
 
-// randomize a musical pattern (more hits on beats)
+// randomize a musical pattern (more hits on beats) + random visual layers and their sizes
 $("rand").onclick = () => {
   const dens = [0.5,0.25,0.4,0.2,0.6,0.3,0.5,0.3];
+  const CATg = window.LAYER_CATEGORY || {};
+  const keys = Object.keys(LAYERS).filter(k => CATg[k]);                 // real 6687 layers (have a category)
+  const bg = keys.filter(k => CATg[k] === "background");
+  const fg = keys.filter(k => CATg[k] !== "background");
+  const pick = a => a.length ? a[(Math.random()*a.length)|0] : "";
   for (let c=0;c<state.channels;c++){
     const d = dens[c%8];
     for (let s=0;s<state.steps;s++){
       const beat = (s % state.stepsPerBeat) === 0;
       state.grid[c*state.steps+s] = (Math.random() < d*(beat?1.5:0.6)) ? 1 : 0;
     }
+    const full = Math.random() < 0.5;                                    // fullscreen vs not
+    const key = full ? pick(bg) : pick(fg);
+    if (key){ state.layer[c] = key; compileLayer(key); state.opacity[c] = full ? 1.0 : (0.6 + Math.random()*0.4); }
   }
   buildGrid(); save();
 };
@@ -941,7 +1029,7 @@ function patSlot(slot, recall){
   if (recall){
     const d = localStorage.getItem(key); if (!d) return;
     try { const o = JSON.parse(d);
-      if (o.steps !== state.steps){ state.steps=o.steps; $("steps").value=String(o.steps); pulses2d=new Float32Array(state.channels*o.steps); }
+      if (o.steps !== state.steps){ state.steps=o.steps; $("steps").value=String(o.steps); pulses2d=new Float32Array(state.channels*o.steps); rise2d=new Float32Array(state.channels*o.steps); }
       state.grid = Uint8Array.from(o.grid); state.lastStep=-1; buildGrid(); save();
     } catch(e){}
   } else {
@@ -976,9 +1064,7 @@ addEventListener("keydown", (e) => {
 
 // ---------- boot ----------
 load();
-$("bpm").value = state.bpm; $("bpmv").textContent = state.bpm;
 $("steps").value = String(state.steps);
-$("filter").value = Math.round(fxFilter*100);
 loadLayersManifest().then(() => { state.layer.forEach((id)=>compileLayer(id)); buildGrid(); });
 buildGrid();
 window.__ready = true;
@@ -1009,13 +1095,13 @@ let lastT = performance.now()/1000;
         for (let c=0;c<state.channels;c++){
           const on = fills[c%NP];
           state.grid[c*state.steps+cur] = on;
-          if (on) pulses2d[c*state.steps+cur] = 1.0;
+          if (on) hitPulse(c, cur);
           const cell = document.querySelector(`.cell[data-c="${c}"][data-s="${cur}"]`);
           if (cell) cell.classList.toggle("on", !!on);
         }
       } else {
         for (let c=0;c<state.channels;c++) if (state.grid[c*state.steps+cur]){
-          pulses2d[c*state.steps+cur] = 1.0;          // this step is hit -> it scales up
+          hitPulse(c, cur);                           // visual ADSR envelope (attack ramp -> release)
           blip(c);                                    // per-channel pitch + note
         }
       }
@@ -1023,11 +1109,15 @@ let lastT = performance.now()/1000;
     }
   }
   const dt = Math.min(0.1, now - lastT); lastT = now;
-  for (let c=0;c<state.channels;c++){                         // per-channel pulse decay by note length + release
-    const rel = state.adsr[c] ? state.adsr[c].r : 0.3;
+  for (let c=0;c<state.channels;c++){                         // visual ADSR: attack ramp up, then release decay
+    const e = state.adsr[c] || ADSR_DEF;
+    const atk = Math.max(0.01, e.a), rel = e.r;
     const ds = Math.max(0.05, (state.noteLen[c]||0.25) * 4 * 60 / state.bpm + rel * 2.0);
     const decay = Math.pow(0.03, dt / ds);
-    for (let s=0;s<state.steps;s++) pulses2d[c*state.steps+s] *= decay;
+    for (let s=0;s<state.steps;s++){ const i=c*state.steps+s;
+      if (rise2d[i] > 0.5){ pulses2d[i] += dt/atk; if (pulses2d[i] >= 1.0){ pulses2d[i]=1.0; rise2d[i]=0; } }  // attack
+      else pulses2d[i] *= decay;                                                                              // release
+    }
   }
   updateBands();
   uploadPulse();
@@ -1052,7 +1142,7 @@ let lastT = performance.now()/1000;
   gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, atlasTex); gl.uniform1i(U("uAtlas"), 1);
   for (let c=0;c<8;c++){
     gl.uniform1f(U("uHasLayer[" + c + "]"), (c < state.channels && layerReady(c)) ? 1.0 : 0.0);
-    gl.uniform1f(U("uVis[" + c + "]"), (c < state.channels && state.vis[c]) ? 1.0 : 0.0);
+    gl.uniform1f(U("uVis[" + c + "]"), (c < state.channels && visible(c)) ? 1.0 : 0.0);   // M/S drive visibility
     gl.uniform1f(U("uOpacity[" + c + "]"), (c < state.channels) ? (state.opacity[c] !== undefined ? state.opacity[c] : 1.0) : 1.0);
   }
   gl.drawArrays(gl.TRIANGLES, 0, 6);
