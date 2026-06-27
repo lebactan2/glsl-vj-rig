@@ -82,7 +82,7 @@
   /* ===== adapted dashboard UI (from cutout_sequencer) ===== */
   .dashboard-top { display: grid; grid-template-columns: 1fr 1.15fr 1.3fr; gap: clamp(8px,1.2vw,20px); height: clamp(190px, 33vh, 520px); flex-shrink: 0; }
   .controls-grid .knob { width: 30px; } .controls-grid .knob .dial { width: 20px; height: 20px; }
-  .knob-grid { display: flex; flex-wrap: wrap; gap: 8px 6px; justify-content: flex-start; align-content: flex-start; }
+  .knob-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px 4px; justify-items: center; }
   .panel-output { position: relative; background: rgba(15,18,28,0.85); backdrop-filter: blur(12px); border-radius: 12px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.04); border: 1px solid rgba(234,88,12,0.35); display: flex; justify-content: center; align-items: center; }
   .panel-output .output-label { position: absolute; top: 8px; left: 8px; background: rgba(234,88,12,0.2); padding: 3px 8px; border-radius: 4px; font-size: 9px; color: #fb923c; font-weight: 700; z-index: 2; letter-spacing: 1px; text-transform: uppercase; border: 1px solid rgba(234,88,12,0.25); cursor: pointer; display: flex; align-items: center; gap: 4px; }
   .panel-output .output-label:hover { background: rgba(234,88,12,0.35); border-color: rgba(234,88,12,0.5); }
@@ -103,7 +103,9 @@
   .scroll-layer-item.active { background: rgba(249,115,22,0.2); color: #fb923c; font-weight: 700; border-color: rgba(249,115,22,0.4); }
   .controls-grid { padding: 10px; display: flex; flex-direction: column; gap: 8px; height: 100%; justify-content: flex-start; overflow-y: auto; }
   .controls-row { display: flex; justify-content: space-around; gap: 6px; }
-  .bottom-controls { display: grid; grid-template-columns: 50px 1fr; gap: 8px; min-height: 90px; align-items: center; margin-top: 4px; }
+  .bottom-controls { display: grid; grid-template-columns: auto auto 1fr; gap: 10px; min-height: 90px; align-items: center; margin-top: 6px; }
+  .eq-col { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .be-col { display: flex; flex-direction: column; gap: 6px; justify-content: center; }
   .filter-eq-stack { display: flex; flex-direction: column; align-items: center; gap: 1px; }
   .fader-col { display: flex; justify-content: center; align-items: center; height: 100%; }
   .fader-container { display: flex; flex-direction: column; align-items: center; gap: 4px; height: 75px; justify-content: center; }
@@ -433,26 +435,25 @@ void main(){
         <div class="scroll-list" id="scrollList"></div>
       </div>
       <div class="controls-grid">
+        <!-- 3 rows x 4 columns of FX knobs -->
         <div class="knob-grid">
-          <div id="slot-swing"></div><div id="slot-delay"></div><div id="slot-reverb"></div><div id="slot-tremolo"></div>
-          <div id="slot-flanger"></div><div id="slot-phaser"></div><div id="slot-roll"></div><div id="slot-trans"></div>
-          <div id="slot-pitch"></div><div id="slot-spiral"></div><div id="slot-distort"></div><div id="slot-filter"></div>
-          <div id="slot-hi"></div><div id="slot-mid"></div><div id="slot-lo"></div><div id="slot-gate"></div><div id="slot-stutter"></div>
+          <div id="slot-swing"></div><div id="slot-delay"></div><div id="slot-tremolo"></div><div id="slot-trans"></div>
+          <div id="slot-reverb"></div><div id="slot-flanger"></div><div id="slot-phaser"></div><div id="slot-roll"></div>
+          <div id="slot-pitch"></div><div id="slot-spiral"></div><div id="slot-filter"></div><div id="slot-distort"></div>
         </div>
+        <!-- bottom: EQ stack | BPM fader | banks + effect buttons -->
         <div class="bottom-controls">
+          <div class="eq-col"><div id="slot-hi"></div><div id="slot-mid"></div><div id="slot-lo"></div></div>
           <div class="fader-col"><div class="fader-container">
             <div id="bpm-fader-track" class="fader-track-wrap"><div id="bpm-fader-bar" class="fader-blue-bar"></div><div id="bpm-fader-thumb" class="fader-thumb-overlay"></div></div>
             <div class="fader-label">BPM</div>
           </div></div>
-          <div class="buttons-col">
+          <div class="be-col">
             <div class="bank-grid">
               <button id="bankA" class="bank">A</button><button id="bankB" class="bank">B</button><button id="bankC" class="bank">C</button><button id="bankD" class="bank">D</button>
             </div>
-            <div class="effect-buttons">
-              <button id="strobe-btn" class="yellow-btn">Strobe</button>
-              <button id="tapestop-btn" class="yellow-btn">Tape stop</button>
-              <button id="stutter-btn" class="yellow-btn">Stutter</button>
-            </div>
+            <div class="effect-btn-row"><button id="strobe-btn" class="yellow-btn">Strobe</button><div id="slot-stutter"></div></div>
+            <div class="effect-btn-row"><button id="tapestop-btn" class="yellow-btn">Tape stop</button><div id="slot-gate"></div></div>
           </div>
         </div>
       </div>
@@ -1166,7 +1167,7 @@ $("audioFile").onchange = (e) => { if (e.target.files[0]) loadAudioFile(e.target
 bindReset($("steps"), 32, () => { $("steps").value="32"; setSteps(32); });
 
 // ---------- live performance FX (strobe / tape-stop / stutter / gate) ----------
-let strobeOn = false, tapeStop = false, tapeFactor = 1, stutterOn = false, stutterAnchor = 0, playAccum = 0, rollActive = false, rollAnchor = 0;
+let strobeOn = false, tapeStop = false, tapeFactor = 1, stutterActive = false, stutterAnchor = 0, playAccum = 0, rollActive = false, rollAnchor = 0;
 // note divisions -> size in 1/16 steps (a step = 1/16 note; min 1/32, max 32 notes)
 const NOTE_DIVS = [["1/32",0.5],["1/16",1],["1/8",2],["1/4",4],["1/2",8],["1",16],["2",32],["4",64],["8",128],["16",256],["32",512]];
 function gateInfo(v){ const i = Math.min(NOTE_DIVS.length-1, Math.max(0, Math.round(v*(NOTE_DIVS.length-1)))); return NOTE_DIVS[i]; }
@@ -1195,7 +1196,7 @@ const FX_SPEC = [
   { k:"phaser", label:"PHASER", min:0, max:1, def:0, fmt:pct, wired:true, set:v=>{ state.fx.phaser=v; initAudio(); applyPhaser(v); } },
   { k:"roll", label:"ROLL", min:0, max:1, def:0, fmt:v=>v<0.02?"off":gateDiv(v), wired:true, set:v=>{ state.fx.roll=v; } },
   { k:"gate", label:"GATE", min:0, max:1, def:0, fmt:v=>v<0.02?"off":gateDiv(v), wired:true, set:v=>{ state.fx.gate=v; } },
-  { k:"stutter", label:"SLICE", min:0, max:1, def:0.25, fmt:v=>gateDiv(v), wired:true, set:v=>{ state.fx.stutter=v; } },  // STUTTER button slice size
+  { k:"stutter", label:"STUTTER", min:0, max:1, def:0, fmt:v=>v<0.02?"off":gateDiv(v), wired:true, set:v=>{ state.fx.stutter=v; } },  // >0 engages stutter loop, size = note div
 ];
 const fxKnobs = {};
 const fxrack = $("fxrack");
@@ -1222,7 +1223,6 @@ function fxButton(id, hold, on, off){
 }
 fxButton("strobe-btn", false, v => { strobeOn = v; });
 fxButton("tapestop-btn", true, () => { tapeStop = true; }, () => { tapeStop = false; });
-fxButton("stutter-btn", true, () => { stutterOn = true; stutterAnchor = Math.floor(state.playhead); }, () => { stutterOn = false; });
 
 // randomize a musical pattern (more hits on beats) + random visual layers and their sizes
 $("rand").onclick = () => {
@@ -1387,13 +1387,15 @@ let lastT = performance.now()/1000;
       playAccum += dt * tapeFactor / stepDur();                   // tape-stop scales the synth transport
       state.playhead = (playAccum % state.steps + state.steps) % state.steps;
     }
-    // STUTTER: loop a small slice of the sequence while held
-    if (stutterOn){ const sz = gateSteps(state.fx.stutter !== undefined ? state.fx.stutter : 0.25);
-      state.playhead = stutterAnchor + (((state.playhead - stutterAnchor) % sz) + sz) % sz; }
-    // ROLL: knob-engaged beat-roll — repeats a slice continuously
-    else if ((state.fx.roll||0) > 0.02){ if(!rollActive){ rollActive=true; rollAnchor=Math.floor(state.playhead); }
-      const sz = gateSteps(state.fx.roll); state.playhead = rollAnchor + (((state.playhead - rollAnchor) % sz) + sz) % sz; }
-    else rollActive = false;
+    // STUTTER: knob-engaged — loop a small slice of the sequence continuously
+    if ((state.fx.stutter||0) > 0.02){ if(!stutterActive){ stutterActive=true; stutterAnchor=Math.floor(state.playhead); }
+      const sz = gateSteps(state.fx.stutter); state.playhead = stutterAnchor + (((state.playhead - stutterAnchor) % sz) + sz) % sz; }
+    else { stutterActive=false;
+      // ROLL: knob-engaged beat-roll — repeats a slice continuously
+      if ((state.fx.roll||0) > 0.02){ if(!rollActive){ rollActive=true; rollAnchor=Math.floor(state.playhead); }
+        const sz = gateSteps(state.fx.roll); state.playhead = rollAnchor + (((state.playhead - rollAnchor) % sz) + sz) % sz; }
+      else rollActive = false;
+    }
     // swing: delay odd steps by up to half a step
     const base = Math.floor(state.playhead), frac = state.playhead - base;
     const off = (base % 2 === 1) ? state.swing * 0.5 : 0.0;
