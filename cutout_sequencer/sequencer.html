@@ -1229,6 +1229,7 @@ function initMidi() {
   }
 }
 function fireMidi(ch) {
+  if (state.inst[ch] !== 7) return; // 7 = 808 Sub / Kick
   if (state.mute[ch]) return;
   if (state.solo.some(s => s) && !state.solo[ch]) return;
   if (midiOutputs.length === 0) return;
