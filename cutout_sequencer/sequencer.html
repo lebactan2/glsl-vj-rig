@@ -317,6 +317,7 @@
   .transport { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 6px 0; border-top: 1px solid #2a2a30; border-bottom: 1px solid #2a2a30; flex-shrink: 0; }
   .transport button { background: #1c1c22; color: #ddd; border: 1px solid #3a3a44; border-radius: 5px; padding: 4px 8px; cursor: pointer; font-size: 10px; }
   .transport button:hover { background: #26262e; }
+  .transport button.on { background: #10b981; color: #111; border-color: #10b981; font-weight: 700; }
   .transport select { background: #1c1c22; color: #ddd; border: 1px solid #3a3a44; border-radius: 5px; padding: 3px; font-size: 10px; }
   .transport .title { font-weight: 700; color: #10b981; letter-spacing: 1px; margin-right: 6px; font-size: 11px; }
   .transport label { color: #999; font-size: 10px; }
@@ -687,6 +688,8 @@ void main(){
     <label>steps <select id="steps"><option>8</option><option>16</option><option selected>32</option><option>64</option></select></label>
     <label>photo <select id="photoSelect"></select></label>
     <button id="rand">🎲 rand</button>
+    <button id="toggleMidiNotes" class="on">MIDI Notes</button>
+    <button id="toggleMidiClock" class="on">MIDI Clock</button>
     <span style="flex:1"></span>
     <span class="hint"><kbd>Space</kbd> play · <kbd>H</kbd> hide · right-click a knob to reset</span>
   </div>
@@ -1216,6 +1219,8 @@ function blip(ch){
 let midiAccess = null;
 let midiOutputs = [];
 let nextMidiClockTime = 0;
+let sendMidiNotes = true;
+let sendMidiClock = true;
 function initMidi() {
   if (navigator.requestMIDIAccess && !midiAccess) {
     navigator.requestMIDIAccess().then(access => {
@@ -1229,6 +1234,7 @@ function initMidi() {
   }
 }
 function fireMidi(ch) {
+  if (!sendMidiNotes) return;
   if (state.inst[ch] !== 7) return; // 7 = 808 Sub / Kick
   if (state.mute[ch]) return;
   if (state.solo.some(s => s) && !state.solo[ch]) return;
@@ -1494,15 +1500,21 @@ function playStop(){
     if (fileLoaded && audioEl) audioEl.play().catch(()=>{});
     else state.startTime = performance.now()/1000 - state.playhead*stepDur();
     nextMidiClockTime = performance.now();
-    midiOutputs.forEach(o => { try { o.send([0xFA], nextMidiClockTime); } catch(e){} });
+    if (sendMidiClock) {
+      midiOutputs.forEach(o => { try { o.send([0xFA], nextMidiClockTime); } catch(e){} });
+    }
   } else { 
     if (fileLoaded && audioEl) audioEl.pause(); 
-    midiOutputs.forEach(o => { try { o.send([0xFC], performance.now()); } catch(e){} });
+    if (sendMidiClock) {
+      midiOutputs.forEach(o => { try { o.send([0xFC], performance.now()); } catch(e){} });
+    }
   }
 }
 
 // ---------- controls ----------
 $("play").onclick = playStop;
+$("toggleMidiNotes").onclick = () => { sendMidiNotes = !sendMidiNotes; $("toggleMidiNotes").classList.toggle("on", sendMidiNotes); };
+$("toggleMidiClock").onclick = () => { sendMidiClock = !sendMidiClock; $("toggleMidiClock").classList.toggle("on", sendMidiClock); };
 $("clear").onclick = () => {
   if (state.playing) playStop();
   if (fileLoaded && audioEl){ audioEl.pause(); }
@@ -1908,7 +1920,7 @@ let lastT = performance.now()/1000;
     }
     
     // MIDI Clock scheduling
-    if (tapeFactor > 0.01) {
+    if (sendMidiClock && tapeFactor > 0.01) {
       const now = performance.now();
       const tickDurMs = (60000 / state.bpm / 24) / tapeFactor;
       if (nextMidiClockTime < now - 100) nextMidiClockTime = now;
