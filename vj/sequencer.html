@@ -118,6 +118,8 @@
   .fader-blue-bar { position: absolute; bottom: 0; left: 0; width: 100%; background: linear-gradient(to top, #1e3a8a, #3b82f6, #60a5fa); height: 50%; border-radius: 0 0 5px 5px; transition: height 0.05s linear; pointer-events: none; }
   .fader-thumb-overlay { position: absolute; left: -3px; width: 20px; height: 10px; background: linear-gradient(to bottom, #fff 0%, #d4d4d8 100%); border: 1px solid #27272a; border-radius: 2px; box-shadow: 0 2px 5px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.8); pointer-events: none; bottom: calc(50% - 5px); transition: bottom 0.05s linear; }
   .fader-label { font-size: 8px; font-weight: 700; color: #3b82f6; text-transform: uppercase; }
+  .bpm-num { width: 40px; margin-top: 2px; background: #1c1c22; color: #cdd; border: 1px solid #3a3a44; border-radius: 4px; padding: 1px 2px; font-size: 10px; text-align: center; -moz-appearance: textfield; }
+  .bpm-num::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
   .buttons-col { display: flex; flex-direction: column; gap: 6px; justify-content: space-around; height: 100%; }
   .bank-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; }
   .bank-grid button.bank { background: rgba(16,185,129,0.1); color: #34d399; border: 1px solid rgba(16,185,129,0.3); border-radius: 4px; padding: 3px 0; font-size: 8px; font-weight: 700; cursor: pointer; text-align: center; min-width: 0; }
@@ -449,6 +451,7 @@ void main(){
         <div class="fader-col g-fader"><div class="fader-container">
           <div id="bpm-fader-track" class="fader-track-wrap"><div id="bpm-fader-bar" class="fader-blue-bar"></div><div id="bpm-fader-thumb" class="fader-thumb-overlay"></div></div>
           <div class="fader-label">BPM</div>
+          <input id="bpmNum" class="bpm-num" type="number" min="60" max="200" step="1" value="120" title="BPM (type a value)">
         </div></div>
         <div class="bank-grid g-banks">
           <button id="bankA" class="bank">A</button><button id="bankB" class="bank">B</button><button id="bankC" class="bank">C</button><button id="bankD" class="bank">D</button>
@@ -1353,7 +1356,12 @@ function renderPreview(now){
   g.drawArrays(g.TRIANGLES,0,3);
 }
 function updateBpmFaderUI(val){ const min=60,max=200,p=(val-min)/(max-min);
-  const bar=$("bpm-fader-bar"), th=$("bpm-fader-thumb"); if(bar)bar.style.height=(p*100)+"%"; if(th)th.style.bottom=`calc(${p*100}% - 3px)`; }
+  const bar=$("bpm-fader-bar"), th=$("bpm-fader-thumb"), n=$("bpmNum");
+  if(bar)bar.style.height=(p*100)+"%"; if(th)th.style.bottom=`calc(${p*100}% - 3px)`;
+  if(n && document.activeElement!==n) n.value = val; }
+function setBpm(bpm){ bpm=Math.max(60,Math.min(200,Math.round(bpm))); state.bpm=bpm;
+  if(fxKnobs.bpm) fxKnobs.bpm.set(bpm); if(state.playing) state.startTime=performance.now()/1000 - state.playhead*stepDur();
+  updateBpmFaderUI(bpm); save(); }
 
 // ---------- boot ----------
 load();
@@ -1362,13 +1370,13 @@ loadLayersManifest().then(() => { state.layer.forEach((id)=>compileLayer(id)); b
 buildGrid();
 updateBpmFaderUI(state.bpm);
 // BPM vertical fader
-(function(){ const track=$("bpm-fader-track"); if(!track) return; let drag=false;
-  const setY=y=>{ const r=track.getBoundingClientRect(); const p=Math.max(0,Math.min(1,1-(y-r.top)/r.height));
-    const bpm=Math.round(60+p*140); state.bpm=bpm; if(fxKnobs.bpm) fxKnobs.bpm.set(bpm);
-    if(state.playing) state.startTime=performance.now()/1000 - state.playhead*stepDur(); updateBpmFaderUI(bpm); save(); };
+(function(){ const track=$("bpm-fader-track"); if(track){ let drag=false;
+  const setY=y=>{ const r=track.getBoundingClientRect(); const p=Math.max(0,Math.min(1,1-(y-r.top)/r.height)); setBpm(60+p*140); };
   track.addEventListener("pointerdown",e=>{drag=true;track.setPointerCapture(e.pointerId);setY(e.clientY);e.preventDefault();});
   track.addEventListener("pointermove",e=>{if(drag)setY(e.clientY);});
   track.addEventListener("pointerup",()=>drag=false);
+  } const n=$("bpmNum"); if(n){ const apply=()=>{ if(n.value!=="") setBpm(+n.value); };
+    n.addEventListener("change",apply); n.addEventListener("keydown",e=>{ if(e.key==="Enter"){ apply(); n.blur(); } }); }
 })();
 window.__ready = true;
 let lastT = performance.now()/1000;
