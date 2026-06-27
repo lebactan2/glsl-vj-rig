@@ -102,7 +102,8 @@ uniform sampler2D uAtlas;             // separated object-layers packed 4x2; one
 uniform float uHasLayer[8];           // 1 = that channel renders a layer instead of its built-in element
 uniform float uVis[8];                // 1 = channel visible
 uniform float uOpacity[8];            // per-channel layer opacity
-uniform float uStrobe;                // 1 = strobe overlay on top of everything 0..1
+uniform float uStrobe;                // 1 = strobe overlay on top of everything
+uniform float uSpiral;                // 0..1 swirl warp 0..1
 
 float h2(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float vn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
@@ -163,6 +164,11 @@ vec3 satb(vec3 c, float s, float b){
 
 void main(){
     vec2 uv = gl_FragCoord.xy / iResolution.xy;
+    if (uSpiral > 0.001){                                  // SPIRAL: swirl the scene around centre
+        vec2 cen = uv - 0.5; float r = length(cen);
+        float ang = atan(cen.y, cen.x) + uSpiral * (r * 7.0 - iTime * 1.2);
+        uv = vec2(cos(ang), sin(ang)) * r + 0.5;
+    }
     vec3 col = granite(uv);
 
     // BASS (row 2) — paver bands (upper-right), stepped along x
@@ -705,7 +711,7 @@ function blip(ch){
   if (state.mute[ch]) return;                                               // muted
   if (state.solo.some(s => s) && !state.solo[ch]) return;                   // a solo is active elsewhere
   const type = (state.inst[ch] !== undefined) ? state.inst[ch] : 0;
-  const semi = state.pitch[ch] || 0;
+  const semi = (state.pitch[ch] || 0) + (state.fx.trans || 0) + (state.fx.pitch || 0);   // + global transpose
   const ft = (base) => base * Math.pow(2, semi / 12);
   const dur = Math.max(0.04, (state.noteLen[ch] || 0.25) * 4 * 60 / state.bpm); // ADSR shapes the tail
   const t = actx.currentTime, g = actx.createGain();
@@ -1012,10 +1018,11 @@ const FX_SPEC = [
   { k:"hi", label:"HI", min:-1, max:1, def:0, fmt:pct, wired:true, set:v=>{ state.fx.hi=v; initAudio(); applyEQ(); } },
   { k:"mid", label:"MID", min:-1, max:1, def:0, fmt:pct, wired:true, set:v=>{ state.fx.mid=v; initAudio(); applyEQ(); } },
   { k:"lo", label:"LO", min:-1, max:1, def:0, fmt:pct, wired:true, set:v=>{ state.fx.lo=v; initAudio(); applyEQ(); } },
+  { k:"trans", label:"TRANS", min:-12, max:12, def:0, fmt:v=>Math.round(v), wired:true, set:v=>{ state.fx.trans=Math.round(v); } },
+  { k:"pitch", label:"PITCH", min:-12, max:12, def:0, fmt:v=>Math.round(v), wired:true, set:v=>{ state.fx.pitch=Math.round(v); } },
+  { k:"spiral", label:"SPIRAL", min:0, max:1, def:0, fmt:pct, wired:true, set:v=>{ state.fx.spiral=v; } },   // visual swirl
   // --- UI only for now (stored in state.fx, wired next week) ---
-  { k:"trans", label:"TRANS", min:-12, max:12, def:0, fmt:v=>Math.round(v) },
   { k:"flanger", label:"FLANGER" }, { k:"phaser", label:"PHASER" }, { k:"roll", label:"ROLL" },
-  { k:"pitch",   label:"PITCH", min:-12, max:12, def:0, fmt:v=>Math.round(v) }, { k:"spiral", label:"SPIRAL" },
   { k:"gate", label:"GATE", min:0, max:1, def:0, fmt:v=>v<0.02?"off":gateDiv(v), wired:true, set:v=>{ state.fx.gate=v; } },
   { k:"stutter", label:"SLICE", min:0, max:1, def:0.25, fmt:v=>gateDiv(v) },  // stutter slice size (held via STUTTER button)
 ];
@@ -1208,6 +1215,7 @@ let lastT = performance.now()/1000;
   gl.uniform1f(U("uChannels"), state.channels);
   gl.uniform1f(U("uEnOpen"), energy(5));
   gl.uniform1f(U("uStrobe"), strobeOn ? 1.0 : 0.0);
+  gl.uniform1f(U("uSpiral"), state.fx.spiral || 0.0);
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, pulseTex); gl.uniform1i(U("uPulseTex"), 0);
   gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, atlasTex); gl.uniform1i(U("uAtlas"), 1);
   for (let c=0;c<8;c++){
