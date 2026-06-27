@@ -1233,23 +1233,22 @@ function fireMidi(ch) {
   if (state.solo.some(s => s) && !state.solo[ch]) return;
   if (midiOutputs.length === 0) return;
   
-  const midiCh = ch % 16;
   const baseNote = 60 + (state.pitch[ch] || 0) + (state.fx.trans || 0) + (state.fx.pitch || 0);
   const note = Math.max(0, Math.min(127, baseNote));
   const velocity = Math.max(0, Math.min(127, Math.round((state.vol[ch] !== undefined ? state.vol[ch] : 1) * 127)));
   
   if (velocity === 0) return;
   
-  const noteOn = [0x90 + midiCh, note, velocity];
-  const noteOff = [0x80 + midiCh, note, 0];
-  
   const durMs = Math.max(40, (state.noteLen[ch] || 0.25) * 4 * 60000 / state.bpm);
   const now = performance.now();
   
   midiOutputs.forEach(out => {
     try {
-      out.send(noteOn, now);
-      out.send(noteOff, now + durMs);
+      // Broadcast on all 16 MIDI channels
+      for (let mc = 0; mc < 16; mc++) {
+        out.send([0x90 + mc, note, velocity], now);
+        out.send([0x80 + mc, note, 0], now + durMs);
+      }
     } catch (e) {
       console.warn("MIDI send error", e);
     }
