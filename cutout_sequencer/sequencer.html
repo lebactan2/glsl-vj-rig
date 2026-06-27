@@ -1168,7 +1168,7 @@ function applyEcho(level){
   fxDelay.delayTime.value = 60 / state.bpm / 2;
   fxDelayMix.gain.setTargetAtTime(level * 0.6, actx.currentTime, 0.05);
 }
-function blip(ch){
+function blip(ch, scheduledTime){
   if (!actx) return;
   if (state.mute[ch]) return;
   if (state.solo.some(s => s) && !state.solo[ch]) return;
@@ -1176,7 +1176,8 @@ function blip(ch){
   const semi = (state.pitch[ch] || 0) + (state.fx.trans || 0) + (state.fx.pitch || 0);   // + global transpose
   const ft = (base) => base * Math.pow(2, semi / 12);
   const dur = Math.max(0.04, (state.noteLen[ch] || 0.25) * 4 * 60 / state.bpm);
-  const t = actx.currentTime, g = actx.createGain();
+  const t = scheduledTime !== undefined ? scheduledTime : actx.currentTime;
+  const g = actx.createGain();
   const gv = actx.createGain(); gv.gain.value = (state.vol[ch] !== undefined ? state.vol[ch] : 1);
   g.connect(gv); gv.connect(master);
   const noiseSrc = (cut, q) => {
@@ -1233,7 +1234,7 @@ function initMidi() {
     }).catch(err => console.error("MIDI access denied", err));
   }
 }
-function fireMidi(ch) {
+function fireMidi(ch, scheduledTime) {
   if (!sendMidiNotes) return;
   if (state.inst[ch] !== 7) return; // 7 = 808 Sub / Kick
   if (state.mute[ch]) return;
@@ -1247,7 +1248,7 @@ function fireMidi(ch) {
   if (velocity === 0) return;
   
   const durMs = Math.max(40, (state.noteLen[ch] || 0.25) * 4 * 60000 / state.bpm);
-  const now = performance.now();
+  const now = scheduledTime !== undefined ? scheduledTime : performance.now();
   
   midiOutputs.forEach(out => {
     try {
@@ -1503,11 +1504,13 @@ function playStop(){
     if (sendMidiClock) {
       midiOutputs.forEach(o => { try { o.send([0xFA], nextMidiClockTime); } catch(e){} });
     }
+    startScheduler();
   } else { 
     if (fileLoaded && audioEl) audioEl.pause(); 
     if (sendMidiClock) {
       midiOutputs.forEach(o => { try { o.send([0xFC], performance.now()); } catch(e){} });
     }
+    stopScheduler();
   }
 }
 
@@ -1519,6 +1522,7 @@ $("clear").onclick = () => {
   if (state.playing) playStop();
   if (fileLoaded && audioEl){ audioEl.pause(); }
   if (actx) applyMaster(state.master);
+  visualQueue = [];
   state.grid.fill(0); pulses2d.fill(0); rise2d.fill(0); state.lastStep = -1;
   for (let c=0;c<state.channels;c++){
     state.layer[c] = ""; state.pitch[c] = 0; state.vol[c] = 1; state.opacity[c] = 1;
@@ -1898,87 +1902,140 @@ loadLayersManifest().then(() => {
 
 let lastT = performance.now()/1000;
 
-(function loop(){
-  const now = performance.now()/1000;
-  const dt = Math.min(0.25, now - lastT); lastT = now;
-  // TAPE STOP: ramp the transport (and audio pitch) down to a halt, back up on release
-  tapeFactor += ((tapeStop ? 0.0 : 1.0) - tapeFactor) * Math.min(1, dt * (tapeStop ? 3.5 : 6.0));
-  if (tapeFactor < 0.002) tapeFactor = 0;
-  
-  if (state.playing){
-    if (fileLoaded && audioEl && !audioEl.paused){
-      audioEl.playbackRate = Math.max(0.02, tapeFactor);          // real pitch-down + slow on tape stop
-      state.playhead = (audioEl.currentTime / stepDur()) % state.steps;
+// ---------- Lookahead Scheduler ----------
+let lastTickTimePerf = performance.now();
+let lastTickTimeAudio = 0;
+let visualQueue = [];
+let schedulerTimer = null;
+
+function startScheduler() {
+    if (schedulerTimer) clearInterval(schedulerTimer);
+    lastTickTimePerf = performance.now();
+    lastTickTimeAudio = actx ? actx.currentTime : 0;
+    schedulerTimer = setInterval(schedulerTick, 25);
+}
+
+function stopScheduler() {
+    if (schedulerTimer) { clearInterval(schedulerTimer); schedulerTimer = null; }
+    visualQueue = [];
+}
+
+function schedulerTick() {
+    if (!state.playing) return;
+    
+    const nowPerf = performance.now();
+    const nowAudio = actx ? actx.currentTime : 0;
+    const realDt = (nowPerf - lastTickTimePerf) / 1000;
+    const dt = Math.min(0.25, realDt); 
+    lastTickTimePerf = nowPerf;
+    lastTickTimeAudio = nowAudio;
+
+    // TAPE STOP physics
+    tapeFactor += ((tapeStop ? 0.0 : 1.0) - tapeFactor) * Math.min(1, dt * (tapeStop ? 3.5 : 6.0));
+    if (tapeFactor < 0.002) tapeFactor = 0;
+
+    const prevAccum = playAccum;
+    if (fileLoaded && audioEl && !audioEl.paused) {
+        audioEl.playbackRate = Math.max(0.02, tapeFactor);
+        const currAudioAccum = audioEl.currentTime / stepDur();
+        if (currAudioAccum < playAccum - 1) { 
+             playAccum = currAudioAccum;
+        } else {
+             playAccum = currAudioAccum;
+        }
     } else {
-      playAccum += dt * tapeFactor / stepDur();                   // tape-stop scales the synth transport
-      state.playhead = (playAccum % state.steps + state.steps) % state.steps;
-    }
-    // STUTTER: loop a small slice of sequence
-    if (stutterOn){
-      const sz = gateSteps(state.fx.stutter !== undefined ? state.fx.stutter : 0.25);
-      state.playhead = stutterAnchor + (((state.playhead - stutterAnchor) % sz) + sz) % sz;
+        playAccum += dt * tapeFactor / stepDur();
     }
     
+    state.playhead = (playAccum % state.steps + state.steps) % state.steps;
+
+    const stepBoundary = (n) => {
+        const base = Math.floor(n);
+        const frac = n - base;
+        const off = (base % 2 === 1) ? state.swing * 0.5 : 0.0;
+        return base + off;
+    };
+
+    const startIdx = Math.floor(prevAccum);
+    const endIdx = Math.floor(playAccum) + 1;
+
+    for (let i = startIdx; i <= endIdx; i++) {
+        const b = stepBoundary(i);
+        if (b > prevAccum && b <= playAccum) {
+            let fraction = (playAccum - prevAccum) > 0 ? (b - prevAccum) / (playAccum - prevAccum) : 1.0;
+            fraction = Math.max(0, Math.min(1, fraction));
+            
+            const schedPerf = nowPerf - (dt * 1000) + (fraction * dt * 1000) + 50;
+            const schedAudio = nowAudio - dt + (fraction * dt) + 0.050;
+
+            const stepIndex = i % state.steps;
+            let stepToPlay = stepIndex;
+            if (stutterOn) {
+                const sz = gateSteps(state.fx.stutter !== undefined ? state.fx.stutter : 0.25);
+                stepToPlay = stutterAnchor + (((stepIndex - stutterAnchor) % sz) + sz) % sz;
+            }
+
+            let activeChannels = [];
+            if (fileLoaded) {
+                const onset = (bd, e, floor) => (bd > e * 1.4 + 0.02 && bd > floor) ? 1 : 0;
+                const voice = onset(bands.mid,    env.mid,    0.08);
+                const drums = onset(bands.treble, env.treble, 0.06);
+                const bass  = onset(bands.bass,   env.bass,   0.10);
+                const seams = (bass && drums) ? 1 : 0;
+                const fills = [voice, drums, bass, seams];
+                for (let c=0;c<state.channels;c++) {
+                    const on = fills[c % 4];
+                    if (on) {
+                        activeChannels.push(c);
+                        if (sendMidiNotes) fireMidi(c, schedPerf);
+                    }
+                }
+            } else {
+                for (let c = 0; c < state.channels; c++) {
+                    if (state.grid[c * state.steps + stepToPlay]) {
+                        activeChannels.push(c);
+                        blip(c, schedAudio);
+                        if (sendMidiNotes) fireMidi(c, schedPerf);
+                    }
+                }
+            }
+            visualQueue.push({ step: stepToPlay, time: schedPerf, channels: activeChannels, isFile: fileLoaded });
+        }
+    }
+
     // MIDI Clock scheduling
     if (sendMidiClock && tapeFactor > 0.01) {
-      const now = performance.now();
-      const tickDurMs = (60000 / state.bpm / 24) / tapeFactor;
-      if (nextMidiClockTime < now - 250) nextMidiClockTime = now;
-      while (nextMidiClockTime < now + 50) {
-        const t = nextMidiClockTime;
-        midiOutputs.forEach(o => { try { o.send([0xF8], t); } catch(e){} });
-        nextMidiClockTime += tickDurMs;
-      }
-    }
-    
-    const base = Math.floor(state.playhead), frac = state.playhead - base;
-    const off = (base % 2 === 1) ? state.swing * 0.5 : 0.0;
-    const cur = (((frac >= off ? base : base - 1) % state.steps) + state.steps) % state.steps;
-    if (cur !== state.lastStep){
-      let stepsToPlay = [];
-      if (state.lastStep !== -1) {
-        let diff = (cur - state.lastStep + state.steps) % state.steps;
-        if (diff === 0 && dt > stepDur()) diff = state.steps;
-        for (let i = 1; i <= diff; i++) {
-          stepsToPlay.push((state.lastStep + i) % state.steps);
+        const tickDurMs = (60000 / state.bpm / 24) / tapeFactor;
+        if (nextMidiClockTime < nowPerf - 250) nextMidiClockTime = nowPerf;
+        while (nextMidiClockTime < nowPerf + 50) {
+            const t = nextMidiClockTime;
+            midiOutputs.forEach(o => { try { o.send([0xF8], t); } catch(e){} });
+            nextMidiClockTime += tickDurMs;
         }
-      } else {
-        stepsToPlay.push(cur);
-      }
-      state.lastStep = cur;
+    }
+}
 
-      for (let s of stepsToPlay) {
-        if (fileLoaded){
-          const onset = (b, e, floor) => (b > e * 1.4 + 0.02 && b > floor) ? 1 : 0;
-          const voice = onset(bands.mid,    env.mid,    0.08);
-          const drums = onset(bands.treble, env.treble, 0.06);
-          const bass  = onset(bands.bass,   env.bass,   0.10);
-          const seams = (bass && drums) ? 1 : 0;
-          const fills = [voice, drums, bass, seams];
-          // Assuming NP is globally defined as in original code (fills.length)
-          const NP = fills.length; // Just in case it was a typo in original code, actually I'll use 4 since fills has 4 elements
-          for (let c=0;c<state.channels;c++){
-            const on = fills[c % 4];
-            state.grid[c*state.steps+s] = on;
-            if (on) {
-              hitPulse(c, s);
-              fireMidi(c);
-            }
-            const cell = document.querySelector(`.cell[data-c="${c}"][data-s="${s}"]`);
-            if (cell) cell.classList.toggle("on", !!on);
-          }
-        } else {
+(function loop(){
+  const now = performance.now();
+  const dt = Math.min(0.25, (now/1000) - lastT); lastT = now/1000;
+  
+  while (visualQueue.length > 0 && visualQueue[0].time <= now) {
+      const q = visualQueue.shift();
+      if (q.isFile) {
           for (let c=0;c<state.channels;c++) {
-            if (state.grid[c*state.steps+s]){
-              hitPulse(c, s);
-              blip(c);
-              fireMidi(c);
-            }
+              const on = q.channels.includes(c) ? 1 : 0;
+              state.grid[c*state.steps + q.step] = on;
+              const cell = document.querySelector(`.cell[data-c="${c}"][data-s="${q.step}"]`);
+              if (cell) cell.classList.toggle("on", !!on);
           }
-        }
-        markPlayhead(s);
       }
-    }
+      for (let c of q.channels) {
+          hitPulse(c, q.step);
+      }
+      if (q.step !== state.lastStep) {
+          markPlayhead(q.step);
+          state.lastStep = q.step;
+      }
   }
   for (let c=0;c<state.channels;c++){
     const e = state.adsr[c] || ADSR_DEF;
