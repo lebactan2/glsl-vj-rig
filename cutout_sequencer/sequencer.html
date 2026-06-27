@@ -954,7 +954,9 @@ function compileLayer(id){
   img.onload = () => {
     const tex = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -1210,6 +1212,49 @@ function blip(ch){
   }
 }
 
+// ---------- MIDI Output ----------
+let midiAccess = null;
+let midiOutputs = [];
+function initMidi() {
+  if (navigator.requestMIDIAccess && !midiAccess) {
+    navigator.requestMIDIAccess().then(access => {
+      midiAccess = access;
+      midiOutputs = Array.from(midiAccess.outputs.values());
+      midiAccess.onstatechange = () => {
+        midiOutputs = Array.from(midiAccess.outputs.values());
+      };
+      console.log("MIDI ready", midiOutputs);
+    }).catch(err => console.error("MIDI access denied", err));
+  }
+}
+function fireMidi(ch) {
+  if (state.mute[ch]) return;
+  if (state.solo.some(s => s) && !state.solo[ch]) return;
+  if (midiOutputs.length === 0) return;
+  
+  const midiCh = ch % 16;
+  const baseNote = 60 + (state.pitch[ch] || 0) + (state.fx.trans || 0) + (state.fx.pitch || 0);
+  const note = Math.max(0, Math.min(127, baseNote));
+  const velocity = Math.max(0, Math.min(127, Math.round((state.vol[ch] !== undefined ? state.vol[ch] : 1) * 127)));
+  
+  if (velocity === 0) return;
+  
+  const noteOn = [0x90 + midiCh, note, velocity];
+  const noteOff = [0x80 + midiCh, note, 0];
+  
+  const durMs = Math.max(40, (state.noteLen[ch] || 0.25) * 4 * 60000 / state.bpm);
+  const now = performance.now();
+  
+  midiOutputs.forEach(out => {
+    try {
+      out.send(noteOn, now);
+      out.send(noteOff, now + durMs);
+    } catch (e) {
+      console.warn("MIDI send error", e);
+    }
+  });
+}
+
 // ---------- Audio-file reactivity ----------
 let analyser = null, bins = null, audioEl = null, fileLoaded = false;
 const bands = { bass: 0, mid: 0, treble: 0 };
@@ -1444,6 +1489,7 @@ function playStop(){
   $("play").textContent = state.playing ? "⏸ pause" : "▶ play";
   if (state.playing){
     initAudio(); if (actx) actx.resume();
+    initMidi();
     if (fileLoaded && audioEl) audioEl.play().catch(()=>{});
     else state.startTime = performance.now()/1000 - state.playhead*stepDur();
   } else { if (fileLoaded && audioEl) audioEl.pause(); }
@@ -1870,7 +1916,10 @@ let lastT = performance.now()/1000;
         for (let c=0;c<state.channels;c++){
           const on = fills[c%NP];
           state.grid[c*state.steps+cur] = on;
-          if (on) hitPulse(c, cur);
+          if (on) {
+            hitPulse(c, cur);
+            fireMidi(c);
+          }
           const cell = document.querySelector(`.cell[data-c="${c}"][data-s="${cur}"]`);
           if (cell) cell.classList.toggle("on", !!on);
         }
@@ -1878,6 +1927,7 @@ let lastT = performance.now()/1000;
         for (let c=0;c<state.channels;c++) if (state.grid[c*state.steps+cur]){
           hitPulse(c, cur);
           blip(c);
+          fireMidi(c);
         }
       }
       markPlayhead(cur);
