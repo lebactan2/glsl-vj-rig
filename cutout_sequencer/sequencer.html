@@ -1900,7 +1900,7 @@ let lastT = performance.now()/1000;
 
 (function loop(){
   const now = performance.now()/1000;
-  const dt = Math.min(0.1, now - lastT); lastT = now;
+  const dt = Math.min(0.25, now - lastT); lastT = now;
   // TAPE STOP: ramp the transport (and audio pitch) down to a halt, back up on release
   tapeFactor += ((tapeStop ? 0.0 : 1.0) - tapeFactor) * Math.min(1, dt * (tapeStop ? 3.5 : 6.0));
   if (tapeFactor < 0.002) tapeFactor = 0;
@@ -1923,7 +1923,7 @@ let lastT = performance.now()/1000;
     if (sendMidiClock && tapeFactor > 0.01) {
       const now = performance.now();
       const tickDurMs = (60000 / state.bpm / 24) / tapeFactor;
-      if (nextMidiClockTime < now - 100) nextMidiClockTime = now;
+      if (nextMidiClockTime < now - 250) nextMidiClockTime = now;
       while (nextMidiClockTime < now + 50) {
         const t = nextMidiClockTime;
         midiOutputs.forEach(o => { try { o.send([0xF8], t); } catch(e){} });
@@ -1935,32 +1935,49 @@ let lastT = performance.now()/1000;
     const off = (base % 2 === 1) ? state.swing * 0.5 : 0.0;
     const cur = (((frac >= off ? base : base - 1) % state.steps) + state.steps) % state.steps;
     if (cur !== state.lastStep){
-      state.lastStep = cur;
-      if (fileLoaded){
-        const onset = (b, e, floor) => (b > e * 1.4 + 0.02 && b > floor) ? 1 : 0;
-        const voice = onset(bands.mid,    env.mid,    0.08);
-        const drums = onset(bands.treble, env.treble, 0.06);
-        const bass  = onset(bands.bass,   env.bass,   0.10);
-        const seams = (bass && drums) ? 1 : 0;
-        const fills = [voice, drums, bass, seams];
-        for (let c=0;c<state.channels;c++){
-          const on = fills[c%NP];
-          state.grid[c*state.steps+cur] = on;
-          if (on) {
-            hitPulse(c, cur);
-            fireMidi(c);
-          }
-          const cell = document.querySelector(`.cell[data-c="${c}"][data-s="${cur}"]`);
-          if (cell) cell.classList.toggle("on", !!on);
+      let stepsToPlay = [];
+      if (state.lastStep !== -1) {
+        let diff = (cur - state.lastStep + state.steps) % state.steps;
+        if (diff === 0 && dt > stepDur()) diff = state.steps;
+        for (let i = 1; i <= diff; i++) {
+          stepsToPlay.push((state.lastStep + i) % state.steps);
         }
       } else {
-        for (let c=0;c<state.channels;c++) if (state.grid[c*state.steps+cur]){
-          hitPulse(c, cur);
-          blip(c);
-          fireMidi(c);
-        }
+        stepsToPlay.push(cur);
       }
-      markPlayhead(cur);
+      state.lastStep = cur;
+
+      for (let s of stepsToPlay) {
+        if (fileLoaded){
+          const onset = (b, e, floor) => (b > e * 1.4 + 0.02 && b > floor) ? 1 : 0;
+          const voice = onset(bands.mid,    env.mid,    0.08);
+          const drums = onset(bands.treble, env.treble, 0.06);
+          const bass  = onset(bands.bass,   env.bass,   0.10);
+          const seams = (bass && drums) ? 1 : 0;
+          const fills = [voice, drums, bass, seams];
+          // Assuming NP is globally defined as in original code (fills.length)
+          const NP = fills.length; // Just in case it was a typo in original code, actually I'll use 4 since fills has 4 elements
+          for (let c=0;c<state.channels;c++){
+            const on = fills[c % 4];
+            state.grid[c*state.steps+s] = on;
+            if (on) {
+              hitPulse(c, s);
+              fireMidi(c);
+            }
+            const cell = document.querySelector(`.cell[data-c="${c}"][data-s="${s}"]`);
+            if (cell) cell.classList.toggle("on", !!on);
+          }
+        } else {
+          for (let c=0;c<state.channels;c++) {
+            if (state.grid[c*state.steps+s]){
+              hitPulse(c, s);
+              blip(c);
+              fireMidi(c);
+            }
+          }
+        }
+        markPlayhead(s);
+      }
     }
   }
   for (let c=0;c<state.channels;c++){
