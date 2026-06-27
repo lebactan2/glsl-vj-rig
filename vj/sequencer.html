@@ -47,6 +47,11 @@
   .fxbtn { height:34px; padding:0 8px; background:#1c1c22; color:#cdd; border:1px solid #3a3a44; border-radius:5px; cursor:pointer; font-size:10px; }
   .fxbtn.on { background:#caa23a; color:#111; border-color:#caa23a; font-weight:700; }
   .fxbtn.inert { opacity:.65; }
+  .banks { display:inline-flex; gap:3px; }
+  .banks .bank { width:24px; background:#1c1c22; color:#9aa; border:1px solid #3a3a44; border-radius:5px; padding:5px 0; cursor:pointer; font-weight:700; }
+  .banks .bank.filled { color:#cdd; border-color:#5a6; }
+  .banks .bank.on { background:#caa23a; color:#111; border-color:#caa23a; }
+  .banks .bank.store { background:#4ad; color:#111; }
   .lane .fxslot { width:30px; height:18px; flex:none; display:flex; align-items:center; justify-content:center;
     font-size:8px; color:#888; background:#15151b; border:1px dashed #3a3a44; border-radius:4px; overflow:hidden; }
   .lane .fxslot.set { color:#caa23a; border-style:solid; border-color:#caa23a; }
@@ -96,7 +101,8 @@ uniform float uEnOpen;                // open-hat (row 5) energy for leaves
 uniform sampler2D uAtlas;             // separated object-layers packed 4x2; one tile per channel
 uniform float uHasLayer[8];           // 1 = that channel renders a layer instead of its built-in element
 uniform float uVis[8];                // 1 = channel visible
-uniform float uOpacity[8];            // per-channel layer opacity 0..1
+uniform float uOpacity[8];            // per-channel layer opacity
+uniform float uStrobe;                // 1 = strobe overlay on top of everything 0..1
 
 float h2(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float vn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
@@ -290,6 +296,7 @@ void main(){
     }
 
     col = satb(col, 1.22, 1.0);
+    if (uStrobe > 0.5) col *= step(0.5, fract(iTime * 11.0));   // STROBE: hard on/off flicker over all layers
     gl_FragColor = vec4(col, 1.0);
 }
 </script>
@@ -304,8 +311,9 @@ void main(){
     <input type="file" id="audioFile" accept="audio/*" hidden>
     <label>steps <select id="steps"><option>8</option><option>16</option><option selected>32</option><option>64</option></select></label>
     <button id="rand">🎲 rand</button>
-    <button id="patA" title="click = recall · double-click = save">A</button>
-    <button id="patB" title="click = recall · double-click = save">B</button>
+    <span class="banks" title="pattern banks — click = switch live · double-click = store current">
+      <button id="bankA" class="bank">A</button><button id="bankB" class="bank">B</button><button id="bankC" class="bank">C</button><button id="bankD" class="bank">D</button>
+    </span>
     <button id="output">⧉ output</button>
     <span style="flex:1"></span>
     <span class="hint"><kbd>Space</kbd> play · <kbd>H</kbd> hide · right-click a knob to reset</span>
@@ -622,7 +630,7 @@ function renderLayers(now){
 }
 
 // ---------- Audio synth ----------
-let actx = null, noiseBuf = null, master = null, outGain = null, fxFilterNode = null, fxDelay = null, fxDelayMix = null, revMix = null;
+let actx = null, noiseBuf = null, master = null, outGain = null, gateGain = null, fxFilterNode = null, fxDelay = null, fxDelayMix = null, revMix = null;
 function makeIR(){                                   // short decaying-noise reverb impulse
   const len = (actx.sampleRate * 1.6) | 0; const b = actx.createBuffer(2, len, actx.sampleRate);
   for (let ch=0; ch<2; ch++){ const d = b.getChannelData(ch);
@@ -643,7 +651,8 @@ function initAudio(){
   fxDelayMix = actx.createGain(); fxDelayMix.gain.value = 0.0;
   const conv = actx.createConvolver(); conv.buffer = makeIR();
   revMix = actx.createGain(); revMix.gain.value = state.reverb;
-  master.connect(fxFilterNode); fxFilterNode.connect(outGain); outGain.connect(actx.destination);
+  gateGain = actx.createGain();                                   // rhythmic GATE chop on the whole mix
+  master.connect(fxFilterNode); fxFilterNode.connect(outGain); outGain.connect(gateGain); gateGain.connect(actx.destination);
   fxFilterNode.connect(fxDelay); fxDelay.connect(fb); fb.connect(fxDelay); fxDelay.connect(fxDelayMix); fxDelayMix.connect(outGain);
   fxFilterNode.connect(conv); conv.connect(revMix); revMix.connect(outGain);
   applyFilter(fxFilter); applyEcho(echoLevel);
@@ -930,7 +939,7 @@ function playStop(){
   if (state.playing){
     initAudio(); if (actx) actx.resume();
     if (fileLoaded && audioEl) audioEl.play().catch(()=>{});
-    else state.startTime = performance.now()/1000 - state.playhead*stepDur();
+    else { state.startTime = performance.now()/1000 - state.playhead*stepDur(); playAccum = state.playhead; }
   } else { if (fileLoaded && audioEl) audioEl.pause(); }
 }
 
@@ -964,6 +973,14 @@ $("loadBtn").onclick = () => $("audioFile").click();
 $("audioFile").onchange = (e) => { if (e.target.files[0]) loadAudioFile(e.target.files[0]); };
 bindReset($("steps"), 32, () => { $("steps").value="32"; setSteps(32); });
 
+// ---------- live performance FX (strobe / tape-stop / stutter / gate) ----------
+let strobeOn = false, tapeStop = false, tapeFactor = 1, stutterOn = false, stutterAnchor = 0, playAccum = 0;
+// note divisions -> size in 1/16 steps (a step = 1/16 note; min 1/32, max 32 notes)
+const NOTE_DIVS = [["1/32",0.5],["1/16",1],["1/8",2],["1/4",4],["1/2",8],["1",16],["2",32],["4",64],["8",128],["16",256],["32",512]];
+function gateInfo(v){ const i = Math.min(NOTE_DIVS.length-1, Math.max(0, Math.round(v*(NOTE_DIVS.length-1)))); return NOTE_DIVS[i]; }
+function gateDiv(v){ return gateInfo(v)[0]; }
+function gateSteps(v){ return Math.max(1, Math.round(gateInfo(v)[1])); }
+
 // ---------- master FX rack (diagram layout). Wired = real effect now; others are UI for next week ----------
 const pct = v => Math.round(v*100) + "%";
 const FX_SPEC = [
@@ -980,7 +997,8 @@ const FX_SPEC = [
   { k:"pitch",   label:"PITCH", min:-12, max:12, def:0, fmt:v=>Math.round(v) }, { k:"spiral", label:"SPIRAL" },
   { k:"distort", label:"DISTORT" }, { k:"hi", label:"HI", min:-1, max:1, def:0, fmt:pct },
   { k:"mid", label:"MID", min:-1, max:1, def:0, fmt:pct }, { k:"lo", label:"LO", min:-1, max:1, def:0, fmt:pct },
-  { k:"gate", label:"GATE" }, { k:"stutter", label:"STUTTER" },
+  { k:"gate", label:"GATE", min:0, max:1, def:0, fmt:v=>v<0.02?"off":gateDiv(v), wired:true, set:v=>{ state.fx.gate=v; } },
+  { k:"stutter", label:"SLICE", min:0, max:1, def:0.25, fmt:v=>gateDiv(v) },  // stutter slice size (held via STUTTER button)
 ];
 const fxKnobs = {};
 const fxrack = $("fxrack");
@@ -996,12 +1014,19 @@ FX_SPEC.forEach(sp => {
   kn.el.addEventListener("dragstart", e => e.dataTransfer.setData("text/fx", sp.k));
   fxKnobs[sp.k] = kn; fxrack.appendChild(kn.el);
 });
-// inert FX buttons from the diagram (function next week)
-[["strobe","STROBE"],["tapestop","TAPE STOP"],["macroA","A"],["macroB","B"],["macroC","C"],["macroD","D"]].forEach(([k,lab])=>{
-  const btn=document.createElement("button"); btn.className="fxbtn inert"; btn.textContent=lab; btn.title=lab+" (coming soon)";
-  btn.onclick=()=>{ state.fx[k]=!state.fx[k]; btn.classList.toggle("on", !!state.fx[k]); save(); };
-  fxrack.appendChild(btn);
-});
+// live FX buttons: STROBE (toggle), TAPE STOP + STUTTER (hold)
+function fxButton(lab, hold, on, off){
+  const btn=document.createElement("button"); btn.className="fxbtn"; btn.textContent=lab; btn.title=lab;
+  if (hold){
+    const dn=e=>{ e.preventDefault(); btn.classList.add("on"); initAudio(); on(); };
+    const up=()=>{ btn.classList.remove("on"); off(); };
+    btn.addEventListener("pointerdown",dn); btn.addEventListener("pointerup",up); btn.addEventListener("pointerleave",up);
+  } else { btn.onclick=()=>{ const v=!btn.classList.contains("on"); btn.classList.toggle("on",v); on(v); }; }
+  fxrack.appendChild(btn); return btn;
+}
+fxButton("STROBE", false, v => { strobeOn = v; });
+fxButton("TAPE STOP", true, () => { tapeStop = true; }, () => { tapeStop = false; });
+fxButton("STUTTER", true, () => { stutterOn = true; stutterAnchor = Math.floor(state.playhead); }, () => { stutterOn = false; });
 
 // randomize a musical pattern (more hits on beats) + random visual layers and their sizes
 $("rand").onclick = () => {
@@ -1023,22 +1048,32 @@ $("rand").onclick = () => {
   }
   buildGrid(); save();
 };
-// pattern A/B snapshots: click = recall, double-click = save
-function patSlot(slot, recall){
-  const key = "scene6687pat_" + slot, btn = $("pat"+slot);
-  if (recall){
-    const d = localStorage.getItem(key); if (!d) return;
-    try { const o = JSON.parse(d);
-      if (o.steps !== state.steps){ state.steps=o.steps; $("steps").value=String(o.steps); pulses2d=new Float32Array(state.channels*o.steps); rise2d=new Float32Array(state.channels*o.steps); }
-      state.grid = Uint8Array.from(o.grid); state.lastStep=-1; buildGrid(); save();
-    } catch(e){}
-  } else {
-    localStorage.setItem(key, JSON.stringify({ steps:state.steps, grid:Array.from(state.grid) }));
-    btn.classList.add("on"); setTimeout(()=>btn.classList.remove("on"), 300);
-  }
+// ---------- A/B/C/D pattern banks: hold a full arrangement; click = switch live, dbl-click = store ----------
+const BANK_KEY = "glslseq_banks";
+let banks = {}; try { banks = JSON.parse(localStorage.getItem(BANK_KEY) || "{}"); } catch(e){}
+function snapshot(){ return { steps:state.steps, channels:state.channels,
+  grid:Array.from(state.grid), names:[...state.names], inst:[...state.inst], pitch:[...state.pitch],
+  noteLen:[...state.noteLen], layer:[...state.layer], adsr:state.adsr.map(a=>({...a})),
+  opacity:[...state.opacity], vol:[...state.vol], mute:[...state.mute], solo:[...state.solo], trackFx:[...state.trackFx] }; }
+function applySnapshot(o){
+  state.steps=o.steps; state.channels=o.channels; $("steps").value=String(o.steps);
+  state.grid=Uint8Array.from(o.grid); pulses2d=new Float32Array(o.channels*o.steps); rise2d=new Float32Array(o.channels*o.steps);
+  state.names=[...o.names]; state.inst=[...o.inst]; state.pitch=[...o.pitch]; state.noteLen=[...o.noteLen];
+  state.layer=[...o.layer]; state.adsr=o.adsr.map(a=>({...a})); state.opacity=[...o.opacity]; state.vol=[...o.vol];
+  state.mute=[...o.mute]; state.solo=[...o.solo]; state.trackFx=[...o.trackFx];
+  state.layer.forEach(id=>compileLayer(id)); buildGrid();         // transport keeps running -> instant live swap
 }
-$("patA").onclick = () => patSlot("A", true);  $("patA").ondblclick = () => patSlot("A", false);
-$("patB").onclick = () => patSlot("B", true);  $("patB").ondblclick = () => patSlot("B", false);
+function highlightBanks(){ ["A","B","C","D"].forEach(s=>{ const b=$("bank"+s); if(!b) return;
+  b.classList.toggle("on", state.bank===s); b.classList.toggle("filled", !!banks[s]); }); }
+function bankPress(slot, store){
+  if (store){ banks[slot]=snapshot(); try{ localStorage.setItem(BANK_KEY, JSON.stringify(banks)); }catch(e){}
+    const b=$("bank"+slot); b.classList.add("store"); setTimeout(()=>b.classList.remove("store"),300); }
+  else { if (!banks[slot]) return; applySnapshot(banks[slot]); state.bank=slot; save(); }
+  highlightBanks();
+}
+state.bank = null;
+["A","B","C","D"].forEach(s=>{ $("bank"+s).onclick=()=>bankPress(s,false); $("bank"+s).ondblclick=()=>bankPress(s,true); });
+highlightBanks();
 
 // output to a 2nd screen (auto-placed) mirroring the live canvas
 async function openOutput(){
@@ -1072,11 +1107,21 @@ let lastT = performance.now()/1000;
 
 (function loop(){
   const now = performance.now()/1000;
+  const dt = Math.min(0.1, now - lastT); lastT = now;
+  // TAPE STOP: ramp the transport (and audio pitch) down to a halt, back up on release
+  tapeFactor += ((tapeStop ? 0.0 : 1.0) - tapeFactor) * Math.min(1, dt * (tapeStop ? 3.5 : 6.0));
+  if (tapeFactor < 0.002) tapeFactor = 0;
   if (state.playing){
-    if (fileLoaded && audioEl && !audioEl.paused)
+    if (fileLoaded && audioEl && !audioEl.paused){
+      audioEl.playbackRate = Math.max(0.02, tapeFactor);          // real pitch-down + slow on tape stop
       state.playhead = (audioEl.currentTime / stepDur()) % state.steps;
-    else
-      state.playhead = ((now - state.startTime) / stepDur()) % state.steps;
+    } else {
+      playAccum += dt * tapeFactor / stepDur();                   // tape-stop scales the synth transport
+      state.playhead = (playAccum % state.steps + state.steps) % state.steps;
+    }
+    // STUTTER: loop a small slice of the sequence while held
+    if (stutterOn){ const sz = gateSteps(state.fx.stutter !== undefined ? state.fx.stutter : 0.25);
+      state.playhead = stutterAnchor + (((state.playhead - stutterAnchor) % sz) + sz) % sz; }
     // swing: delay odd steps by up to half a step
     const base = Math.floor(state.playhead), frac = state.playhead - base;
     const off = (base % 2 === 1) ? state.swing * 0.5 : 0.0;
@@ -1108,7 +1153,6 @@ let lastT = performance.now()/1000;
       markPlayhead(cur);
     }
   }
-  const dt = Math.min(0.1, now - lastT); lastT = now;
   for (let c=0;c<state.channels;c++){                         // visual ADSR: attack ramp up, then release decay
     const e = state.adsr[c] || ADSR_DEF;
     const atk = Math.max(0.01, e.a), rel = e.r;
@@ -1118,6 +1162,12 @@ let lastT = performance.now()/1000;
       if (rise2d[i] > 0.5){ pulses2d[i] += dt/atk; if (pulses2d[i] >= 1.0){ pulses2d[i]=1.0; rise2d[i]=0; } }  // attack
       else pulses2d[i] *= decay;                                                                              // release
     }
+  }
+  // GATE: square-wave chop the whole mix at the chosen note rate
+  if (gateGain){
+    const gv = state.fx.gate || 0;
+    if (gv < 0.02) gateGain.gain.value = 1.0;
+    else { const per = gateSteps(gv); const ph = (state.playhead % per) / per; gateGain.gain.value = (ph < 0.5) ? 1.0 : 0.06; }
   }
   updateBands();
   uploadPulse();
@@ -1138,6 +1188,7 @@ let lastT = performance.now()/1000;
   gl.uniform1f(U("uSteps"), state.steps);
   gl.uniform1f(U("uChannels"), state.channels);
   gl.uniform1f(U("uEnOpen"), energy(5));
+  gl.uniform1f(U("uStrobe"), strobeOn ? 1.0 : 0.0);
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, pulseTex); gl.uniform1i(U("uPulseTex"), 0);
   gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, atlasTex); gl.uniform1i(U("uAtlas"), 1);
   for (let c=0;c<8;c++){
