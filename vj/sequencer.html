@@ -152,6 +152,7 @@
   .cell.play { outline: 2px solid #fff6; }
   .transport { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 6px 0; margin: 0; border-top: 1px solid #2a2a30; border-bottom: 1px solid #2a2a30; flex-shrink: 0; }
   .transport .title { font-weight: 700; color: #10b981; letter-spacing: 1px; margin-right: 6px; font-size: 11px; }
+  .transport button.on { background: #10b981; color: #111; border-color: #10b981; font-weight: 700; }
   .lane .nm { width: 56px; flex: none; color: #cdd; font-size: 10px; }
   .lane select.nmsel { width: 80px; font-size: 9px; }
   .lane .grip { cursor: grab; color: #666; padding: 0 2px; user-select: none; font-size: 10px; }
@@ -472,6 +473,8 @@ void main(){
     <input type="file" id="audioFile" accept="audio/*" hidden>
     <label>steps <select id="steps"><option>8</option><option>16</option><option selected>32</option><option>64</option></select></label>
     <button id="rand">🎲 rand</button>
+    <button id="midiNotes" title="send MIDI notes to a connected device">MIDI Notes</button>
+    <button id="midiClock" title="send MIDI clock (24 PPQN) + start/stop">MIDI Clock</button>
     <span style="flex:1"></span>
     <span class="hint"><kbd>Space</kbd> play · <kbd>H</kbd> hide · banks dbl-click=store · right-click knob=reset</span>
   </div>
@@ -924,6 +927,34 @@ function blip(ch){
   }
 }
 
+// ---------- MIDI output (notes + clock) ----------
+let midiOut = null, midiNotesOn = false, midiClockOn = false, midiClockTimer = null;
+async function ensureMidi(){
+  if (midiOut !== null) return midiOut;
+  if (!navigator.requestMIDIAccess){ alert("Web MIDI not supported in this browser."); return null; }
+  try { const a = await navigator.requestMIDIAccess(); const outs = [...a.outputs.values()];
+    midiOut = outs[0] || null; if (!midiOut) alert("No MIDI output device found."); return midiOut;
+  } catch(e){ alert("MIDI access denied."); return null; }
+}
+function midiNote(ch){
+  if (!midiNotesOn || !midiOut) return;
+  const note = Math.max(0, Math.min(127, 36 + (state.pitch[ch]||0) + (state.fx.trans||0) + (state.fx.pitch||0) + (ch*2)));
+  const c = ch & 15; const durMs = Math.max(40, (state.noteLen[ch]||0.25) * 4 * 60000 / state.bpm);
+  midiOut.send([0x90 | c, note, 100]);
+  midiOut.send([0x80 | c, note, 0], performance.now() + durMs);   // scheduled note-off
+}
+function clockTick(){ if (midiOut) midiOut.send([0xF8]); }
+function startMidiClock(sendStart){
+  if (!midiOut || !midiClockOn || !state.playing) return;
+  if (midiClockTimer) clearInterval(midiClockTimer);
+  if (sendStart) midiOut.send([0xFA]);                            // MIDI Start
+  midiClockTimer = setInterval(clockTick, 60000 / state.bpm / 24);  // 24 PPQN
+}
+function stopMidiClock(sendStop){
+  if (midiClockTimer){ clearInterval(midiClockTimer); midiClockTimer = null; }
+  if (sendStop && midiOut) midiOut.send([0xFC]);                  // MIDI Stop
+}
+
 // ---------- Audio-file reactivity ----------
 let analyser = null, bins = null, audioEl = null, fileLoaded = false;
 const bands = { bass: 0, mid: 0, treble: 0 };
@@ -1135,7 +1166,8 @@ function playStop(){
     initAudio(); if (actx) actx.resume();
     if (fileLoaded && audioEl) audioEl.play().catch(()=>{});
     else { state.startTime = performance.now()/1000 - state.playhead*stepDur(); playAccum = state.playhead; }
-  } else { if (fileLoaded && audioEl) audioEl.pause(); }
+    if (midiClockOn) startMidiClock(true);
+  } else { if (fileLoaded && audioEl) audioEl.pause(); stopMidiClock(true); }
 }
 
 // ---------- controls ----------
@@ -1288,6 +1320,9 @@ async function openOutput(){
   w.addEventListener("load", goFs); setTimeout(goFs, 500);
 }
 $("output").onclick = openOutput;
+$("midiNotes").onclick = async () => { const v=!midiNotesOn; if(v && !(await ensureMidi())) return; midiNotesOn=v; $("midiNotes").classList.toggle("on", midiNotesOn); };
+$("midiClock").onclick = async () => { const v=!midiClockOn; if(v && !(await ensureMidi())) return; midiClockOn=v; $("midiClock").classList.toggle("on", midiClockOn);
+  if(midiClockOn) startMidiClock(true); else stopMidiClock(true); };
 
 addEventListener("keydown", (e) => {
   if (e.target.tagName === "INPUT") return;
@@ -1361,6 +1396,7 @@ function updateBpmFaderUI(val){ const min=60,max=200,p=(val-min)/(max-min);
   if(n && document.activeElement!==n) n.value = val; }
 function setBpm(bpm){ bpm=Math.max(60,Math.min(200,Math.round(bpm))); state.bpm=bpm;
   if(fxKnobs.bpm) fxKnobs.bpm.set(bpm); if(state.playing) state.startTime=performance.now()/1000 - state.playhead*stepDur();
+  if(midiClockTimer) startMidiClock(false);                       // retempo the MIDI clock
   updateBpmFaderUI(bpm); save(); }
 
 // ---------- boot ----------
@@ -1430,6 +1466,7 @@ let lastT = performance.now()/1000;
         for (let c=0;c<state.channels;c++) if (state.grid[c*state.steps+cur]){
           hitPulse(c, cur);                           // visual ADSR envelope (attack ramp -> release)
           blip(c);                                    // per-channel pitch + note
+          midiNote(c);                                // MIDI note out (if enabled)
         }
       }
       markPlayhead(cur);
