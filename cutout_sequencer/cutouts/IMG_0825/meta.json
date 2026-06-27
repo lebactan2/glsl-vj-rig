@@ -1,0 +1,98 @@
+{
+  "id": "IMG_0825",
+  "title": "Shader: IMG_0825",
+  "tags": [
+    "background",
+    "street",
+    "sidewalk",
+    "barrier",
+    "wall",
+    "pants",
+    "purple",
+    "pattern",
+    "animated",
+    "shirt",
+    "high-vis",
+    "plaid",
+    "orange",
+    "yellow",
+    "reflective",
+    "head",
+    "face",
+    "hat",
+    "hard hat",
+    "yellow",
+    "motorcycle",
+    "scooter",
+    "black",
+    "white",
+    "basket",
+    "bag",
+    "green"
+  ],
+  "layers": [
+    {
+      "name": "Background",
+      "fileName": "Background.png",
+      "keywords": [
+        "background",
+        "street",
+        "sidewalk",
+        "barrier",
+        "wall"
+      ]
+    },
+    {
+      "name": "Person Pants",
+      "fileName": "PersonPants.png",
+      "keywords": [
+        "pants",
+        "purple",
+        "pattern",
+        "animated"
+      ]
+    },
+    {
+      "name": "Person Shirt",
+      "fileName": "PersonShirt.png",
+      "keywords": [
+        "shirt",
+        "high-vis",
+        "plaid",
+        "orange",
+        "yellow",
+        "reflective"
+      ]
+    },
+    {
+      "name": "Person Head",
+      "fileName": "PersonHead.png",
+      "keywords": [
+        "head",
+        "face",
+        "hat",
+        "hard hat",
+        "yellow"
+      ]
+    },
+    {
+      "name": "Motorcycle",
+      "fileName": "Motorcycle.png",
+      "keywords": [
+        "motorcycle",
+        "scooter",
+        "black",
+        "white"
+      ]
+    },
+    {
+      "name": "Green Basket",
+      "fileName": "GreenBasket.png",
+      "keywords": [
+        "basket",
+        "bag",
+        "green"
+      ]
+    }
+  ]
+}

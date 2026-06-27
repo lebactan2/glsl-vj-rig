@@ -1,0 +1,66 @@
+{
+  "id": "IMG_0826",
+  "title": "Shader: IMG_0826",
+  "tags": [
+    "wall",
+    "grey",
+    "background",
+    "blue",
+    "tiles",
+    "grout",
+    "above gate",
+    "gate",
+    "scissor",
+    "lattice",
+    "metal",
+    "animation",
+    "stretch",
+    "pillar",
+    "cables",
+    "right",
+    "dark"
+  ],
+  "layers": [
+    {
+      "name": "Surrounding Wall",
+      "fileName": "SurroundingWall.png",
+      "keywords": [
+        "wall",
+        "grey",
+        "background"
+      ]
+    },
+    {
+      "name": "Blue Tiles",
+      "fileName": "BlueTiles.png",
+      "keywords": [
+        "blue",
+        "tiles",
+        "grout",
+        "above gate"
+      ]
+    },
+    {
+      "name": "Scissor Gate",
+      "fileName": "ScissorGate.png",
+      "keywords": [
+        "gate",
+        "scissor",
+        "lattice",
+        "metal",
+        "animation",
+        "stretch"
+      ]
+    },
+    {
+      "name": "Right Pillar",
+      "fileName": "RightPillar.png",
+      "keywords": [
+        "pillar",
+        "cables",
+        "right",
+        "dark"
+      ]
+    }
+  ]
+}

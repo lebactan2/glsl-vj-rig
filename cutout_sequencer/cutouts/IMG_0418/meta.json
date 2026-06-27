@@ -1,0 +1,54 @@
+{
+  "id": "IMG_0418",
+  "title": "Shader: IMG_0418",
+  "tags": [
+    "wall",
+    "texture",
+    "grey",
+    "background",
+    "pallet",
+    "red",
+    "back",
+    "holes",
+    "pallet",
+    "green",
+    "front",
+    "glow",
+    "animation",
+    "holes"
+  ],
+  "layers": [
+    {
+      "name": "Wall",
+      "fileName": "Wall.png",
+      "keywords": [
+        "wall",
+        "texture",
+        "grey",
+        "background"
+      ]
+    },
+    {
+      "name": "Red Pallet",
+      "fileName": "RedPallet.png",
+      "keywords": [
+        "pallet",
+        "red",
+        "back",
+        "holes"
+      ]
+    },
+    {
+      "name": "Green Pallets",
+      "fileName": "GreenPallets.png",
+      "keywords": [
+        "pallet",
+        "green",
+        "front",
+        "glow",
+        "animation",
+        "holes"
+      ]
+    }
+  ]
+}

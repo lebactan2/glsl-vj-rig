@@ -1,0 +1,74 @@
+{
+  "id": "IMG_0767",
+  "title": "Shader: IMG_0767",
+  "tags": [
+    "background",
+    "yellow",
+    "wavy",
+    "animation",
+    "text",
+    "shape",
+    "sdf",
+    "lines",
+    "shadow",
+    "text",
+    "red",
+    "pink",
+    "gradient",
+    "animated",
+    "text",
+    "material",
+    "border",
+    "white",
+    "core",
+    "blue",
+    "highlight"
+  ],
+  "layers": [
+    {
+      "name": "Background",
+      "fileName": "Background.png",
+      "keywords": [
+        "background",
+        "yellow",
+        "wavy",
+        "animation"
+      ]
+    },
+    {
+      "name": "Text Shape",
+      "fileName": "TextShape.png",
+      "keywords": [
+        "text",
+        "shape",
+        "sdf",
+        "lines"
+      ]
+    },
+    {
+      "name": "Text Shadow",
+      "fileName": "TextShadow.png",
+      "keywords": [
+        "shadow",
+        "text",
+        "red",
+        "pink",
+        "gradient",
+        "animated"
+      ]
+    },
+    {
+      "name": "Text Material",
+      "fileName": "TextMaterial.png",
+      "keywords": [
+        "text",
+        "material",
+        "border",
+        "white",
+        "core",
+        "blue",
+        "highlight"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Photo Cutouts Directory</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #090d16;
+            --bg-panel: rgba(17, 24, 39, 0.7);
+            --accent: #10b981;
+            --accent-glow: rgba(16, 185, 129, 0.4);
+            --text-main: #f3f4f6;
+            --text-muted: #9ca3af;
+            --border: rgba(255, 255, 255, 0.08);
+            --checkerboard: conic-gradient(#1e293b 0.25turn, #0f172a 0.25turn 0.5turn, #1e293b 0.5turn 0.75turn, #0f172a 0.75turn);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Outfit', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            background-image:
+                radial-gradient(at 0% 0%, hsla(242, 34%, 9%, 1) 0, transparent 50%),
+                radial-gradient(at 50% 0%, hsla(162, 47%, 20%, 0.15) 0, transparent 50%),
+                radial-gradient(at 100% 0%, hsla(330, 40%, 15%, 0.15) 0, transparent 50%);
+            color: var(--text-main);
+            height: 100vh;
+            display: flex;
+            overflow: hidden;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 320px;
+            background: var(--bg-panel);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            z-index: 10;
+            box-shadow: 5px 0 25px rgba(0, 0, 0, 0.5);
+        }
+
+        .sidebar-header {
+            padding: 24px 20px;
+            border-bottom: 1px solid var(--border);
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0%, transparent 100%);
+        }
+
+        .sidebar-header h1 {
+            font-size: 22px;
+            font-weight: 800;
+            background: linear-gradient(to right, #10b981, #34d399);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.5px;
+            margin-bottom: 6px;
+        }
+
+        .sidebar-header p {
+            color: var(--text-muted);
+            font-size: 13px;
+            font-weight: 300;
+        }
+
+        .item-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 15px;
+        }
+
+        /* Scrollbar styling */
+        .item-list::-webkit-scrollbar {
+            width: 6px;
+        }
+        .item-list::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .item-list::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 10px;
+        }
+
+        .item {
+            padding: 10px;
+            margin-bottom: 8px;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            border: 1px solid transparent;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .item:hover {
+            background: rgba(255, 255, 255, 0.05);
+            border-color: rgba(16, 185, 129, 0.2);
+            transform: translateX(4px);
+        }
+
+        .item.active {
+            background: rgba(16, 185, 129, 0.15);
+            border-color: var(--accent);
+            box-shadow: 0 0 15px rgba(16, 185, 129, 0.1);
+        }
+
+        .item img {
+            width: 54px;
+            height: 54px;
+            border-radius: 8px;
+            object-fit: cover;
+            border: 1px solid var(--border);
+        }
+
+        .item-info {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .item-name {
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .item-layers-count {
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        /* Main Content */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .header {
+            padding: 20px 30px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(17, 24, 39, 0.3);
+        }
+
+        .header h2 {
+            font-size: 18px;
+            font-weight: 600;
+            letter-spacing: -0.2px;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 12px;
+        }
+
+        .btn {
+            background: rgba(16, 185, 129, 0.15);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            color: #34d399;
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 13px;
+            transition: all 0.2s ease;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .btn:hover {
+            background: var(--accent);
+            color: white;
+            box-shadow: 0 0 15px var(--accent-glow);
+        }
+
+        .panels-container {
+            flex: 1;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: 1.2fr 1fr;
+            gap: 20px;
+            padding: 20px 30px;
+            overflow-y: auto;
+        }
+
+        .panel {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(12px);
+        }
+
+        .panel-header {
+            padding: 12px 18px;
+            background: rgba(255, 255, 255, 0.02);
+            border-bottom: 1px solid var(--border);
+            font-weight: 600;
+            font-size: 13px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .panel-content {
+            flex: 1;
+            position: relative;
+            background: #0b0f19;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .panel-content img.preview {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+
+        /* Composite Viewer */
+        .composite-wrap {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .composite-canvas {
+            position: relative;
+            max-width: 90%;
+            max-height: 90%;
+            aspect-ratio: 1;
+            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.6);
+        }
+
+        .composite-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: fill;
+            pointer-events: none;
+            transition: opacity 0.25s ease;
+            filter: drop-shadow(0 2px 6px rgba(0,0,0,0.4));
+        }
+
+        .layer-controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            padding: 10px 18px;
+            background: rgba(0, 0, 0, 0.3);
+            border-top: 1px solid var(--border);
+        }
+
+        .layer-toggle {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border);
+            color: var(--text-main);
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .layer-toggle:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .layer-toggle.active {
+            background: rgba(16, 185, 129, 0.2);
+            border-color: var(--accent);
+            color: #34d399;
+            font-weight: 600;
+        }
+
+        /* Cutouts Grid Panel (full width bottom) */
+        .panel.full-width {
+            grid-column: 1 / span 2;
+        }
+
+        .cutouts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 16px;
+            padding: 18px;
+            overflow-y: auto;
+            width: 100%;
+            height: 100%;
+        }
+
+        .cutout-card {
+            background: rgba(255, 255, 255, 0.015);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            transition: all 0.2s ease;
+        }
+
+        .cutout-card:hover {
+            transform: translateY(-2px);
+            border-color: rgba(255,255,255,0.15);
+        }
+
+        .cutout-card-img {
+            aspect-ratio: 1;
+            background-image: var(--checkerboard);
+            background-size: 16px 16px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .cutout-card-img img {
+            max-width: 90%;
+            max-height: 90%;
+            object-fit: contain;
+            filter: drop-shadow(0 3px 8px rgba(16, 185, 129, 0.25));
+        }
+
+        .cutout-card-name {
+            padding: 10px;
+            font-size: 12px;
+            font-weight: 600;
+            text-align: center;
+            background: rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <h1>Photo Cutouts Directory</h1>
+            <p>10 Photo Pilot Batch Preview</p>
+        </div>
+        <div class="item-list" id="itemList">
+            <!-- Populated via Javascript -->
+        </div>
+    </div>
+
+    <div class="main-content">
+        <div class="header">
+            <h2 id="mainTitle">Select a photo</h2>
+            <div class="header-actions">
+                <a href="sequencer.html" class="btn" target="_blank">🎹 Open Sequencer</a>
+            </div>
+        </div>
+
+        <div class="panels-container">
+            <!-- Original Photo Panel -->
+            <div class="panel">
+                <div class="panel-header">Original Reference Image</div>
+                <div class="panel-content" id="originalWrap">
+                    <img id="originalImg" class="preview" src="" alt="Original Photo">
+                </div>
+            </div>
+
+            <!-- Interactive Composite Panel -->
+            <div class="panel">
+                <div class="panel-header">
+                    Interactive Overlay Composite
+                    <span style="font-size: 10px; color: var(--text-muted); text-transform: none;">click to toggle layers</span>
+                </div>
+                <div class="panel-content" id="compositeWrap" style="background-image: var(--checkerboard); background-size: 20px 20px;">
+                    <div class="composite-canvas" id="compositeCanvas">
+                        <!-- Composite layer images injected here -->
+                    </div>
+                </div>
+                <div class="layer-controls" id="layerControls">
+                    <!-- Toggles injected here -->
+                </div>
+            </div>
+
+            <!-- Individual Cutouts Grid Panel -->
+            <div class="panel full-width">
+                <div class="panel-header">Extracted Photographic Cutout Layers</div>
+                <div class="panel-content" style="background: rgba(0,0,0,0.15);">
+                    <div class="cutouts-grid" id="cutoutsGrid">
+                        <!-- Cards injected here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const BATCH = [
+            {
+                id: "IMG_0398",
+                name: "IMG_0398",
+                title: "Wooden sculpture in gallery",
+                layers: ["Floor", "Ceiling Grid", "Background Forest", "Glowing Screens", "Wooden Sculpture"]
+            },
+            {
+                id: "IMG_0415",
+                name: "IMG_0415",
+                title: "Exhibition plinths and stones",
+                layers: ["Gravel Floor", "Stones", "White Cubes", "Brick Wall", "Dark Window"]
+            },
+            {
+                id: "IMG_0417",
+                name: "IMG_0417",
+                title: "Stone base pedestal",
+                layers: ["Background", "Pedestal", "Stone"]
+            },
+            {
+                id: "IMG_0418",
+                name: "IMG_0418",
+                title: "Red & green shipping pallets",
+                layers: ["Wall", "Red Pallet", "Green Pallets"]
+            },
+            {
+                id: "IMG_0419",
+                name: "IMG_0419",
+                title: "Green textured sidewalk tiles",
+                layers: ["Green Tiles", "Bumpy Line", "Street Wall", "Distance Fade"]
+            },
+            {
+                id: "IMG_0586",
+                name: "IMG_0586",
+                title: "Instagram book layout",
+                layers: ["Instagram UI", "Background Wall", "Perforated Table", "Red Book"]
+            },
+            {
+                id: "IMG_0767",
+                name: "IMG_0767",
+                title: "Abstract neon text shape",
+                layers: ["Background", "Text Shape", "Text Shadow", "Text Material"]
+            },
+            {
+                id: "IMG_0824",
+                name: "IMG_0824",
+                title: "Street view with motorbike silhouette",
+                layers: ["Sky", "Left Building", "Right Building", "Street", "Leaves", "Motorcycle"]
+            },
+            {
+                id: "IMG_0825",
+                name: "IMG_0825",
+                title: "Motorcycle delivery basket & rider",
+                layers: ["Background", "Person Pants", "Person Shirt", "Person Head", "Motorcycle", "Green Basket"]
+            },
+            {
+                id: "IMG_0826",
+                name: "IMG_0826",
+                title: "Blue tiled pillar and metal gate",
+                layers: ["Surrounding Wall", "Blue Tiles", "Scissor Gate", "Right Pillar"]
+            }
+        ];
+
+        const itemList = document.getElementById("itemList");
+        const mainTitle = document.getElementById("mainTitle");
+        const originalImg = document.getElementById("originalImg");
+        const compositeCanvas = document.getElementById("compositeCanvas");
+        const layerControls = document.getElementById("layerControls");
+        const cutoutsGrid = document.getElementById("cutoutsGrid");
+
+        let activePhoto = null;
+
+        function init() {
+            BATCH.forEach((item, index) => {
+                const div = document.createElement("div");
+                div.className = `item ${index === 0 ? 'active' : ''}`;
+                div.onclick = () => selectPhoto(item, div);
+                
+                div.innerHTML = `
+                    <img src="cutouts/${item.id}/original.jpg" alt="${item.id}">
+                    <div class="item-info">
+                        <span class="item-name">${item.id}</span>
+                        <span class="item-layers-count">${item.layers.length} layers separated</span>
+                    </div>
+                `;
+                itemList.appendChild(div);
+            });
+
+            selectPhoto(BATCH[0]);
+        }
+
+        function selectPhoto(photo, el) {
+            if (activePhoto && activePhoto.id === photo.id) return;
+            activePhoto = photo;
+            
+            // Highlight active sidebar item
+            if (el) {
+                document.querySelectorAll(".item").forEach(item => item.classList.remove("active"));
+                el.classList.add("active");
+            }
+
+            mainTitle.textContent = `${photo.id} · ${photo.title}`;
+            originalImg.src = `cutouts/${photo.id}/original.jpg`;
+
+            // Reset composite canvas and controls
+            compositeCanvas.innerHTML = "";
+            layerControls.innerHTML = "";
+            cutoutsGrid.innerHTML = "";
+
+            const imagePath = `cutouts/${photo.id}/original.jpg`;
+            
+            // We need to fetch original image to detect aspect ratio for composite canvas
+            const dummyImg = new Image();
+            dummyImg.onload = () => {
+                const aspect = dummyImg.height / dummyImg.width;
+                compositeCanvas.style.aspectRatio = dummyImg.width + " / " + dummyImg.height;
+                
+                // Add layers and controls
+                photo.layers.forEach((layerName) => {
+                    const cleanName = layerName.replace(/\s+/g, "");
+                    const fileUrl = `cutouts/${photo.id}/${cleanName}.png`;
+                    
+                    // Add layer image element
+                    const layerImg = document.createElement("img");
+                    layerImg.className = "composite-layer";
+                    layerImg.id = `layer-img-${cleanName}`;
+                    layerImg.src = fileUrl;
+                    layerImg.style.opacity = "1";
+                    compositeCanvas.appendChild(layerImg);
+                    
+                    // Add control toggle button
+                    const toggle = document.createElement("button");
+                    toggle.className = "layer-toggle active";
+                    toggle.innerHTML = `👁 ${layerName}`;
+                    toggle.onclick = () => {
+                        const active = toggle.classList.toggle("active");
+                        layerImg.style.opacity = active ? "1" : "0";
+                    };
+                    layerControls.appendChild(toggle);
+                    
+                    // Add grid card
+                    const card = document.createElement("div");
+                    card.className = "cutout-card";
+                    card.innerHTML = `
+                        <div class="cutout-card-img">
+                            <img src="${fileUrl}" alt="${layerName}">
+                        </div>
+                        <div class="cutout-card-name" title="${layerName}">${layerName}</div>
+                    `;
+                    cutoutsGrid.appendChild(card);
+                });
+            };
+            dummyImg.src = imagePath;
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>

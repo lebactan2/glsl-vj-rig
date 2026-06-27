@@ -1,0 +1,56 @@
+{
+  "id": "IMG_0417",
+  "title": "Shader: IMG_0417",
+  "tags": [
+    "background",
+    "wall",
+    "floor",
+    "gray",
+    "backdrop",
+    "pedestal",
+    "base",
+    "stone",
+    "column",
+    "black",
+    "stone",
+    "gem",
+    "sphere",
+    "white",
+    "top"
+  ],
+  "layers": [
+    {
+      "name": "Background",
+      "fileName": "Background.png",
+      "keywords": [
+        "background",
+        "wall",
+        "floor",
+        "gray",
+        "backdrop"
+      ]
+    },
+    {
+      "name": "Pedestal",
+      "fileName": "Pedestal.png",
+      "keywords": [
+        "pedestal",
+        "base",
+        "stone",
+        "column",
+        "black"
+      ]
+    },
+    {
+      "name": "Stone",
+      "fileName": "Stone.png",
+      "keywords": [
+        "stone",
+        "gem",
+        "sphere",
+        "white",
+        "top"
+      ]
+    }
+  ]
+}

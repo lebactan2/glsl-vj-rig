@@ -1,0 +1,96 @@
+{
+  "id": "IMG_0824",
+  "title": "Shader: IMG_0824",
+  "tags": [
+    "sky",
+    "blue",
+    "background",
+    "building",
+    "left",
+    "grey",
+    "shutter",
+    "door",
+    "building",
+    "right",
+    "blue",
+    "perspective",
+    "street",
+    "pavement",
+    "asphalt",
+    "wet",
+    "reflection",
+    "rain",
+    "leaves",
+    "tree",
+    "green",
+    "sway",
+    "animation",
+    "motorcycle",
+    "silhouette",
+    "black"
+  ],
+  "layers": [
+    {
+      "name": "Sky",
+      "fileName": "Sky.png",
+      "keywords": [
+        "sky",
+        "blue",
+        "background"
+      ]
+    },
+    {
+      "name": "Left Building",
+      "fileName": "LeftBuilding.png",
+      "keywords": [
+        "building",
+        "left",
+        "grey",
+        "shutter",
+        "door"
+      ]
+    },
+    {
+      "name": "Right Building",
+      "fileName": "RightBuilding.png",
+      "keywords": [
+        "building",
+        "right",
+        "blue",
+        "perspective"
+      ]
+    },
+    {
+      "name": "Street",
+      "fileName": "Street.png",
+      "keywords": [
+        "street",
+        "pavement",
+        "asphalt",
+        "wet",
+        "reflection",
+        "rain"
+      ]
+    },
+    {
+      "name": "Leaves",
+      "fileName": "Leaves.png",
+      "keywords": [
+        "leaves",
+        "tree",
+        "green",
+        "sway",
+        "animation"
+      ]
+    },
+    {
+      "name": "Motorcycle",
+      "fileName": "Motorcycle.png",
+      "keywords": [
+        "motorcycle",
+        "silhouette",
+        "black"
+      ]
+    }
+  ]
+}

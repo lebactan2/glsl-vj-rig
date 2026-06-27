@@ -1,0 +1,64 @@
+{
+  "id": "IMG_0419",
+  "title": "Shader: IMG_0419",
+  "tags": [
+    "green",
+    "tiles",
+    "pavement",
+    "grout",
+    "squares",
+    "bumpy",
+    "line",
+    "middle",
+    "pebbles",
+    "grid",
+    "street",
+    "wall",
+    "background",
+    "distance",
+    "fade",
+    "perspective"
+  ],
+  "layers": [
+    {
+      "name": "Green Tiles",
+      "fileName": "GreenTiles.png",
+      "keywords": [
+        "green",
+        "tiles",
+        "pavement",
+        "grout",
+        "squares"
+      ]
+    },
+    {
+      "name": "Bumpy Line",
+      "fileName": "BumpyLine.png",
+      "keywords": [
+        "bumpy",
+        "line",
+        "middle",
+        "pebbles",
+        "grid"
+      ]
+    },
+    {
+      "name": "Street Wall",
+      "fileName": "StreetWall.png",
+      "keywords": [
+        "street",
+        "wall",
+        "background"
+      ]
+    },
+    {
+      "name": "Distance Fade",
+      "fileName": "DistanceFade.png",
+      "keywords": [
+        "distance",
+        "fade",
+        "perspective"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,84 @@
+{
+  "id": "IMG_0398",
+  "title": "Shader: IMG_0398",
+  "tags": [
+    "floor",
+    "wood",
+    "plank",
+    "noise",
+    "projection",
+    "ceiling",
+    "grid",
+    "light",
+    "perspective",
+    "forest",
+    "trees",
+    "silhouette",
+    "moon",
+    "night",
+    "screens",
+    "glow",
+    "wave",
+    "animation",
+    "middle",
+    "sculpture",
+    "wood",
+    "curves",
+    "shadow"
+  ],
+  "layers": [
+    {
+      "name": "Floor",
+      "fileName": "Floor.png",
+      "keywords": [
+        "floor",
+        "wood",
+        "plank",
+        "noise",
+        "projection"
+      ]
+    },
+    {
+      "name": "Ceiling Grid",
+      "fileName": "CeilingGrid.png",
+      "keywords": [
+        "ceiling",
+        "grid",
+        "light",
+        "perspective"
+      ]
+    },
+    {
+      "name": "Background Forest",
+      "fileName": "BackgroundForest.png",
+      "keywords": [
+        "forest",
+        "trees",
+        "silhouette",
+        "moon",
+        "night"
+      ]
+    },
+    {
+      "name": "Glowing Screens",
+      "fileName": "GlowingScreens.png",
+      "keywords": [
+        "screens",
+        "glow",
+        "wave",
+        "animation",
+        "middle"
+      ]
+    },
+    {
+      "name": "Wooden Sculpture",
+      "fileName": "WoodenSculpture.png",
+      "keywords": [
+        "sculpture",
+        "wood",
+        "curves",
+        "shadow"
+      ]
+    }
+  ]
+}
