@@ -254,6 +254,12 @@
   .yellow-btn:hover { background: rgba(234, 179, 8, 0.2); border-color: rgba(234, 179, 8, 0.5); }
   .yellow-btn.on { background: rgba(250, 204, 21, 0.25); border-color: #fde68a; box-shadow: 0 0 12px rgba(234, 179, 8, 0.4); color: #fff; }
   .effect-label { font-size: 8px; font-weight: 700; color: #9ca3af; }
+  .flash-orange {
+    color: #ff7e39 !important;
+    text-shadow: 0 0 10px #ff7e39, 0 0 20px #ff7e39 !important;
+    border-color: #ff7e39 !important;
+    box-shadow: 0 0 8px rgba(255, 126, 57, 0.4) !important;
+  }
 
   /* Orange Circle Knobs styling */
   .knob { display: inline-flex; flex-direction: column; align-items: center; width: 28px; flex: none; }
@@ -334,9 +340,9 @@
   .lane .ms.on { background: #10b981; color: #111; border-color: #10b981; font-weight: 700; }
   .lane .ms.solo.on { background: #4ad; border-color: #4ad; }
   .lane .ms.fx.on { background: #3a3a44; color: #10b981; border-color: #10b981; }
-  .fxpop { position: absolute; bottom: 100%; left: 120px; margin-bottom: 4px; display: none; gap: 4px; z-index: 20;
-           background: #15151b; border: 1px solid #3a3a44; border-radius: 6px; padding: 4px 6px; box-shadow: 0 4px 14px rgba(0,0,0,.6); }
-  .fxpop.open { display: flex; }
+  .adsr-row { display: none; align-items: center; gap: 4px; flex: none;
+              background: #15151b; border: 1px solid #3a3a44; border-radius: 6px; padding: 2px 6px; }
+  .adsr-row.open { display: flex; }
   .lane .fxslot { width: 24px; height: 16px; flex: none; display: flex; align-items: center; justify-content: center;
     font-size: 8px; color: #888; background: #15151b; border: 1px dashed #3a3a44; border-radius: 4px; overflow: hidden; }
   .lane .fxslot.set { color: #10b981; border-style: solid; border-color: #10b981; }
@@ -345,6 +351,28 @@
   
   .hint { color: #666; font-size: 9px; }
   kbd { background: #222; border: 1px solid #444; border-radius: 3px; padding: 0 3px; }
+
+  /* large / 4K (~27-32 inch) screen styles */
+  @media (min-width:1900px){
+    body { font-size: 16px; }
+    .dashboard-top {
+      grid-template-columns: 1fr 1fr 480px;
+      height: 380px;
+    }
+    .panel-controls {
+      grid-template-columns: 160px 1fr;
+    }
+    .controls-grid .knob { width: 44px; } .controls-grid .knob .dial { width: 32px; height: 32px; }
+    .controls-grid .knob .dial::after { height: 11px; transform-origin: 50% 14px; }
+    .knob .klabel { font-size: 12px; }
+    .scroll-layer-item { font-size: 13px; } .scroll-photo-header, .scroll-title { font-size: 13px; }
+    .cell { height: 22px; } .lane { gap: 7px; padding: 6px; }
+    .lane .nm, .lane select.nmsel { font-size: 14px; } .lane select.nmsel { width: 120px; }
+    .lane .ms { width: 20px; font-size: 12px; line-height: 18px; } .lane .lsel { width: 180px; font-size: 13px; }
+    .yellow-btn { font-size: 12px; padding: 7px 12px; } .bank-grid button.bank { font-size: 13px; padding: 7px 0; }
+    .fader-track-wrap { width: 18px; height: 96px; } .fader-container { height: 104px; }
+    .transport button, .transport select, .transport label { font-size: 14px; } .transport .title { font-size: 17px; }
+  }
 </style>
 </head>
 <body>
@@ -657,6 +685,7 @@ void main(){
     <div class="panel-preview">
       <div class="preview-label">Layer Preview</div>
       <img id="cutout-preview-img" style="display:none;" />
+      <canvas id="previewCanvas" style="display:none; width: 100%; height: 100%; object-fit: contain; pointer-events: none;"></canvas>
       <div id="cutout-preview-placeholder" class="placeholder">Select a Layer</div>
     </div>
     
@@ -697,7 +726,6 @@ void main(){
     <button id="loadBtn">♪ load audio</button>
     <input type="file" id="audioFile" accept="audio/*" hidden>
     <label>steps <select id="steps"><option>8</option><option>16</option><option selected>32</option><option>64</option></select></label>
-    <label>photo <select id="photoSelect"></select></label>
     <button id="rand">🎲 rand</button>
     <button id="toggleMidiNotes" class="on">MIDI Notes</button>
     <button id="toggleMidiClock" class="on">MIDI Clock</button>
@@ -886,6 +914,7 @@ const DEFAULTS = { pitch:0, noteLen:0.25, opacity:1, vis:1, mute:0, solo:0, swin
 let isDragging = false;
 let dragValue = 0;
 document.addEventListener("pointerup", () => isDragging = false);
+document.addEventListener("contextmenu", e => e.preventDefault());
 
 // ---------- WebGL ----------
 const canvas = $("glcanvas");
@@ -959,6 +988,26 @@ const LAYER_HEADER = "precision highp float;\nuniform vec2 iResolution;\nuniform
 const PATTERN_HEADER = LAYER_HEADER + "float h2(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }\n";
 
 const layerTextures = {};   // id -> WebGLTexture (loaded) / WebGLProgram (builtin) / 'pending' / 'error'
+const layerUploadQueue = []; // {id, src:(ImageBitmap|HTMLImageElement), w, h} — drained 1/frame in loop()
+
+// Upload at most one decoded layer per frame so a rand touching many layers doesn't stack
+// several big texImage2D calls into a single frame (which stalls the GL pipeline → dropped frame).
+function processLayerUploads(){
+  if (!layerUploadQueue.length) return;
+  const job = layerUploadQueue.shift();
+  if (layerTextures[job.id] !== "pending"){ if (job.src.close) job.src.close(); return; } // superseded
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, job.src);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  layerTextures[job.id] = { tex, w: job.w, h: job.h };
+  if (job.src.close) job.src.close();
+}
 
 function compileLayer(id){
   if (!id || layerTextures[id]) return;
@@ -976,6 +1025,21 @@ function compileLayer(id){
       if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
       layerTextures[id] = prog;
     } catch (e) { console.error("pattern " + id, e); layerTextures[id] = "error"; }
+    return;
+  }
+
+  // Check if it's a 6687 layer from window.FILE_GLOBALS
+  const src = window.FILE_GLOBALS && window.FILE_GLOBALS[L.fileBase];
+  if (src && L.fn) {
+    try {
+      const prog = gl.createProgram();
+      gl.attachShader(prog, compile(gl.VERTEX_SHADER, VERT));
+      let fragCode = LAYER_HEADER + "\n" + src + `\nvoid main(){ vec2 uv = gl_FragCoord.xy / iResolution.xy; vec4 c = ${L.fn}(uv); gl_FragColor = c; }`;
+      gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, fragCode));
+      gl.linkProgram(prog);
+      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+      layerTextures[id] = prog;
+    } catch (e) { console.error("layer " + id, e); layerTextures[id] = "error"; }
     return;
   }
 
@@ -1010,31 +1074,39 @@ function compileLayer(id){
     return;
   }
 
-  // Load photo cutout as texture (store dimensions for aspect-ratio-correct rendering)
+  // Load photo cutout as texture. Decode OFF the main thread (createImageBitmap) and hand the
+  // result to the staggered upload queue, so neither the decode nor the GPU upload stalls a frame.
   layerTextures[id] = "pending";
-  const img = new Image();
-  img.onload = () => {
-    const tex = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, tex);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    layerTextures[id] = { tex, w: img.naturalWidth, h: img.naturalHeight };
-  };
-  img.onerror = () => {
-    console.error("Failed to load texture for cutout layer: " + L.url);
-    layerTextures[id] = "error";
-  };
-  img.src = L.url;
+  if (window.createImageBitmap && window.fetch){
+    const CAP = 1600;   // cap decoded size so a full-res phone cutout doesn't stall the GPU upload
+    fetch(L.url)
+      .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.blob(); })
+      .then(async blob => {
+        let bm = await createImageBitmap(blob, { imageOrientation: "none" });
+        const big = Math.max(bm.width, bm.height);
+        if (big > CAP){
+          const s = CAP / big;
+          const rw = Math.max(1, Math.round(bm.width * s)), rh = Math.max(1, Math.round(bm.height * s));
+          const rbm = await createImageBitmap(blob, { imageOrientation: "none", resizeWidth: rw, resizeHeight: rh, resizeQuality: "medium" });
+          bm.close(); bm = rbm;
+        }
+        layerUploadQueue.push({ id, src: bm, w: bm.width, h: bm.height });
+      })
+      .catch(err => { console.error("Failed to load cutout layer: " + L.url, err); layerTextures[id] = "error"; });
+  } else {
+    const img = new Image();   // fallback: still defers upload to the queue
+    img.onload = () => layerUploadQueue.push({ id, src: img, w: img.naturalWidth, h: img.naturalHeight });
+    img.onerror = () => { console.error("Failed to load texture for cutout layer: " + L.url); layerTextures[id] = "error"; };
+    img.src = L.url;
+  }
 }
 
 function loadLayersManifest() {
+  let tagRenames = {}; try { tagRenames = JSON.parse(localStorage.getItem("layerTagRenames") || "{}"); } catch (e) {}
+  const dispTag = (t) => tagRenames[String(t).toLowerCase()] || t;
   return new Promise(async resolve => {
     const dl = document.createElement("datalist"); dl.id = "layerlist";
+    const BATCH = window.LAYER_BATCH || {};
     
     // Clear option
     { const s = "▪ default (lane element)  none clear reset"; layerSearch[s] = "__clear__";
@@ -1097,6 +1169,36 @@ function loadLayersManifest() {
         layerSearch[s] = id;
         const opt = document.createElement("option"); opt.value = s; dl.appendChild(opt);
       });
+    });
+
+    // 6687 objects, grouped by category
+    const CAT = window.LAYER_CATEGORY || {};
+    const groups = { background: [], patterns: [], objects: [], misc: [] };
+    for (const [fileBase, layerNames] of Object.entries(window.LAYER_SOURCES || {})) {
+      const meta = (window.LAYER_METADATA && window.LAYER_METADATA[fileBase]) || { layers: [] };
+      layerNames.forEach((layerName) => {
+        const id = fileBase + "#" + layerName;
+        if (id.startsWith("IMG_")) return; // skip photo cutout overlays
+        const layerMeta = meta.layers.find(l => l.name.replace(/\s+/g, '') === layerName) || {};
+        const nameStr = layerMeta.name || layerName;
+        const keywords = (layerMeta.keywords || []).map(k => String(k).toLowerCase());
+        const dispTag = (t) => tagRenames[String(t).toLowerCase()] || t;
+        const shownTags = keywords.map(dispTag);
+        const o = { id, fileBase, fn: "layer_" + layerName, url: null,
+          title: (meta.title || fileBase) + " - " + nameStr, tags: shownTags, label: "❖ " + fileBase + " · " + nameStr };
+        LAYERS[o.id] = o;
+        const cat = CAT[id] || "misc";
+        const s = o.id + "  " + o.title + "  " + [...new Set([...shownTags, ...keywords])].join(" ") + "  " + cat + "  " + (BATCH[fileBase] || "");
+        layerSearch[s] = o.id;
+        (groups[cat] || groups.misc).push(s);
+      });
+    }
+
+    [["background","BACKGROUND"],["patterns","PATTERNS"],["objects","OBJECTS"],["misc","MISC"]].forEach(([k,lab]) => {
+      const items = groups[k]; if (!items.length) return;
+      const hs = "──────  " + lab + " (" + items.length + ")  ──────"; layerSearch[hs] = "__hdr__";
+      const ho = document.createElement("option"); ho.value = hs; dl.appendChild(ho);
+      items.sort().forEach(s => { const opt = document.createElement("option"); opt.value = s; dl.appendChild(opt); });
     });
     
     document.body.appendChild(dl);
@@ -1326,8 +1428,8 @@ function midiNote(ch, scheduledTime){
   // Visual indicator that JS is successfully sending a note
   const btn = document.getElementById("toggleMidiNotes");
   if (btn) {
-    btn.style.textShadow = "0 0 10px #0f0, 0 0 20px #0f0";
-    setTimeout(() => btn.style.textShadow = "", 100);
+    btn.classList.add("flash-orange");
+    setTimeout(() => btn.classList.remove("flash-orange"), 80);
   }
 
   try {
@@ -1335,7 +1437,20 @@ function midiNote(ch, scheduledTime){
     midiOut.send([0x80 | c, note, 0], now + durMs);   // scheduled note-off
   } catch(e){}
 }
-function clockTick(){ if (midiOut) midiOut.send([0xF8]); }
+let midiClockTicks = 0;
+function clockTick(){
+  if (midiOut) {
+    midiOut.send([0xF8]);
+    midiClockTicks++;
+    if (midiClockTicks % 6 === 0) {
+      const btn = document.getElementById("toggleMidiClock");
+      if (btn) {
+        btn.classList.add("flash-orange");
+        setTimeout(() => btn.classList.remove("flash-orange"), 60);
+      }
+    }
+  }
+}
 function startMidiClock(sendStart){
   if (!midiOut || !midiClockOn || !state.playing) return;
   if (midiClockTimer) clearInterval(midiClockTimer);
@@ -1346,6 +1461,54 @@ function stopMidiClock(sendStop){
   if (midiClockTimer){ clearInterval(midiClockTimer); midiClockTimer = null; }
   if (sendStop && midiOut) midiOut.send([0xFC]);                  // MIDI Stop
 }
+
+/*
+// ---------- OLD MIDI (Backup) ----------
+let midiAccess = null;
+let midiOutputs = [];
+let nextMidiClockTime = 0;
+let sendMidiNotes = true;
+let sendMidiClock = true;
+function initMidi() {
+  if (navigator.requestMIDIAccess && !midiAccess) {
+    navigator.requestMIDIAccess().then(access => {
+      midiAccess = access;
+      midiOutputs = Array.from(midiAccess.outputs.values());
+      midiAccess.onstatechange = () => {
+        midiOutputs = Array.from(midiAccess.outputs.values());
+      };
+      console.log("MIDI ready", midiOutputs);
+    }).catch(err => console.error("MIDI access denied", err));
+  }
+}
+function fireMidi(ch, scheduledTime) {
+  if (!sendMidiNotes) return;
+  if (state.mute[ch]) return;
+  if (state.solo.some(s => s) && !state.solo[ch]) return;
+  if (midiOutputs.length === 0) return;
+  const baseNote = 60 + (state.pitch[ch] || 0) + (state.fx.trans || 0) + (state.fx.pitch || 0);
+  const note = Math.max(0, Math.min(127, baseNote));
+  const velocity = Math.max(0, Math.min(127, Math.round((state.vol[ch] !== undefined ? state.vol[ch] : 1) * 127)));
+  if (velocity === 0) return;
+  const btn = document.getElementById("toggleMidiNotes");
+  if (btn) {
+    btn.style.textShadow = "0 0 10px #0f0, 0 0 20px #0f0";
+    setTimeout(() => btn.style.textShadow = "", 100);
+  }
+  const durMs = Math.max(40, (state.noteLen[ch] || 0.25) * 4 * 60000 / state.bpm);
+  const now = scheduledTime !== undefined ? scheduledTime : performance.now();
+  midiOutputs.forEach(out => {
+    try {
+      for (let mc = 0; mc < 16; mc++) {
+        out.send([0x90 + mc, note, velocity], now);
+        out.send([0x80 + mc, note, 0], now + durMs);
+      }
+    } catch (e) {
+      console.warn("MIDI send error", e);
+    }
+  });
+}
+*/
 
 // ---------- Audio-file reactivity ----------
 let analyser = null, bins = null, audioEl = null, fileLoaded = false;
@@ -1378,7 +1541,7 @@ function updateBands(){
 }
 
 // ---------- reusable knob ----------
-function makeKnob({label, min=0, max=1, value=0, def=0, fmt, onInput}){
+function makeKnob({label, min=0, max=1, value=0, def=0, fmt, onInput, isLocked}){
   const wrap = document.createElement("div"); wrap.className = "knob"; wrap.draggable = false;
   const dial = document.createElement("div"); dial.className = "dial";
   const cap  = document.createElement("div"); cap.className = "klabel"; cap.textContent = label;
@@ -1394,11 +1557,11 @@ function makeKnob({label, min=0, max=1, value=0, def=0, fmt, onInput}){
   }
   set(value, false);
   let drag=false, sy=0, sv=0;
-  dial.addEventListener("pointerdown", e => { drag=true; sy=e.clientY; sv=v; dial.setPointerCapture(e.pointerId); e.preventDefault(); });
-  dial.addEventListener("pointermove", e => { if(!drag) return; set(sv + (sy-e.clientY)/120*(max-min), true); });
+  dial.addEventListener("pointerdown", e => { if(isLocked && isLocked()) return; drag=true; sy=e.clientY; sv=v; dial.setPointerCapture(e.pointerId); e.preventDefault(); });
+  dial.addEventListener("pointermove", e => { if(isLocked && isLocked()) return; if(!drag) return; set(sv + (sy-e.clientY)/120*(max-min), true); });
   dial.addEventListener("pointerup",   () => { drag=false; });
-  wrap.addEventListener("contextmenu", e => { e.preventDefault(); set(def, true); });
-  dial.addEventListener("dblclick",    () => set(def, true));
+  wrap.addEventListener("contextmenu", e => { e.preventDefault(); if(isLocked && isLocked()) return; set(def, true); });
+  dial.addEventListener("dblclick",    () => { if(isLocked && isLocked()) return; set(def, true); });
   return { el: wrap, set: nv => set(nv, false), get: () => v };
 }
 function bindReset(el, def, apply){
@@ -1418,13 +1581,17 @@ function buildGrid(){
       }
       setActiveChannel(c);
     };
-    lane.draggable = true;
+    // Draggable only while grabbing the grip — a row full of inputs/knobs otherwise suppresses
+    // native dragstart (most visible on the top lane). Grip pointerdown arms it; reset after.
+    lane.draggable = false;
     lane.addEventListener("dragstart", () => { dragFrom = c; lane.style.opacity = "0.4"; });
-    lane.addEventListener("dragend",   () => { lane.style.opacity = ""; document.querySelectorAll(".lane.dragover").forEach(e=>e.classList.remove("dragover")); });
+    lane.addEventListener("dragend",   () => { lane.draggable = false; lane.style.opacity = ""; document.querySelectorAll(".lane.dragover").forEach(e=>e.classList.remove("dragover")); });
     lane.addEventListener("dragover",  (e) => { e.preventDefault(); lane.classList.add("dragover"); });
     lane.addEventListener("dragleave", () => lane.classList.remove("dragover"));
     lane.addEventListener("drop",      (e) => { e.preventDefault(); lane.classList.remove("dragover"); if (dragFrom!==null && dragFrom!==c) reorderChannel(dragFrom, c); dragFrom = null; });
     const grip = document.createElement("span"); grip.className = "grip"; grip.textContent = "⋮⋮"; grip.title = "drag to reorder";
+    grip.addEventListener("pointerdown", () => { if (!state.lock[c]) lane.draggable = true; });
+    grip.addEventListener("pointerup",   () => { lane.draggable = false; });
     const sw = document.createElement("div"); sw.className = "swatch"; sw.style.background = PAT_COLOR[c%NP];
     
     const nm = document.createElement("select"); nm.className = "nm nmsel"; nm.title = "instrument / track name";
@@ -1443,23 +1610,23 @@ function buildGrid(){
     const solo = document.createElement("button"); solo.className = "ms solo" + (state.solo[c]?" on":""); solo.textContent = "S"; solo.title = "solo (audio + visual)"; solo.draggable = false;
     solo.onclick = () => { state.solo[c] = state.solo[c]?0:1; solo.classList.toggle("on", !!state.solo[c]); save(); };
     bindReset(solo, DEFAULTS.solo, v => { state.solo[c]=v; solo.classList.toggle("on", !!v); });
-
+    
     const lockBtn = document.createElement("button"); lockBtn.className = "ms lock" + (state.lock[c]?" on":""); lockBtn.textContent = "🔒"; lockBtn.title = "lock track"; lockBtn.draggable = false;
-    lockBtn.onclick = () => { state.lock[c] = state.lock[c]?0:1; lockBtn.classList.toggle("on", !!state.lock[c]); save(); };
-    bindReset(lockBtn, 0, v => { state.lock[c]=v; lockBtn.classList.toggle("on", !!v); });
+    lockBtn.onclick = () => { state.lock[c] = state.lock[c]?0:1; lockBtn.classList.toggle("on", !!state.lock[c]); save(); buildGrid(); };
+    bindReset(lockBtn, 0, v => { state.lock[c]=v; lockBtn.classList.toggle("on", !!v); save(); buildGrid(); });
     
-    const kVol = makeKnob({label:"VOL", value:(state.vol[c]!==undefined?state.vol[c]:1), def:1, fmt:v=>Math.round(v*100)+"%", onInput:v=>{state.vol[c]=v;save();}});
+    const isLocked = () => !!state.lock[c];
+    const kVol = makeKnob({label:"VOL", value:(state.vol[c]!==undefined?state.vol[c]:1), def:1, fmt:v=>Math.round(v*100)+"%", onInput:v=>{state.vol[c]=v;save();}, isLocked});
     const adsr = state.adsr[c] || (state.adsr[c] = {...ADSR_DEF});
-    const kA = makeKnob({label:"A", value:adsr.a, def:ADSR_DEF.a, onInput:v=>{adsr.a=v;save();}});
-    const kPit = makeKnob({label:"PIT", min:-24, max:24, value:state.pitch[c]||0, def:DEFAULTS.pitch, fmt:v=>Math.round(v), onInput:v=>{state.pitch[c]=Math.round(v);save();}});
-    const kD = makeKnob({label:"D", value:adsr.d, def:ADSR_DEF.d, onInput:v=>{adsr.d=v;save();}});
-    const kS = makeKnob({label:"S", value:adsr.s, def:ADSR_DEF.s, onInput:v=>{adsr.s=v;save();}});
-    const kR = makeKnob({label:"R", value:adsr.r, def:ADSR_DEF.r, onInput:v=>{adsr.r=v;save();}});
-    const kOp = makeKnob({label:"OP", value:(state.opacity[c]!==undefined?state.opacity[c]:1), def:DEFAULTS.opacity, onInput:v=>{state.opacity[c]=v;save();}});
-    
-    const fxBtn = document.createElement("button"); fxBtn.className = "ms fx"; fxBtn.textContent = "⚙"; fxBtn.title = "ADSR + pitch + opacity"; fxBtn.draggable = false;
-    const fxPop = document.createElement("div"); fxPop.className = "fxpop";
-    [kA, kPit, kD, kS, kR, kOp].forEach(k => fxPop.appendChild(k.el));
+    const kA = makeKnob({label:"A", value:adsr.a, def:ADSR_DEF.a, onInput:v=>{adsr.a=v;save();}, isLocked});
+    const kPit = makeKnob({label:"PIT", min:-24, max:24, value:state.pitch[c]||0, def:DEFAULTS.pitch, fmt:v=>Math.round(v), onInput:v=>{state.pitch[c]=Math.round(v);save();}, isLocked});
+    const kD = makeKnob({label:"D", value:adsr.d, def:ADSR_DEF.d, onInput:v=>{adsr.d=v;save();}, isLocked});
+    const kS = makeKnob({label:"S", value:adsr.s, def:ADSR_DEF.s, onInput:v=>{adsr.s=v;save();}, isLocked});
+    const kR = makeKnob({label:"R", value:adsr.r, def:ADSR_DEF.r, onInput:v=>{adsr.r=v;save();}, isLocked});
+
+    const fxBtn = document.createElement("button"); fxBtn.className = "ms fx"; fxBtn.textContent = "⚙"; fxBtn.title = "ADSR + pitch (click to open/collapse)"; fxBtn.draggable = false;
+    const fxPop = document.createElement("div"); fxPop.className = "adsr-row";
+    [kVol, kA, kPit, kD, kS, kR].forEach(k => fxPop.appendChild(k.el));
     fxBtn.onclick = () => { const open = fxPop.classList.toggle("open"); fxBtn.classList.toggle("on", open); };
     
     const fxslot = document.createElement("div"); fxslot.className = "fxslot" + (state.trackFx[c] ? " set" : "");
@@ -1468,8 +1635,9 @@ function buildGrid(){
     fxslot.addEventListener("dragover", e => { e.preventDefault(); fxslot.classList.add("over"); });
     fxslot.addEventListener("dragleave", () => fxslot.classList.remove("over"));
     fxslot.addEventListener("drop", e => { e.preventDefault(); fxslot.classList.remove("over");
+      if (state.lock[c]) return;
       const k = e.dataTransfer.getData("text/fx"); if(!k) return; state.trackFx[c]=k; fxslot.textContent=k; fxslot.classList.add("set"); save(); });
-    fxslot.addEventListener("contextmenu", e => { e.preventDefault(); state.trackFx[c]=""; fxslot.textContent="FX"; fxslot.classList.remove("set"); save(); });
+    fxslot.addEventListener("contextmenu", e => { e.preventDefault(); if (state.lock[c]) return; state.trackFx[c]=""; fxslot.textContent="FX"; fxslot.classList.remove("set"); save(); });
     
     const gsel = document.createElement("input"); gsel.className = "lsel"; gsel.setAttribute("list", "layerlist");
     gsel.placeholder = "layer (click to choose)"; gsel.title = "graphic layer (replaces element) · right-click clear";
@@ -1486,6 +1654,12 @@ function buildGrid(){
     };
     bindReset(gsel, "", () => { state.layer[c] = ""; gsel.value = ""; });
     
+    if (state.lock[c]) {
+      nm.disabled = true;
+      nsel.disabled = true;
+      gsel.disabled = true;
+    }
+    
     const cells = document.createElement("div"); cells.className = "cells";
     cells.style.gridTemplateColumns = `repeat(${state.steps}, 1fr)`;
     for (let s=0;s<state.steps;s++){
@@ -1497,15 +1671,19 @@ function buildGrid(){
       cell.addEventListener("pointerdown", (e) => {
         if (state.lock[c]) return;
         e.preventDefault();
-        const i = c*state.steps+s; state.grid[i] = state.grid[i] ? 0 : 1;
+        const isRight = (e.button === 2 || e.buttons === 2);
+        const i = c*state.steps+s;
+        state.grid[i] = isRight ? 0 : 1;
         cell.classList.toggle("on", !!state.grid[i]);
         isDragging = true; dragValue = state.grid[i]; save();
       });
       cell.addEventListener("pointerenter", (e) => {
         if (!isDragging || state.lock[c]) return;
+        const isRight = (e.buttons === 2);
         const i = c*state.steps+s;
-        if (state.grid[i] !== dragValue) {
-          state.grid[i] = dragValue; cell.classList.toggle("on", !!dragValue); save();
+        const targetVal = isRight ? 0 : 1;
+        if (state.grid[i] !== targetVal) {
+          state.grid[i] = targetVal; cell.classList.toggle("on", !!targetVal); save();
         }
       });
       cells.appendChild(cell);
@@ -1513,9 +1691,27 @@ function buildGrid(){
     
     lane.appendChild(grip);
     lane.appendChild(sw); lane.appendChild(nm); lane.appendChild(mute); lane.appendChild(solo); lane.appendChild(lockBtn);
-    lane.appendChild(kVol.el); lane.appendChild(nsel); lane.appendChild(fxBtn); lane.appendChild(fxslot);
+    lane.appendChild(nsel); lane.appendChild(fxBtn); lane.appendChild(fxslot);
+    lane.appendChild(fxPop);   // inline ADSR knob row (collapsed by default)
     lane.appendChild(gsel);
-    lane.appendChild(cells); lane.appendChild(fxPop); wrap.appendChild(lane);
+    lane.appendChild(cells); wrap.appendChild(lane);
+  }
+}
+
+// Lightweight in-place refresh — updates only mutable visuals (cell on/off + layer field)
+// without tearing down and rebuilding lane DOM. Use when lane STRUCTURE is unchanged
+// (rand, applyPhoto, pattern recall) to avoid the buildGrid() main-thread stall.
+function refreshGrid(){
+  const wrap = $("grid");
+  const lanes = wrap.querySelectorAll(".lane");
+  if (lanes.length !== state.channels){ buildGrid(); return; }   // structure changed → full rebuild
+  for (let c=0;c<state.channels;c++){
+    const lane = lanes[c];
+    const cells = lane.querySelectorAll(".cells .cell");
+    for (let s=0;s<cells.length;s++) cells[s].classList.toggle("on", !!state.grid[c*state.steps+s]);
+    const gsel = lane.querySelector(".lsel");
+    if (gsel && document.activeElement !== gsel)
+      gsel.value = state.layer[c] && LAYERS[state.layer[c]] ? LAYERS[state.layer[c]].label : "";
   }
 }
 
@@ -1714,7 +1910,6 @@ $("rand").onclick = () => {
       const beat = (s % state.stepsPerBeat) === 0;
       state.grid[c*state.steps+s] = (Math.random() < d*(beat?1.5:0.6)) ? 1 : 0;
     }
-    state.opacity[c] = (0.7 + Math.random()*0.3);
     // Randomize cutout layer assignment
     if (allLayerIds.length > 0) {
       const randomId = allLayerIds[Math.floor(Math.random() * allLayerIds.length)];
@@ -1722,7 +1917,7 @@ $("rand").onclick = () => {
       compileLayer(randomId);
     }
   }
-  buildGrid(); save();
+  refreshGrid(); save();
 };
 
 function applyPhoto(photoId) {
@@ -1741,29 +1936,38 @@ function applyPhoto(photoId) {
       state.layer[c] = "";
     }
   }
-  buildGrid();
+  refreshGrid();
   save();
 }
 
-function patSlot(slot, recall){
-  const key = "photoCutoutSeqPat_" + slot, btn = $("pat"+slot);
-  if (recall){
-    const d = localStorage.getItem(key); if (!d) return;
-    try { const o = JSON.parse(d);
-      if (o.steps !== state.steps){ state.steps=o.steps; $("steps").value=String(o.steps); pulses2d=new Float32Array(state.channels*o.steps); rise2d=new Float32Array(state.channels*o.steps); }
-      state.grid = Uint8Array.from(o.grid); state.lastStep=-1; buildGrid(); save();
-    } catch(e){}
-  } else {
-    localStorage.setItem(key, JSON.stringify({ steps:state.steps, grid:Array.from(state.grid) }));
-    btn.classList.add("on"); setTimeout(()=>btn.classList.remove("on"), 300);
-  }
+const bankKey = (slot) => "photoCutoutSeqPat_" + slot;
+function bankSave(slot){
+  const btn = $("bank" + slot);
+  localStorage.setItem(bankKey(slot), JSON.stringify({ steps:state.steps, grid:Array.from(state.grid) }));
+  if (btn){ btn.classList.add("filled", "on"); setTimeout(()=>btn.classList.remove("on"), 300); }
 }
+function bankLoad(slot){
+  const d = localStorage.getItem(bankKey(slot)); if (!d) return;
+  try { const o = JSON.parse(d);
+    const stepsChanged = o.steps !== state.steps;
+    if (stepsChanged){ state.steps=o.steps; $("steps").value=String(o.steps); pulses2d=new Float32Array(state.channels*o.steps); rise2d=new Float32Array(state.channels*o.steps); }
+    state.grid = Uint8Array.from(o.grid); state.lastStep=-1;
+    if (stepsChanged) buildGrid(); else refreshGrid();   // steps changed = structural rebuild; else cheap refresh
+    save();
+  } catch(e){}
+}
+function bankClear(slot){
+  localStorage.removeItem(bankKey(slot));
+  const btn = $("bank" + slot); if (btn) btn.classList.remove("filled", "on");
+}
+// Smart click: empty bank → SAVE current pattern; filled bank → LOAD it; right-click → clear.
 ["A", "B", "C", "D"].forEach(slot => {
   const btn = $("bank" + slot);
-  if (btn) {
-    btn.onclick = () => patSlot(slot, true);
-    btn.ondblclick = () => patSlot(slot, false);
-  }
+  if (!btn) return;
+  if (localStorage.getItem(bankKey(slot))) btn.classList.add("filled");   // reflect stored state on boot
+  btn.title = "empty: click to SAVE · filled: click to LOAD · right-click to clear";
+  btn.onclick = () => { if (localStorage.getItem(bankKey(slot))) bankLoad(slot); else bankSave(slot); };
+  btn.oncontextmenu = (e) => { e.preventDefault(); bankClear(slot); };
 });
 
 // output second screen
@@ -1791,35 +1995,158 @@ addEventListener("keydown", (e) => {
 // ---------- active channel and selection scroll helpers ----------
 let activeChannelIndex = 0;
 
+const isCutout = (id) => id && id.startsWith("IMG_");
+
+// Show a layer in the green preview panel. Photo cutouts show their PNG; GLSL/pattern layers
+// have no image, so show placeholder text instead of a broken <img>.
+function showLayerPreview(layerId) {
+  const img = $("cutout-preview-img"), cv = $("previewCanvas"), placeholder = $("cutout-preview-placeholder");
+  if (!img || !cv || !placeholder) return;
+  const L = layerId && LAYERS[layerId];
+  const url = L && (L.url || (L.fileBase && isCutout(L.id) ? `cutouts/${L.fileBase}/${L.name.replace(/\s+/g, "")}.png` : null));
+  if (url) {
+    img.src = url; img.style.display = "block"; cv.style.display = "none"; placeholder.style.display = "none";
+  } else if (L && (L.builtin || L.externalHtml || (window.FILE_GLOBALS && window.FILE_GLOBALS[L.fileBase]))) {
+    img.style.display = "none"; cv.style.display = "block"; placeholder.style.display = "none";
+  } else {
+    img.style.display = "none"; cv.style.display = "none"; placeholder.style.display = "block";
+    placeholder.textContent = L ? (L.label + " — no preview") : "Select a Layer";
+  }
+  document.querySelectorAll(".scroll-layer-item").forEach(el => el.classList.toggle("active", el.dataset.layerId === layerId));
+}
+
+// Assign a layer id to the active channel and sync its lane input.
+function assignActiveLayer(id) {
+  const i = activeChannelIndex;
+  if (i < 0 || i >= state.channels) return;
+  state.layer[i] = id; compileLayer(id);
+  const gsel = document.querySelector(`.lane[data-c="${i}"] .lsel`);
+  if (gsel) gsel.value = LAYERS[id] ? LAYERS[id].label : "";
+  save();
+}
+
 function setActiveChannel(idx) {
   activeChannelIndex = idx;
   document.querySelectorAll(".lane").forEach((lane, i) => {
     lane.classList.toggle("active-lane", i === idx);
   });
-  
-  // Update the green preview to show the active lane's layer if it exists!
   const layerId = state.layer[idx];
-  const img = $("cutout-preview-img");
-  const placeholder = $("cutout-preview-placeholder");
   if (layerId && LAYERS[layerId]) {
-    const L = LAYERS[layerId];
-    if (img && placeholder) {
-      img.src = L.url || `cutouts/${L.fileBase}/${L.name.replace(/\s+/g, "")}.png`;
-      img.style.display = "block";
-      placeholder.style.display = "none";
-    }
-    // Also highlight in the list
-    document.querySelectorAll(".scroll-layer-item").forEach(el => {
-      el.classList.toggle("active", el.dataset.layerId === layerId);
-    });
+    showLayerPreview(layerId);
   } else {
-    if (img && placeholder) {
+    const img = $("cutout-preview-img"), cv = $("previewCanvas"), placeholder = $("cutout-preview-placeholder");
+    if (img && cv && placeholder) {
       img.style.display = "none";
+      cv.style.display = "none";
       placeholder.style.display = "block";
       placeholder.textContent = `Lane ${idx + 1} (No Cutout Layer)`;
     }
     document.querySelectorAll(".scroll-layer-item").forEach(el => el.classList.remove("active"));
   }
+}
+
+let prevGL = null, prevQuad = null;
+const prevProgs = {};
+function previewCompile(id) {
+  if (prevProgs[id] !== undefined) return prevProgs[id];
+  const L = LAYERS[id];
+  const g = prevGL;
+  let frag = null;
+  if (L && L.builtin) {
+    const el = document.getElementById("layer-" + L.builtin);
+    if (el) frag = PATTERN_HEADER + "\n" + el.textContent;
+  } else if (L && L.externalHtml) {
+    prevProgs[id] = null;
+    fetch(L.externalHtml).then(r => r.text()).then(html => {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, "text/html");
+      const fragScript = doc.getElementById("fragment-shader") || doc.querySelector("script[type='x-shader/x-fragment']");
+      if (!fragScript) return;
+      let src = fragScript.textContent;
+      if (!src.includes("void main")) src = PATTERN_HEADER + "\n" + src;
+      const v = g.createShader(g.VERTEX_SHADER); g.shaderSource(v, VERT); g.compileShader(v);
+      const f = g.createShader(g.FRAGMENT_SHADER); g.shaderSource(f, src); g.compileShader(f);
+      if (!g.getShaderParameter(f, g.COMPILE_STATUS)) return;
+      const p = g.createProgram(); g.attachShader(p, v); g.attachShader(p, f); g.linkProgram(p);
+      prevProgs[id] = g.getProgramParameter(p, g.LINK_STATUS) ? p : null;
+    });
+    return null;
+  } else if (L) {
+    const src = window.FILE_GLOBALS && window.FILE_GLOBALS[L.fileBase];
+    if (src && L.fn) {
+      frag = LAYER_HEADER + "\n" + src + `\nvoid main(){ vec2 uv = gl_FragCoord.xy / iResolution.xy; vec4 c = ${L.fn}(uv); gl_FragColor = c; }`;
+    }
+  }
+  if (!frag) return prevProgs[id] = null;
+  
+  try {
+    const v = g.createShader(g.VERTEX_SHADER); g.shaderSource(v, VERT); g.compileShader(v);
+    const f = g.createShader(g.FRAGMENT_SHADER); g.shaderSource(f, frag); g.compileShader(f);
+    if (!g.getShaderParameter(f, g.COMPILE_STATUS)) { console.error("preview shader compilation failed", g.getShaderInfoLog(f)); return prevProgs[id] = null; }
+    const p = g.createProgram(); g.attachShader(p, v); g.attachShader(p, f); g.linkProgram(p);
+    return prevProgs[id] = g.getProgramParameter(p, g.LINK_STATUS) ? p : null;
+  } catch (e) {
+    console.error("preview shader compilation error", e);
+    return prevProgs[id] = null;
+  }
+}
+
+function renderPreview(now) {
+  const cv = $("previewCanvas"), img = $("cutout-preview-img"), placeholder = $("cutout-preview-placeholder");
+  if (!cv) return;
+  const id = state.layer[activeChannelIndex];
+  const L = id && LAYERS[id];
+  const isGlsl = L && (L.builtin || L.externalHtml || (window.FILE_GLOBALS && window.FILE_GLOBALS[L.fileBase]));
+  
+  if (!id || !isGlsl) {
+    cv.style.display = "none";
+    return;
+  }
+  
+  cv.style.display = "block";
+  if (img) img.style.display = "none";
+  if (placeholder) placeholder.style.display = "none";
+  
+  if (!prevGL) {
+    prevGL = cv.getContext("webgl", { premultipliedAlpha: false, alpha: true });
+    if (!prevGL) return;
+    prevQuad = prevGL.createBuffer();
+    prevGL.bindBuffer(prevGL.ARRAY_BUFFER, prevQuad);
+    prevGL.bufferData(prevGL.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), prevGL.STATIC_DRAW);
+  }
+  
+  const prog = previewCompile(id);
+  if (!prog) {
+    cv.style.display = "none";
+    if (placeholder) {
+      placeholder.style.display = "block";
+      placeholder.textContent = L.label + " (Compile Error)";
+    }
+    return;
+  }
+  
+  const g = prevGL;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const w = Math.max(16, Math.round((cv.clientWidth || 320) * dpr)), h = Math.max(16, Math.round((cv.clientHeight || 180) * dpr));
+  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+  
+  g.viewport(0, 0, cv.width, cv.height);
+  g.clearColor(0, 0, 0, 0);
+  g.clear(g.COLOR_BUFFER_BIT);
+  
+  g.useProgram(prog);
+  g.bindBuffer(g.ARRAY_BUFFER, prevQuad);
+  const lp = g.getAttribLocation(prog, "position");
+  g.enableVertexAttribArray(lp);
+  g.vertexAttribPointer(lp, 2, g.FLOAT, false, 0, 0);
+  
+  g.uniform2f(g.getUniformLocation(prog, "iResolution"), cv.width, cv.height);
+  g.uniform1f(g.getUniformLocation(prog, "iTime"), now);
+  ["iBass", "iMid", "iTreble", "iLevel", "iBeat"].forEach(u => {
+    const l = g.getUniformLocation(prog, u);
+    if (l) g.uniform1f(l, 0.0);
+  });
+  g.drawArrays(g.TRIANGLES, 0, 3);
 }
 
 function buildScrollSelectionList() {
@@ -1844,41 +2171,63 @@ function buildScrollSelectionList() {
       item.textContent = layerName;
       item.dataset.layerId = id;
       item.title = `Click to preview/select layer`;
-      
-      item.onclick = () => {
-        // Highlight in the scroll list
-        document.querySelectorAll(".scroll-layer-item").forEach(el => el.classList.remove("active"));
-        item.classList.add("active");
-        
-        // Update Cutout Layer Preview (Green panel)
-        const img = $("cutout-preview-img");
-        const placeholder = $("cutout-preview-placeholder");
-        if (img && placeholder) {
-          const url = `cutouts/${photo.id}/${cleanName}.png`;
-          img.src = url;
-          img.style.display = "block";
-          placeholder.style.display = "none";
-        }
-        
-        // Also assign to active channel!
-        const activeIdx = activeChannelIndex;
-        if (activeIdx !== -1 && activeIdx < state.channels) {
-          state.layer[activeIdx] = id;
-          compileLayer(id);
-          // Update the select/input element for this channel in the grid
-          const gsel = document.querySelector(`.lane[data-c="${activeIdx}"] .lsel`);
-          if (gsel) {
-            gsel.value = LAYERS[id] ? LAYERS[id].label : "";
-          }
-          save();
-        }
-      };
-      
+      item.onclick = () => { showLayerPreview(id); assignActiveLayer(id); };
       group.appendChild(item);
     });
-    
+
     list.appendChild(group);
   });
+
+  // 6687 layers grouped by category (excluding cutout photo layers which start with IMG_)
+  const CAT = window.LAYER_CATEGORY || {};
+  const groups = { background: [], patterns: [], objects: [], misc: [] };
+  Object.keys(LAYERS).forEach(id => {
+    if (id.includes("#") && !isCutout(id)) {
+      const cat = CAT[id] || "misc";
+      (groups[cat] || groups.misc).push(id);
+    }
+  });
+
+  [["background","BACKGROUND"],["patterns","PATTERNS"],["objects","OBJECTS"],["misc","MISC"]].forEach(([k,lab]) => {
+    const ids = groups[k]; if (!ids.length) return;
+    const group = document.createElement("div");
+    group.className = "scroll-photo-group";
+    const header = document.createElement("div");
+    header.className = "scroll-photo-header";
+    header.textContent = `${lab} (${ids.length})`;
+    group.appendChild(header);
+    ids.sort().forEach(id => {
+      const item = document.createElement("div");
+      item.className = "scroll-layer-item";
+      item.textContent = LAYERS[id].title || id;
+      item.dataset.layerId = id;
+      item.title = `Click to select layer`;
+      item.onclick = () => { showLayerPreview(id); assignActiveLayer(id); };
+      group.appendChild(item);
+    });
+    list.appendChild(group);
+  });
+
+  // GLSL shaders + built-in patterns (registered in LAYERS by loadLayersManifest)
+  const fxIds = Object.keys(LAYERS).filter(k => k.startsWith("glsl:") || k.startsWith("pat:"));
+  if (fxIds.length) {
+    const group = document.createElement("div");
+    group.className = "scroll-photo-group";
+    const header = document.createElement("div");
+    header.className = "scroll-photo-header";
+    header.textContent = `GLSL / PATTERNS (${fxIds.length})`;
+    group.appendChild(header);
+    fxIds.forEach(id => {
+      const item = document.createElement("div");
+      item.className = "scroll-layer-item";
+      item.textContent = LAYERS[id].label;
+      item.dataset.layerId = id;
+      item.title = `Click to select shader/pattern`;
+      item.onclick = () => { showLayerPreview(id); assignActiveLayer(id); };
+      group.appendChild(item);
+    });
+    list.appendChild(group);
+  }
 }
 
 function updateBpmFaderUI(val) {
@@ -1895,22 +2244,6 @@ function updateBpmFaderUI(val) {
 // ---------- boot ----------
 load();
 $("steps").value = String(state.steps);
-
-// Setup photo select dropdown options
-const psel = $("photoSelect");
-if (psel) {
-  CUTOUT_PHOTOS.forEach(photo => {
-    const opt = document.createElement("option");
-    opt.value = photo.id;
-    opt.textContent = photo.id + " (" + photo.layers.length + " layers)";
-    if (state.activePhoto === photo.id) opt.selected = true;
-    psel.appendChild(opt);
-  });
-  psel.onchange = () => {
-    applyPhoto(psel.value);
-    setActiveChannel(activeChannelIndex); // Update preview for selected lane
-  };
-}
 
 initTextureProgram();
 
@@ -2128,7 +2461,8 @@ let rafId;
 function loop(){
   const now = performance.now();
   const dt = Math.min(0.25, (now/1000) - lastT); lastT = now/1000;
-  
+  processLayerUploads();   // upload at most one freshly-decoded layer texture this frame
+
   while (visualQueue.length > 0 && visualQueue[0].time <= now) {
       const q = visualQueue.shift();
       if (q.isFile) {
@@ -2169,6 +2503,7 @@ function loop(){
   // render at full HD (CSS scales it into the panel; 2nd-screen output stays sharp)
   if (canvas.width !== 1920 || canvas.height !== 1080){ canvas.width = 1920; canvas.height = 1080; }
   renderLayers(now);
+  renderPreview(now / 1000);
 
   gl.viewport(0,0,canvas.width,canvas.height);
   gl.useProgram(prog);
