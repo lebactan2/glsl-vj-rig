@@ -372,6 +372,9 @@ uniform float uFilterVis;             // -1..1 filter for color tint (neg=warm, 
 uniform float uTremoloVis;            // tremolo depth 0..1 brightness oscillation
 uniform float uDelayVis;              // delay/echo ghost intensity 0..1
 
+uniform vec2 uLayerOffset[8];         // per-layer randomized offset
+uniform float uLayerScale[8];         // per-layer randomized scale
+
 float h2(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float vn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
     return mix(mix(h2(i),h2(i+vec2(1.0,0.0)),f.x), mix(h2(i+vec2(0.0,1.0)),h2(i+vec2(1.0,1.0)),f.x), f.y); }
@@ -558,8 +561,16 @@ void main(){
         if (uHasLayer[c] < 0.5 || uVis[c] < 0.5) continue;
         float cc = mod(float(c), 4.0), rr = floor(float(c) / 4.0);
         
+        // Random position and scale
+        vec2 offset = uLayerOffset[c];
+        float scale = uLayerScale[c];
+        vec2 scaledUv = (rawUv - 0.5 - offset) / scale + 0.5;
+        
+        // Skip rendering if outside bounds (so it doesn't wrap around)
+        if (scaledUv.x < 0.0 || scaledUv.x > 1.0 || scaledUv.y < 0.0 || scaledUv.y > 1.0) continue;
+        
         // Sample texture with CLEAN UV (unaffected by spiral warp)
-        vec4 lc = texture2D(uAtlas, vec2((rawUv.x + cc) / 4.0, (rawUv.y + rr) / 2.0));
+        vec4 lc = texture2D(uAtlas, vec2((scaledUv.x + cc) / 4.0, (scaledUv.y + rr) / 2.0));
         
         // The pulse energy for this channel
         float p = uPulse[c];
@@ -852,12 +863,29 @@ state.fx = {};
 let echoLevel = 0, fxFilter = 0;
 let strobeOn = false, tapeStop = false, tapeFactor = 1, stutterOn = false, stutterAnchor = 0, playAccum = 0;
 
-function hitPulse(c, s){ const i = c*state.steps + s; const A = state.adsr[c] ? state.adsr[c].a : 0.01;
-  if (A < 0.02){ pulses2d[i] = 1.0; rise2d[i] = 0; } else { pulses2d[i] = Math.max(pulses2d[i], 0.02); rise2d[i] = 1; } }
+let layerOffsetX = Array.from({length: 8}, () => 0.0);
+let layerOffsetY = Array.from({length: 8}, () => 0.0);
+let layerScale = Array.from({length: 8}, () => 1.0);
+
+function hitPulse(c, s){ 
+  const i = c*state.steps + s; 
+  const A = state.adsr[c] ? state.adsr[c].a : 0.01;
+  if (A < 0.02){ pulses2d[i] = 1.0; rise2d[i] = 0; } else { pulses2d[i] = Math.max(pulses2d[i], 0.02); rise2d[i] = 1; }
+  
+  if (c < 8) {
+    layerOffsetX[c] = (Math.random() - 0.5) * 1.5;
+    layerOffsetY[c] = (Math.random() - 0.5) * 1.5;
+    layerScale[c] = 0.5 + Math.random() * 1.5;
+  }
+}
 function visible(c){ const anySolo = state.solo.some(s=>s); return !state.mute[c] && (!anySolo || state.solo[c]); }
 let dragFrom = null;
 const ADSR_DEF = {a:0.01, d:0.1, s:0.7, r:0.3};
 const DEFAULTS = { pitch:0, noteLen:0.25, opacity:1, vis:1, mute:0, solo:0, swing:0, reverb:0, master:1, echo:0, bpm:120, filter:0 };
+
+let isDragging = false;
+let dragValue = 0;
+document.addEventListener("pointerup", () => isDragging = false);
 
 // ---------- WebGL ----------
 const canvas = $("glcanvas");
@@ -951,6 +979,37 @@ function compileLayer(id){
     return;
   }
 
+  if (L.externalHtml) {
+    layerTextures[id] = "pending";
+    fetch(L.externalHtml).then(r => r.text()).then(html => {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, "text/html");
+      const fragScript = doc.getElementById("fragment-shader") || doc.querySelector("script[type='x-shader/x-fragment']");
+      if (!fragScript) throw new Error("No fragment shader found in " + L.externalHtml);
+      
+      const prog = gl.createProgram();
+      gl.attachShader(prog, compile(gl.VERTEX_SHADER, VERT));
+      
+      // Some external shaders define their own main(), others might just be snippets.
+      // We'll assume they define their own full shader if they are an external file,
+      // but we prepend PATTERN_HEADER just in case they need iResolution/iTime etc.
+      let src = fragScript.textContent;
+      if (!src.includes("void main")) {
+        // If it doesn't have main(), wrap it like built-ins
+        src = PATTERN_HEADER + "\n" + src;
+      }
+      
+      gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, src));
+      gl.linkProgram(prog);
+      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+      layerTextures[id] = prog;
+    }).catch(err => {
+      console.error("Failed to compile external layer " + id, err);
+      layerTextures[id] = "error";
+    });
+    return;
+  }
+
   // Load photo cutout as texture (store dimensions for aspect-ratio-correct rendering)
   layerTextures[id] = "pending";
   const img = new Image();
@@ -974,7 +1033,7 @@ function compileLayer(id){
 }
 
 function loadLayersManifest() {
-  return new Promise(resolve => {
+  return new Promise(async resolve => {
     const dl = document.createElement("datalist"); dl.id = "layerlist";
     
     // Clear option
@@ -988,6 +1047,36 @@ function loadLayersManifest() {
       const s = label + "  pattern default builtin " + name; layerSearch[s] = key;
       const opt = document.createElement("option"); opt.value = s; dl.appendChild(opt);
     });
+
+    // Fetch external GLSL layers from ../index.html
+    try {
+      const resp = await fetch('../index.html');
+      const htmlText = await resp.text();
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(htmlText, "text/html");
+      const links = Array.from(doc.querySelectorAll('a[href]'));
+      
+      const hs = `──────  GLSL Shaders  ──────`;
+      layerSearch[hs] = "__hdr__";
+      const ho = document.createElement("option"); ho.value = hs; dl.appendChild(ho);
+      
+      links.forEach(a => {
+        const href = a.getAttribute('href');
+        if (!href.endsWith('.html') || href === 'index.html' || href === 'boilerplate.html' || href.includes('moodboard_htmls/')) return;
+        
+        const name = href.replace('.html', '');
+        const key = "glsl:" + name;
+        const label = "❖ GLSL · " + name;
+        
+        LAYERS[key] = { id: key, externalHtml: '../' + href, name: name, url: null, title: label, label: label };
+        
+        const s = label + "  external glsl shader";
+        layerSearch[s] = key;
+        const opt = document.createElement("option"); opt.value = s; dl.appendChild(opt);
+      });
+    } catch (err) {
+      console.warn("Failed to load external GLSL layers:", err);
+    }
     
     // Cutout photo layers
     CUTOUT_PHOTOS.forEach(photo => {
@@ -1216,51 +1305,46 @@ function blip(ch, scheduledTime){
   }
 }
 
-// ---------- MIDI Output ----------
-let midiAccess = null;
-let midiOutputs = [];
-let nextMidiClockTime = 0;
-let sendMidiNotes = true;
-let sendMidiClock = true;
-function initMidi() {
-  if (navigator.requestMIDIAccess && !midiAccess) {
-    navigator.requestMIDIAccess().then(access => {
-      midiAccess = access;
-      midiOutputs = Array.from(midiAccess.outputs.values());
-      midiAccess.onstatechange = () => {
-        midiOutputs = Array.from(midiAccess.outputs.values());
-      };
-      console.log("MIDI ready", midiOutputs);
-    }).catch(err => console.error("MIDI access denied", err));
-  }
+// ---------- MIDI output (notes + clock) ----------
+let midiOut = null, midiNotesOn = true, midiClockOn = true, midiClockTimer = null;
+async function ensureMidi(){
+  if (midiOut !== null) return midiOut;
+  if (!navigator.requestMIDIAccess){ alert("Web MIDI not supported in this browser."); return null; }
+  try { const a = await navigator.requestMIDIAccess(); const outs = [...a.outputs.values()];
+    midiOut = outs[0] || null; if (!midiOut) alert("No MIDI output device found."); return midiOut;
+  } catch(e){ alert("MIDI access denied."); return null; }
 }
-function fireMidi(ch, scheduledTime) {
-  if (!sendMidiNotes) return;
-  if (state.inst[ch] !== 7) return; // 7 = 808 Sub / Kick
+function midiNote(ch, scheduledTime){
+  if (!midiNotesOn || !midiOut) return;
   if (state.mute[ch]) return;
   if (state.solo.some(s => s) && !state.solo[ch]) return;
-  if (midiOutputs.length === 0) return;
   
-  const baseNote = 60 + (state.pitch[ch] || 0) + (state.fx.trans || 0) + (state.fx.pitch || 0);
-  const note = Math.max(0, Math.min(127, baseNote));
-  const velocity = Math.max(0, Math.min(127, Math.round((state.vol[ch] !== undefined ? state.vol[ch] : 1) * 127)));
-  
-  if (velocity === 0) return;
-  
-  const durMs = Math.max(40, (state.noteLen[ch] || 0.25) * 4 * 60000 / state.bpm);
+  const note = Math.max(0, Math.min(127, 36 + (state.pitch[ch]||0) + (state.fx.trans||0) + (state.fx.pitch||0) + (ch*2)));
+  const c = ch & 15; const durMs = Math.max(40, (state.noteLen[ch]||0.25) * 4 * 60000 / state.bpm);
   const now = scheduledTime !== undefined ? scheduledTime : performance.now();
   
-  midiOutputs.forEach(out => {
-    try {
-      // Broadcast on all 16 MIDI channels
-      for (let mc = 0; mc < 16; mc++) {
-        out.send([0x90 + mc, note, velocity], now);
-        out.send([0x80 + mc, note, 0], now + durMs);
-      }
-    } catch (e) {
-      console.warn("MIDI send error", e);
-    }
-  });
+  // Visual indicator that JS is successfully sending a note
+  const btn = document.getElementById("toggleMidiNotes");
+  if (btn) {
+    btn.style.textShadow = "0 0 10px #0f0, 0 0 20px #0f0";
+    setTimeout(() => btn.style.textShadow = "", 100);
+  }
+
+  try {
+    midiOut.send([0x90 | c, note, 100], now);
+    midiOut.send([0x80 | c, note, 0], now + durMs);   // scheduled note-off
+  } catch(e){}
+}
+function clockTick(){ if (midiOut) midiOut.send([0xF8]); }
+function startMidiClock(sendStart){
+  if (!midiOut || !midiClockOn || !state.playing) return;
+  if (midiClockTimer) clearInterval(midiClockTimer);
+  if (sendStart) midiOut.send([0xFA]);                            // MIDI Start
+  midiClockTimer = setInterval(clockTick, 60000 / state.bpm / 24);  // 24 PPQN
+}
+function stopMidiClock(sendStop){
+  if (midiClockTimer){ clearInterval(midiClockTimer); midiClockTimer = null; }
+  if (sendStop && midiOut) midiOut.send([0xFC]);                  // MIDI Stop
 }
 
 // ---------- Audio-file reactivity ----------
@@ -1359,6 +1443,10 @@ function buildGrid(){
     const solo = document.createElement("button"); solo.className = "ms solo" + (state.solo[c]?" on":""); solo.textContent = "S"; solo.title = "solo (audio + visual)"; solo.draggable = false;
     solo.onclick = () => { state.solo[c] = state.solo[c]?0:1; solo.classList.toggle("on", !!state.solo[c]); save(); };
     bindReset(solo, DEFAULTS.solo, v => { state.solo[c]=v; solo.classList.toggle("on", !!v); });
+
+    const lockBtn = document.createElement("button"); lockBtn.className = "ms lock" + (state.lock[c]?" on":""); lockBtn.textContent = "🔒"; lockBtn.title = "lock track"; lockBtn.draggable = false;
+    lockBtn.onclick = () => { state.lock[c] = state.lock[c]?0:1; lockBtn.classList.toggle("on", !!state.lock[c]); save(); };
+    bindReset(lockBtn, 0, v => { state.lock[c]=v; lockBtn.classList.toggle("on", !!v); });
     
     const kVol = makeKnob({label:"VOL", value:(state.vol[c]!==undefined?state.vol[c]:1), def:1, fmt:v=>Math.round(v*100)+"%", onInput:v=>{state.vol[c]=v;save();}});
     const adsr = state.adsr[c] || (state.adsr[c] = {...ADSR_DEF});
@@ -1406,15 +1494,25 @@ function buildGrid(){
       cell.style.color = PAT_COLOR[c%NP];
       if (state.grid[c*state.steps+s]) cell.classList.add("on");
       cell.dataset.c = c; cell.dataset.s = s;
-      cell.onclick = () => {
+      cell.addEventListener("pointerdown", (e) => {
+        if (state.lock[c]) return;
+        e.preventDefault();
         const i = c*state.steps+s; state.grid[i] = state.grid[i] ? 0 : 1;
-        cell.classList.toggle("on", !!state.grid[i]); save();
-      };
+        cell.classList.toggle("on", !!state.grid[i]);
+        isDragging = true; dragValue = state.grid[i]; save();
+      });
+      cell.addEventListener("pointerenter", (e) => {
+        if (!isDragging || state.lock[c]) return;
+        const i = c*state.steps+s;
+        if (state.grid[i] !== dragValue) {
+          state.grid[i] = dragValue; cell.classList.toggle("on", !!dragValue); save();
+        }
+      });
       cells.appendChild(cell);
     }
     
     lane.appendChild(grip);
-    lane.appendChild(sw); lane.appendChild(nm); lane.appendChild(mute); lane.appendChild(solo);
+    lane.appendChild(sw); lane.appendChild(nm); lane.appendChild(mute); lane.appendChild(solo); lane.appendChild(lockBtn);
     lane.appendChild(kVol.el); lane.appendChild(nsel); lane.appendChild(fxBtn); lane.appendChild(fxslot);
     lane.appendChild(gsel);
     lane.appendChild(cells); lane.appendChild(fxPop); wrap.appendChild(lane);
@@ -1426,7 +1524,7 @@ function reorderChannel(from, to){
   const S = state.steps;
   const move = (a) => { const v = a.splice(from,1)[0]; a.splice(to,0,v); };
   move(state.names); move(state.pitch); move(state.noteLen); move(state.layer); move(state.inst);
-  move(state.adsr); move(state.opacity); move(state.vol); move(state.mute); move(state.solo); move(state.trackFx);
+  move(state.adsr); move(state.opacity); move(state.vol); move(state.mute); move(state.solo); move(state.trackFx); move(state.lock);
   const rows = (buf, Ctor) => { const r=[]; for (let c=0;c<state.channels;c++) r.push(buf.slice(c*S,(c+1)*S)); const v=r.splice(from,1)[0]; r.splice(to,0,v);
     const out = new Ctor(state.channels*S); r.forEach((row,c)=>out.set(row,c*S)); return out; };
   state.grid = rows(state.grid, Uint8Array);
@@ -1452,7 +1550,7 @@ function markPlayhead(step){
 function save(){ try{ localStorage.setItem("photoCutoutSeq1", JSON.stringify({
   steps:state.steps, channels:state.channels, names:state.names, bpm:state.bpm,
   pitch:state.pitch, noteLen:state.noteLen, layer:state.layer, inst:state.inst,
-  adsr:state.adsr, opacity:state.opacity, vol:state.vol, mute:state.mute, solo:state.solo, trackFx:state.trackFx,
+  adsr:state.adsr, opacity:state.opacity, vol:state.vol, mute:state.mute, solo:state.solo, trackFx:state.trackFx, lock:state.lock,
   swing:state.swing, reverb:state.reverb, master:state.master, fx:state.fx, fxFilter, echo:echoLevel,
   activePhoto:state.activePhoto, grid:Array.from(state.grid) })); }catch(e){} }
 function load(){ try{ const d = JSON.parse(localStorage.getItem("photoCutoutSeq1"));
@@ -1484,6 +1582,7 @@ function load(){ try{ const d = JSON.parse(localStorage.getItem("photoCutoutSeq1
   state.vol = d.vol || Array.from({length:N},()=>1);
   state.mute = d.mute || Array.from({length:N},()=>0);
   state.solo = d.solo || Array.from({length:N},()=>0);
+  state.lock = d.lock || Array.from({length:N},()=>0);
   state.trackFx = d.trackFx || Array.from({length:N},()=>"");
   state.swing = d.swing||0; state.reverb = d.reverb||0; state.master = (d.master!==undefined?d.master:1); state.fx = d.fx||{};
   fxFilter=d.fxFilter||0; echoLevel = (d.echo!==undefined ? d.echo : 0);
@@ -1492,42 +1591,41 @@ function load(){ try{ const d = JSON.parse(localStorage.getItem("photoCutoutSeq1
 
 // ---------- transport ----------
 const stepDur = () => 60 / state.bpm / state.stepsPerBeat;
-function playStop(){
+async function playStop(){
   state.playing = !state.playing;
   $("play").textContent = state.playing ? "⏸ pause" : "▶ play";
   if (state.playing){
     initAudio(); if (actx) actx.resume();
-    initMidi();
+    await ensureMidi();
     if (fileLoaded && audioEl) audioEl.play().catch(()=>{});
     else state.startTime = performance.now()/1000 - state.playhead*stepDur();
-    nextMidiClockTime = performance.now();
-    if (sendMidiClock) {
-      midiOutputs.forEach(o => { try { o.send([0xFA], nextMidiClockTime); } catch(e){} });
-    }
+    if (midiClockOn) startMidiClock(true);
     startScheduler();
   } else { 
     if (fileLoaded && audioEl) audioEl.pause(); 
-    if (sendMidiClock) {
-      midiOutputs.forEach(o => { try { o.send([0xFC], performance.now()); } catch(e){} });
-    }
+    stopMidiClock(true);
     stopScheduler();
   }
 }
 
 // ---------- controls ----------
 $("play").onclick = playStop;
-$("toggleMidiNotes").onclick = () => { sendMidiNotes = !sendMidiNotes; $("toggleMidiNotes").classList.toggle("on", sendMidiNotes); };
-$("toggleMidiClock").onclick = () => { sendMidiClock = !sendMidiClock; $("toggleMidiClock").classList.toggle("on", sendMidiClock); };
+$("toggleMidiNotes").onclick = async () => { const v=!midiNotesOn; if(v && !(await ensureMidi())) return; midiNotesOn=v; $("toggleMidiNotes").classList.toggle("on", midiNotesOn); };
+$("toggleMidiClock").onclick = async () => { const v=!midiClockOn; if(v && !(await ensureMidi())) return; midiClockOn=v; $("toggleMidiClock").classList.toggle("on", midiClockOn);
+  if(midiClockOn) startMidiClock(true); else stopMidiClock(true); };
 $("clear").onclick = () => {
   if (state.playing) playStop();
   if (fileLoaded && audioEl){ audioEl.pause(); }
   if (actx) applyMaster(state.master);
   visualQueue = [];
-  state.grid.fill(0); pulses2d.fill(0); rise2d.fill(0); state.lastStep = -1;
-  for (let c=0;c<state.channels;c++){
-    state.layer[c] = ""; state.pitch[c] = 0; state.vol[c] = 1; state.opacity[c] = 1;
-    state.adsr[c] = {...ADSR_DEF}; state.mute[c] = 0; state.solo[c] = 0; state.trackFx[c] = "";
+  for (let c=0; c<state.channels; c++){
+    if (!state.lock[c]) {
+      for (let s=0; s<state.steps; s++) state.grid[c*state.steps+s] = 0;
+      state.layer[c] = ""; state.pitch[c] = 0; state.vol[c] = 1; state.opacity[c] = 1;
+      state.adsr[c] = {...ADSR_DEF}; state.mute[c] = 0; state.solo[c] = 0; state.trackFx[c] = "";
+    }
   }
+  pulses2d.fill(0); rise2d.fill(0); state.lastStep = -1;
   buildGrid(); save();
 };
 $("add").onclick = () => {
@@ -1537,7 +1635,7 @@ $("add").onclick = () => {
   state.names.push(FULL_NAMES[state.channels] || ("Ch " + (state.channels+1)));
   state.pitch.push(0); state.noteLen.push(0.25); state.layer.push("");
   state.inst.push(INSTRUMENTS[state.channels%8][1]);
-  state.adsr.push({...ADSR_DEF}); state.opacity.push(1); state.vol.push(1); state.mute.push(0); state.solo.push(0); state.trackFx.push("");
+  state.adsr.push({...ADSR_DEF}); state.opacity.push(1); state.vol.push(1); state.mute.push(0); state.solo.push(0); state.trackFx.push(""); state.lock.push(0);
   state.channels++;
   buildGrid(); save();
 };
@@ -1610,6 +1708,7 @@ $("rand").onclick = () => {
     });
   });
   for (let c=0;c<state.channels;c++){
+    if (state.lock[c]) continue;
     const d = dens[c%8];
     for (let s=0;s<state.steps;s++){
       const beat = (s % state.stepsPerBeat) === 0;
@@ -1631,6 +1730,7 @@ function applyPhoto(photoId) {
   if (!photo) return;
   state.activePhoto = photoId;
   for (let c = 0; c < state.channels; c++) {
+    if (state.lock[c]) continue;
     if (c < photo.layers.length) {
       const layerName = photo.layers[c];
       const cleanName = layerName.replace(/\s+/g, "");
@@ -1906,17 +2006,34 @@ let lastT = performance.now()/1000;
 let lastTickTimePerf = performance.now();
 let lastTickTimeAudio = 0;
 let visualQueue = [];
-let schedulerTimer = null;
+
+const workerBlob = new Blob([`
+  let interval;
+  self.onmessage = function(e) {
+    if (e.data === 'start') {
+      interval = setInterval(() => self.postMessage('tick'), 25);
+    } else if (e.data === 'stop') {
+      clearInterval(interval);
+    }
+  };
+`], {type: 'application/javascript'});
+const timerWorker = new Worker(URL.createObjectURL(workerBlob));
 
 function startScheduler() {
-    if (schedulerTimer) clearInterval(schedulerTimer);
     lastTickTimePerf = performance.now();
     lastTickTimeAudio = actx ? actx.currentTime : 0;
-    schedulerTimer = setInterval(schedulerTick, 25);
+    timerWorker.onmessage = () => {
+        schedulerTick();
+        if (document.hidden || (performance.now() - lastT*1000) > 100) {
+            if (typeof rafId !== 'undefined') cancelAnimationFrame(rafId);
+            loop();
+        }
+    };
+    timerWorker.postMessage('start');
 }
 
 function stopScheduler() {
-    if (schedulerTimer) { clearInterval(schedulerTimer); schedulerTimer = null; }
+    timerWorker.postMessage('stop');
     visualQueue = [];
 }
 
@@ -1957,7 +2074,7 @@ function schedulerTick() {
     };
 
     const startIdx = Math.floor(prevAccum);
-    const endIdx = Math.floor(playAccum) + 1;
+    const endIdx = Math.floor(playAccum) + 2; // +2 to never miss boundary at wrap
 
     for (let i = startIdx; i <= endIdx; i++) {
         const b = stepBoundary(i);
@@ -1965,10 +2082,11 @@ function schedulerTick() {
             let fraction = (playAccum - prevAccum) > 0 ? (b - prevAccum) / (playAccum - prevAccum) : 1.0;
             fraction = Math.max(0, Math.min(1, fraction));
             
-            const schedPerf = nowPerf - (dt * 1000) + (fraction * dt * 1000) + 50;
-            const schedAudio = nowAudio - dt + (fraction * dt) + 0.050;
+            const schedPerf = nowPerf - (dt * 1000) + (fraction * dt * 1000);
+            const schedMidi = schedPerf + 5;   // tiny 5ms lookahead for MIDI (tight)
+            const schedAudio = nowAudio - dt + (fraction * dt) + 0.050; // 50ms lookahead for Web Audio
 
-            const stepIndex = i % state.steps;
+            const stepIndex = ((i % state.steps) + state.steps) % state.steps;
             let stepToPlay = stepIndex;
             if (stutterOn) {
                 const sz = gateSteps(state.fx.stutter !== undefined ? state.fx.stutter : 0.25);
@@ -1987,7 +2105,7 @@ function schedulerTick() {
                     const on = fills[c % 4];
                     if (on) {
                         activeChannels.push(c);
-                        if (sendMidiNotes) fireMidi(c, schedPerf);
+                        midiNote(c, schedMidi);
                     }
                 }
             } else {
@@ -1995,27 +2113,19 @@ function schedulerTick() {
                     if (state.grid[c * state.steps + stepToPlay]) {
                         activeChannels.push(c);
                         blip(c, schedAudio);
-                        if (sendMidiNotes) fireMidi(c, schedPerf);
+                        midiNote(c, schedMidi);
                     }
                 }
             }
-            visualQueue.push({ step: stepToPlay, time: schedPerf, channels: activeChannels, isFile: fileLoaded });
+            visualQueue.push({ step: stepToPlay, time: schedPerf + 50, channels: activeChannels, isFile: fileLoaded });
         }
     }
 
-    // MIDI Clock scheduling
-    if (sendMidiClock && tapeFactor > 0.01) {
-        const tickDurMs = (60000 / state.bpm / 24) / tapeFactor;
-        if (nextMidiClockTime < nowPerf - 250) nextMidiClockTime = nowPerf;
-        while (nextMidiClockTime < nowPerf + 50) {
-            const t = nextMidiClockTime;
-            midiOutputs.forEach(o => { try { o.send([0xF8], t); } catch(e){} });
-            nextMidiClockTime += tickDurMs;
-        }
-    }
+    // MIDI Clock scheduling is now handled by setInterval in startMidiClock
 }
 
-(function loop(){
+let rafId;
+function loop(){
   const now = performance.now();
   const dt = Math.min(0.25, (now/1000) - lastT); lastT = now/1000;
   
@@ -2074,6 +2184,13 @@ function schedulerTick() {
   gl.uniform1f(U("uEnOpen"), energy(5));
   gl.uniform1f(U("uStrobe"), strobeOn ? 1.0 : 0.0);
   gl.uniform1f(U("uSpiral"), state.fx.spiral || 0.0);
+  
+  for (let c=0; c<8; c++) {
+    gl.uniform1f(U(`uLayerOffset[${c}].x`), layerOffsetX[c]);
+    gl.uniform1f(U(`uLayerOffset[${c}].y`), layerOffsetY[c]);
+    gl.uniform1f(U(`uLayerScale[${c}]`), layerScale[c]);
+  }
+  gl.uniform1f(U("uSpiral"), state.fx.spiral || 0.0);
   // Visual FX uniforms
   gl.uniform1f(U("uDistortVis"), state.fx.distort || 0.0);
   gl.uniform1f(U("uFilterVis"), fxFilter || 0.0);
@@ -2097,8 +2214,9 @@ function schedulerTick() {
     gl.uniform1f(U("uPulse[" + c + "]"), (c < state.channels) ? energy(c) : 0.0);
   }
   gl.drawArrays(gl.TRIANGLES, 0, 6);
-  requestAnimationFrame(loop);
-})();
+  rafId = requestAnimationFrame(loop);
+}
+loop();
 </script>
 </body>
 </html>
