@@ -4,6 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Photo Cutout Sequencer</title>
+<script src="../layers_bundle.js"></script>
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
@@ -20,7 +21,13 @@
     overflow: hidden;
     z-index: 10;
   }
-  #editor.hidden { display: none; }
+  #editor.hidden { display: block; padding: 0; gap: 0; background: #000; }
+  #editor.hidden > :not(.dashboard-top) { display: none !important; }
+  #editor.hidden .dashboard-top { display: block; height: 100%; }
+  #editor.hidden .dashboard-top > :not(.panel-output) { display: none !important; }
+  #editor.hidden .panel-output { position: absolute; inset: 0; border: 0; border-radius: 0; box-shadow: none; }
+  #editor.hidden .panel-output .output-label { display: none; }
+  #editor.hidden #glcanvas { width: 100vw; height: 100vh; max-height: none; aspect-ratio: auto; border-radius: 0; }
 
   /* Top Dashboard Layout */
   .dashboard-top {
@@ -37,10 +44,10 @@
     background: rgba(15, 18, 28, 0.85);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
-    border-radius: 12px;
     overflow: hidden;
+    border-radius: 12px;
     box-shadow: 0 4px 20px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.04);
-    border: 1px solid rgba(234, 88, 12, 0.35);
+    border: 1px solid rgba(234,88,12,0.35);
     display: flex;
     justify-content: center;
     align-items: center;
@@ -172,6 +179,32 @@
     text-transform: uppercase;
     border-bottom: 1px solid rgba(249, 115, 22, 0.15);
   }
+  .scroll-tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+    padding: 6px;
+    background: rgba(249, 115, 22, 0.06);
+    border-bottom: 1px solid rgba(249, 115, 22, 0.15);
+  }
+  .scroll-tab {
+    background: rgba(255,255,255,0.04);
+    color: #fbbf24;
+    border: 1px solid rgba(249, 115, 22, 0.25);
+    border-radius: 4px;
+    padding: 4px 2px;
+    font-size: 9px;
+    font-weight: 700;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .scroll-tab.on {
+    background: rgba(249, 115, 22, 0.24);
+    color: #fff;
+    border-color: rgba(251, 146, 60, 0.75);
+    box-shadow: 0 0 10px rgba(249, 115, 22, 0.25);
+  }
   .scroll-list {
     flex: 1;
     overflow-y: auto;
@@ -227,19 +260,19 @@
   /* HI/MID/LO under PITCH (col 1) */
   .g-hi { grid-column: 1; grid-row: 4; } .g-mid { grid-column: 1; grid-row: 5; } .g-lo { grid-column: 1; grid-row: 6; }
   /* BPM fader under SPIRAL (col 2), spanning the 3 bottom rows */
-  .g-fader { grid-column: 2; grid-row: 4 / 7; }
+  .g-fader { grid-column: 2; grid-row: 4 / 7; align-self: stretch; }
   /* A/B/C/D squeezed across cols 3-4 */
   .g-banks { grid-column: 3 / 5; grid-row: 4; width: 100%; }
   .g-strobe { grid-column: 3; grid-row: 5; } .g-stutter { grid-column: 4; grid-row: 5; }
   .g-tape { grid-column: 3; grid-row: 6; } .g-gate { grid-column: 4; grid-row: 6; }
   .filter-eq-stack { display: flex; flex-direction: column; align-items: center; gap: 1px; }
-  .fader-col { display: flex; justify-content: center; align-items: center; height: 100%; }
-  .fader-container { display: flex; flex-direction: column; align-items: center; gap: 4px; height: 75px; justify-content: center; }
-  .fader-track-wrap { position: relative; width: 14px; height: 70px; background: #18181b; border-radius: 6px; border: 1px solid #27272a; box-shadow: inset 0 2px 4px rgba(0,0,0,0.5); cursor: pointer; touch-action: none; }
+  .fader-col { display: flex; justify-content: center; align-items: stretch; height: 100%; align-self: stretch; }
+  .fader-container { position: relative; display: grid; grid-template-rows: minmax(58px, 1fr) 16px; gap: 2px; justify-items: center; align-items: stretch; height: 100%; min-height: 96px; width: 46px; }
+  .fader-track-wrap { position: relative; width: 14px; height: auto; min-height: 0; background: #18181b; border-radius: 6px; border: 1px solid #27272a; box-shadow: inset 0 2px 4px rgba(0,0,0,0.5); cursor: pointer; touch-action: none; }
   .fader-blue-bar { position: absolute; bottom: 0; left: 0; width: 100%; background: linear-gradient(to top, #1e3a8a, #3b82f6, #60a5fa); height: 50%; border-radius: 0 0 5px 5px; transition: height 0.05s linear; pointer-events: none; }
   .fader-thumb-overlay { position: absolute; left: -3px; width: 20px; height: 10px; background: linear-gradient(to bottom, #fff 0%, #d4d4d8 100%); border: 1px solid #27272a; border-radius: 2px; box-shadow: 0 2px 5px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.8); pointer-events: none; bottom: calc(50% - 5px); transition: bottom 0.05s linear; }
-  .fader-label { font-size: 8px; font-weight: 700; color: #3b82f6; text-transform: uppercase; }
-  .bpm-num { width: 40px; margin-top: 2px; background: #1c1c22; color: #cdd; border: 1px solid #3a3a44; border-radius: 4px; padding: 1px 2px; font-size: 10px; text-align: center; -moz-appearance: textfield; }
+  .fader-label { position: absolute; top: 50%; right: -4px; transform: translate(100%, -50%) rotate(90deg); transform-origin: left center; font-size: 8px; font-weight: 700; color: #3b82f6; text-transform: uppercase; pointer-events: none; }
+  .bpm-num { position: static; width: 40px; height: 16px; min-height: 0; margin-top: 0; background: #1c1c22; color: #cdd; border: 1px solid #3a3a44; border-radius: 4px; padding: 0 2px; font-size: 10px; line-height: 14px; text-align: center; -moz-appearance: textfield; box-sizing: border-box; }
   .bpm-num::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
   .buttons-col { display: flex; flex-direction: column; gap: 6px; justify-content: space-around; height: 100%; }
   .bank-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; }
@@ -254,6 +287,19 @@
   .yellow-btn:hover { background: rgba(234, 179, 8, 0.2); border-color: rgba(234, 179, 8, 0.5); }
   .yellow-btn.on { background: rgba(250, 204, 21, 0.25); border-color: #fde68a; box-shadow: 0 0 12px rgba(234, 179, 8, 0.4); color: #fff; }
   .effect-label { font-size: 8px; font-weight: 700; color: #9ca3af; }
+  .flash-orange {
+    background: rgba(255, 126, 57, 0.96) !important;
+    color: #111 !important;
+    text-shadow: 0 0 10px #ff7e39, 0 0 20px #ff7e39 !important;
+    border-color: #ff7e39 !important;
+    box-shadow: 0 0 12px rgba(255, 126, 57, 1), 0 0 28px rgba(255, 126, 57, 0.9) !important;
+    animation: midiBeam 140ms ease-out both;
+  }
+  @keyframes midiBeam {
+    0% { transform: scale(1); filter: brightness(1); }
+    35% { transform: scale(1.08); filter: brightness(1.8); }
+    100% { transform: scale(1); filter: brightness(1); }
+  }
 
   /* Orange Circle Knobs styling */
   .knob { display: inline-flex; flex-direction: column; align-items: center; width: 28px; flex: none; }
@@ -334,17 +380,43 @@
   .lane .ms.on { background: #10b981; color: #111; border-color: #10b981; font-weight: 700; }
   .lane .ms.solo.on { background: #4ad; border-color: #4ad; }
   .lane .ms.fx.on { background: #3a3a44; color: #10b981; border-color: #10b981; }
-  .fxpop { position: absolute; bottom: 100%; left: 120px; margin-bottom: 4px; display: none; gap: 4px; z-index: 20;
-           background: #15151b; border: 1px solid #3a3a44; border-radius: 6px; padding: 4px 6px; box-shadow: 0 4px 14px rgba(0,0,0,.6); }
-  .fxpop.open { display: flex; }
-  .lane .fxslot { width: 24px; height: 16px; flex: none; display: flex; align-items: center; justify-content: center;
+  .adsr-row { display: none; align-items: center; gap: 4px; flex: none;
+              background: #15151b; border: 1px solid #3a3a44; border-radius: 6px; padding: 2px 6px; }
+  .adsr-row.open { display: flex; }
+  .lane .fxslot { min-width: 24px; width: 24px; height: 16px; flex: none; display: flex; align-items: center; justify-content: center;
     font-size: 8px; color: #888; background: #15151b; border: 1px dashed #3a3a44; border-radius: 4px; overflow: hidden; }
-  .lane .fxslot.set { color: #10b981; border-style: solid; border-color: #10b981; }
+  .lane .fxslot.set { width: 44px; height: 26px; color: #10b981; border-style: solid; border-color: #10b981; padding: 1px 2px; }
   .lane .fxslot.over { background: #26323a; border-color: #8cf; }
+  .lane .fxslot .knob { width: 38px; gap: 0; pointer-events: auto; }
+  .lane .fxslot .knob .dial { width: 14px; height: 14px; margin: 0 auto; }
+  .lane .fxslot .knob .dial::after { height: 5px; transform-origin: 50% 7px; }
+  .lane .fxslot .knob .klabel { font-size: 6px; line-height: 7px; max-width: 38px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .lane .eye.off { color: #555; background: #141418; }
   
   .hint { color: #666; font-size: 9px; }
   kbd { background: #222; border: 1px solid #444; border-radius: 3px; padding: 0 3px; }
+
+  /* large / 4K (~27-32 inch) screen styles */
+  @media (min-width:1900px){
+    body { font-size: 16px; }
+    .dashboard-top {
+      grid-template-columns: 1fr 1fr 480px;
+      height: 380px;
+    }
+    .panel-controls {
+      grid-template-columns: 160px 1fr;
+    }
+    .controls-grid .knob { width: 44px; } .controls-grid .knob .dial { width: 32px; height: 32px; }
+    .controls-grid .knob .dial::after { height: 11px; transform-origin: 50% 14px; }
+    .knob .klabel { font-size: 12px; }
+    .scroll-layer-item { font-size: 13px; } .scroll-photo-header, .scroll-title { font-size: 13px; }
+    .cell { height: 22px; } .lane { gap: 7px; padding: 6px; }
+    .lane .nm, .lane select.nmsel { font-size: 14px; } .lane select.nmsel { width: 120px; }
+    .lane .ms { width: 20px; font-size: 12px; line-height: 18px; } .lane .lsel { width: 180px; font-size: 13px; }
+    .yellow-btn { font-size: 12px; padding: 7px 12px; } .bank-grid button.bank { font-size: 13px; padding: 7px 0; }
+    .fader-track-wrap { width: 18px; height: auto; min-height: 0; } .fader-container { height: 100%; min-height: 0; width: 56px; grid-template-rows: minmax(72px, 1fr) 18px; } .bpm-num { width: 46px; height: 18px; font-size: 11px; line-height: 16px; }
+    .transport button, .transport select, .transport label { font-size: 14px; } .transport .title { font-size: 17px; }
+  }
 </style>
 </head>
 <body>
@@ -360,6 +432,7 @@ uniform float uChannels;              // rows in the pulse texture
 uniform sampler2D uPulseTex;          // steps x channels, .r = per-step pulse 0..1
 uniform float uEnOpen;                // open-hat (row 5) energy for leaves
 uniform sampler2D uAtlas;             // separated object-layers packed 4x2; one tile per channel
+uniform sampler2D uFeedback;          // previous output frame for delay feedback visuals
 uniform float uHasLayer[8];           // 1 = that channel renders a layer instead of its built-in element
 uniform float uVis[8];                // 1 = channel visible
 uniform float uOpacity[8];            // per-channel layer opacity 0..1
@@ -371,11 +444,23 @@ uniform float uGateVis;               // 0 = open, >0 = gate is closing this fra
 uniform float uFilterVis;             // -1..1 filter for color tint (neg=warm, pos=cool)
 uniform float uTremoloVis;            // tremolo depth 0..1 brightness oscillation
 uniform float uDelayVis;              // delay/echo ghost intensity 0..1
+uniform float uRollVis;                // roll repeat/glitch amount 0..1
+uniform float uReverbVis;              // reverb glow amount 0..1
+uniform vec3 uEqVis;                   // low/mid/high visual EQ -1..1
+
+uniform vec2 uLayerOffset[8];         // per-layer randomized offset
+uniform float uLayerScale[8];         // per-layer randomized scale
+uniform float uLayerRot[8];           // per-layer randomized rotation
+uniform float uLayerPitchVis[8];      // per-layer pitch color amount
+uniform float uLayerPitchWarp[8];     // per-layer pitch stretch amount
+uniform float uLayerFlangerVis[8];    // per-layer flanger/voronoi amount
+uniform float uLayerPhaserVis[8];     // per-layer phaser/noise amount
 
 float h2(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float vn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
     return mix(mix(h2(i),h2(i+vec2(1.0,0.0)),f.x), mix(h2(i+vec2(0.0,1.0)),h2(i+vec2(1.0,1.0)),f.x), f.y); }
 float fbm2(vec2 p){ float v=0.0,a=0.5; for(int i=0;i<4;i++){ v+=a*vn(p); p*=2.0; a*=0.5; } return v; }
+float voro(vec2 p){ vec2 i=floor(p), f=fract(p); float d=1.0; for(int y=-1;y<=1;y++){ for(int x=-1;x<=1;x++){ vec2 g=vec2(float(x),float(y)); vec2 o=vec2(h2(i+g), h2(i+g+17.7)); vec2 r=g+o-f; d=min(d,dot(r,r)); }} return sqrt(d); }
 mat2 rot(float a){ float s=sin(a), c=cos(a); return mat2(c,-s,s,c); }
 float boxMask(vec2 p, vec2 c, vec2 h, float ang){
     vec2 d = rot(ang) * (p - c); vec2 q = abs(d) - h; return step(max(q.x, q.y), 0.0);
@@ -429,15 +514,18 @@ vec3 satb(vec3 c, float s, float b){
 }
 
 void main(){
-    vec2 rawUv = gl_FragCoord.xy / iResolution.xy;  // clean UV for cutout layers
+    vec2 rawUv0 = gl_FragCoord.xy / iResolution.xy;
+    vec2 rawUv = rawUv0;
     vec2 uv = rawUv;
     if (uSpiral > 0.001){
         vec2 cen = uv - 0.5;
         float r = length(cen);
-        float ang = atan(cen.y, cen.x) + uSpiral * r * 7.0;  // static spiral, no iTime rotation
+        float ang = atan(cen.y, cen.x) + uSpiral * (iTime * 2.2 + r * 7.0);
         uv = vec2(cos(ang), sin(ang)) * r + 0.5;
+        rawUv = uv;
     }
-    vec3 col = granite(uv);
+    float strobeFlash = step(0.5, fract(iTime * 6.0));
+    vec3 col = (uStrobe > 0.5) ? vec3(0.16 + strobeFlash * 0.22) : vec3(0.0);
 
     // BASS (row 2) — paver bands (upper-right), stepped along x
     float pm = max(boxMask(uv, vec2(0.78,0.82), vec2(0.24,0.11), -0.32),
@@ -557,9 +645,19 @@ void main(){
         if (float(c) >= uChannels) break;
         if (uHasLayer[c] < 0.5 || uVis[c] < 0.5) continue;
         float cc = mod(float(c), 4.0), rr = floor(float(c) / 4.0);
+        vec2 offset = uLayerOffset[c];
+        float scale = uLayerScale[c];
+        vec2 layerUv = rawUv - 0.5 - offset;
+        layerUv = rot(uLayerRot[c]) * layerUv;
+        float pw = clamp(uLayerPitchWarp[c], -1.0, 1.0);
+        vec2 pitchScale = pw >= 0.0 ? vec2(mix(1.0, 5.0, pw), mix(1.0, 0.2, pw))
+                                      : vec2(mix(1.0, 0.2, -pw), mix(1.0, 5.0, -pw));
+        vec2 scaledUv = layerUv / (scale * pitchScale) + 0.5;
         
-        // Sample texture with CLEAN UV (unaffected by spiral warp)
-        vec4 lc = texture2D(uAtlas, vec2((rawUv.x + cc) / 4.0, (rawUv.y + rr) / 2.0));
+        // Skip rendering if outside bounds (so it doesn't wrap around)
+        if (scaledUv.x < 0.0 || scaledUv.x > 1.0 || scaledUv.y < 0.0 || scaledUv.y > 1.0) continue;
+        
+        vec4 lc = texture2D(uAtlas, vec2((scaledUv.x + cc) / 4.0, ((1.0 - scaledUv.y) + rr) / 2.0));
         
         // The pulse energy for this channel
         float p = uPulse[c];
@@ -569,6 +667,23 @@ void main(){
         
         // Light up or scale color by the pulse energy
         vec3 rgb = lc.rgb * (0.6 + p * 0.8);
+        float fv = uLayerFlangerVis[c];
+        if (fv > 0.01){
+            float cells = 1.0 - smoothstep(0.03, 0.22, voro(scaledUv * (8.0 + fv * 18.0) + vec2(iTime * 0.8, -iTime * 0.35) + float(c) * 3.1));
+            float wave = sin((scaledUv.y * 48.0) + iTime * 7.0 + float(c)) * fv;
+            rgb = mix(rgb, rgb + vec3(cells * 0.35 + wave * 0.12, cells * 0.10, -wave * 0.10), fv * 0.75);
+        }
+        float phv = uLayerPhaserVis[c];
+        if (phv > 0.01){
+            float n = fbm2(scaledUv * (5.0 + phv * 10.0) + vec2(iTime * 0.45, -iTime * 0.28) + float(c) * 1.7);
+            float band = sin((scaledUv.x + scaledUv.y + n * 0.8) * 18.0 + iTime * 3.0 + float(c)) * 0.5 + 0.5;
+            rgb = mix(rgb, rgb.gbr + vec3(n * 0.18, -n * 0.05, band * 0.14), phv * (0.35 + band * 0.35));
+        }
+        float pv = uLayerPitchVis[c];
+        if (pv > 0.01){
+            float edge = smoothstep(0.0, 0.55, length(scaledUv - 0.5));
+            rgb = mix(rgb, rgb.rbg * vec3(1.12, 0.94, 1.18) + edge * vec3(0.06,0.02,0.12), pv * 0.45);
+        }
         
         // Blend on top (object is invisible when not pulsed, or softly visible if desired. We use alpha * p for clean flashes)
         col = mix(col, rgb, alpha * p);
@@ -585,9 +700,8 @@ void main(){
         vec2 offset = vec2(n - 0.5, vn(uv * 12.0 + 100.0 + iTime * 2.0) - 0.5) * d;
         vec2 uvR = uv + offset * 1.2;
         vec2 uvB = uv - offset * 1.2;
-        // Re-sample the base granite texture for chromatic aberration
-        float rCh = granite(uvR).r;
-        float bCh = granite(uvB).b;
+        float rCh = col.r + (vn(uvR * 18.0 + iTime) - 0.5) * 0.4;
+        float bCh = col.b + (vn(uvB * 18.0 - iTime) - 0.5) * 0.4;
         col.r = mix(col.r, rCh, uDistortVis * 0.35);
         col.b = mix(col.b, bCh, uDistortVis * 0.35);
         // Add scan-line glitch
@@ -618,17 +732,38 @@ void main(){
         col *= 1.0 - uTremoloVis * 0.4 * (1.0 - trem);
     }
 
-    // DELAY visual: afterimage ghost (ghostly blue overlay)
+    // DELAY visual: previous-frame feedback copies across the full final output.
+    // At max delay the main feedback copy is held at full strength; lower values fade it faster.
     if (uDelayVis > 0.01){
-        vec2 ghostUv = uv + vec2(0.008, -0.005) * uDelayVis;
-        vec3 ghost = granite(ghostUv) * 0.6;
-        col = mix(col, col * 0.7 + ghost * vec3(0.3, 0.4, 0.8), uDelayVis * 0.35);
+        vec2 fbUv = rawUv0;
+        vec2 drift = vec2(0.012, -0.007) * uDelayVis;
+        vec3 fb0 = texture2D(uFeedback, fbUv).rgb;
+        vec3 fb1 = texture2D(uFeedback, fbUv + drift).rgb;
+        vec3 fb2 = texture2D(uFeedback, fbUv - drift * 1.7).rgb;
+        float hold = smoothstep(0.08, 1.0, uDelayVis);
+        float retain = mix(0.42, 1.0, hold);
+        float ghostA = mix(0.18, 0.94, hold);
+        float ghostB = mix(0.08, 0.84, hold);
+        float opacity = smoothstep(0.01, 0.92, uDelayVis);
+        float trails = fbm2(uv * mix(5.0, 16.0, uDelayVis) - iTime * 0.05);
+        vec3 phosphor = vec3(0.04, 0.13, 0.26) + vec3(0.12, 0.28, 0.58) * trails;
+        vec3 feedback = max(max(fb0 * retain, fb1 * ghostA), fb2 * ghostB);
+        feedback = max(feedback, phosphor * uDelayVis * 0.35);
+        col = mix(col, max(col, feedback), opacity);
     }
-
+    if (uRollVis > 0.01){
+        float bands = step(0.55, fract((uv.y + iTime * (2.0 + uRollVis * 8.0)) * mix(8.0, 28.0, uRollVis)));
+        col = mix(col, col * (0.35 + 0.9 * bands), uRollVis * 0.55);
+    }
+    if (uReverbVis > 0.01){
+        float halo = fbm2(uv * 3.0 + iTime * 0.08);
+        col += vec3(0.08, 0.10, 0.16) * halo * uReverbVis;
+        col = mix(col, col.brg, uReverbVis * 0.12);
+    }
+    col += vec3(uEqVis.x * 0.08, uEqVis.y * 0.08, uEqVis.z * 0.08);
     // GATE visual: darken on gate-off beats
     col *= 1.0 - uGateVis * 0.85;
 
-    if (uStrobe > 0.5) col *= step(0.5, fract(iTime * 11.0));
     gl_FragColor = vec4(col, 1.0);
 }
 </script>
@@ -646,6 +781,7 @@ void main(){
     <div class="panel-preview">
       <div class="preview-label">Layer Preview</div>
       <img id="cutout-preview-img" style="display:none;" />
+      <canvas id="previewCanvas" style="display:none; width: 100%; height: 100%; object-fit: contain; pointer-events: none;"></canvas>
       <div id="cutout-preview-placeholder" class="placeholder">Select a Layer</div>
     </div>
     
@@ -653,7 +789,11 @@ void main(){
     <div class="panel-controls">
       <!-- Left of Right panel: Selection scroll (Bright Orange) -->
       <div class="scroll-selection">
-        <div class="scroll-title">PHOTOS & CUTOUTS</div>
+        <div class="scroll-title">LAYER BROWSER</div>
+        <div class="scroll-tabs">
+          <button id="tabPhotos" class="scroll-tab on">Photos</button>
+          <button id="tabShaders" class="scroll-tab">Shaders</button>
+        </div>
         <div class="scroll-list" id="scrollList"></div>
       </div>
       
@@ -686,7 +826,6 @@ void main(){
     <button id="loadBtn">♪ load audio</button>
     <input type="file" id="audioFile" accept="audio/*" hidden>
     <label>steps <select id="steps"><option>8</option><option>16</option><option selected>32</option><option>64</option></select></label>
-    <label>photo <select id="photoSelect"></select></label>
     <button id="rand">🎲 rand</button>
     <button id="toggleMidiNotes" class="on">MIDI Notes</button>
     <button id="toggleMidiClock" class="on">MIDI Clock</button>
@@ -800,16 +939,123 @@ void main(){
 
 <script>
 const CUTOUT_PHOTOS = [
-  { id: "IMG_0398", title: "Wooden sculpture in gallery", layers: ["Floor", "Ceiling Grid", "Background Forest", "Glowing Screens", "Wooden Sculpture"] },
-  { id: "IMG_0415", title: "Exhibition plinths and stones", layers: ["Gravel Floor", "Stones", "White Cubes", "Brick Wall", "Dark Window"] },
-  { id: "IMG_0417", title: "Stone base pedestal", layers: ["Background", "Pedestal", "Stone"] },
-  { id: "IMG_0418", title: "Red & green shipping pallets", layers: ["Wall", "Red Pallet", "Green Pallets"] },
-  { id: "IMG_0419", title: "Green textured sidewalk tiles", layers: ["Green Tiles", "Bumpy Line", "Street Wall", "Distance Fade"] },
-  { id: "IMG_0586", title: "Instagram book layout", layers: ["Instagram UI", "Background Wall", "Perforated Table", "Red Book"] },
-  { id: "IMG_0767", title: "Abstract neon text shape", layers: ["Background", "Text Shape", "Text Shadow", "Text Material"] },
-  { id: "IMG_0824", title: "Street view with motorbike silhouette", layers: ["Sky", "Left Building", "Right Building", "Street", "Leaves", "Motorcycle"] },
-  { id: "IMG_0825", title: "Motorcycle delivery basket & rider", layers: ["Background", "Person Pants", "Person Shirt", "Person Head", "Motorcycle", "Green Basket"] },
-  { id: "IMG_0826", title: "Blue tiled pillar and metal gate", layers: ["Surrounding Wall", "Blue Tiles", "Scissor Gate", "Right Pillar"] }
+  { id: "IMG_0398", title: "Shader: IMG_0398", layers: ["Floor","Ceiling Grid","Background Forest","Glowing Screens","Wooden Sculpture"] },
+  { id: "IMG_0415", title: "Shader: IMG_0415", layers: ["Gravel Floor","Stones","White Cubes","Brick Wall","Dark Window"] },
+  { id: "IMG_0417", title: "Shader: IMG_0417", layers: ["Background","Pedestal","Stone"] },
+  { id: "IMG_0418", title: "Shader: IMG_0418", layers: ["Wall","Red Pallet","Green Pallets"] },
+  { id: "IMG_0419", title: "Shader: IMG_0419", layers: ["Green Tiles","Bumpy Line","Street Wall","Distance Fade"] },
+  { id: "IMG_0586", title: "Shader: IMG_0586", layers: ["Instagram UI","Background Wall","Perforated Table","Red Book"] },
+  { id: "IMG_0767", title: "Shader: IMG_0767", layers: ["Background","Text Shape","Text Shadow","Text Material"] },
+  { id: "IMG_0824", title: "Shader: IMG_0824", layers: ["Sky","Left Building","Right Building","Street","Leaves","Motorcycle"] },
+  { id: "IMG_0825", title: "Shader: IMG_0825", layers: ["Background","Person Pants","Person Shirt","Person Head","Motorcycle","Green Basket"] },
+  { id: "IMG_0826", title: "Shader: IMG_0826", layers: ["Surrounding Wall","Blue Tiles","Scissor Gate","Right Pillar"] },
+  { id: "IMG_0965", title: "Shader: IMG_0965", layers: ["Blue Tiles","Bird","Flowers","Small Cloud"] },
+  { id: "IMG_0967", title: "Shader: IMG_0967", layers: ["Brick Wall","Window Slats","Window Frames","Vignette"] },
+  { id: "IMG_0973", title: "Shader: IMG_0973", layers: ["Outer Wall","Dark Background","Floor","Gate","Objects"] },
+  { id: "IMG_0986", title: "Shader: IMG_0986", layers: ["Wood Texture","Signboard","Gold Area","Shadow"] },
+  { id: "IMG_0992", title: "Shader: IMG_0992", layers: ["Wall","Floor","Shelves","Floating Objects"] },
+  { id: "IMG_0995", title: "Shader: IMG_0995", layers: ["Background","Balcony Wall","Clothesline","Bird Cage","Plant"] },
+  { id: "IMG_1011", title: "Shader: IMG_1011", layers: ["Wall Tiles","Floor Tiles","Chair Shadow","Woven Chair"] },
+  { id: "IMG_1014", title: "Shader: IMG_1014", layers: ["Floor","Chair","Chair Leg"] },
+  { id: "IMG_1061", title: "Shader: IMG_1061", layers: ["Background","Red Bar","Text 2K4","God Of Wealth","Bottom Numbers","Dark Edges"] },
+  { id: "IMG_1072", title: "Shader: IMG_1072", layers: ["Background","Cart","Lottery Tickets","Woman","Man"] },
+  { id: "IMG_1077", title: "Shader: IMG_1077", layers: ["Metallic Plate","Holes","Colored Pencils","Laser Beam"] },
+  { id: "IMG_1121", title: "Shader: IMG_1121", layers: ["Poster","Street","Scooter","Rider"] },
+  { id: "IMG_1126", title: "Shader: IMG_1126", layers: ["Background","Chrome Exhaust","Suspension Spring","Carbon Fiber Plates"] },
+  { id: "IMG_1151", title: "Shader: IMG_1151", layers: ["Road","Motorcycle Parts","Trousers Leg","Foot And Shoe"] },
+  { id: "IMG_1183", title: "Shader: IMG_1183", layers: ["Roller Door","Posters","Scooter"] },
+  { id: "IMG_1185", title: "Shader: IMG_1185", layers: ["Wooden Floor","Main Body Wrapped","Front Wheel","Back Part Wrapping"] },
+  { id: "IMG_1213", title: "Shader: IMG_1213", layers: ["Background","Golden Frame","Scene Sky","Scene Mountain","Scene Ocean","Scene Boat","Scene Balcony"] },
+  { id: "IMG_1240", title: "Shader: IMG_1240", layers: ["Signboard","Text GIAI","Text NUOC MIA","Sugarcane Stalks","Sugarcane Leaves"] },
+  { id: "IMG_1241", title: "Shader: IMG_1241", layers: ["Ground","Chair","License Plate","Vignette"] },
+  { id: "IMG_1276", title: "Shader: IMG_1276", layers: ["Walls","Terracotta Roof","Courtyard Tarp","Railings","Tree","Falling Leaves","Shadows"] },
+  { id: "IMG_1300", title: "Shader: IMG_1300", layers: ["Background","Vest Body","Pouches","Arm Attachments","Collar","Shadows"] },
+  { id: "IMG_1301", title: "Shader: IMG_1301", layers: ["Sky","Flag"] },
+  { id: "IMG_1306", title: "Shader: IMG_1306", layers: ["Background Road","Metal Frame","Blue Cloth","Plastic Bags","Shadows"] },
+  { id: "IMG_1308", title: "Shader: IMG_1308", layers: ["Background","Head","Kite Garment","Shading","Text Forbes"] },
+  { id: "IMG_1309", title: "Shader: IMG_1309", layers: ["Background","Kite","Kite Tail","Shadows"] },
+  { id: "IMG_1323", title: "Shader: IMG_1323", layers: ["Sign Box","Text A LOC","Text CHAO LONG","Tree Bark","Neon Reflections"] },
+  { id: "IMG_1333", title: "Shader: IMG_1333", layers: ["Background","Hood","Raincoat","Hands","Shoes","Floor"] },
+  { id: "IMG_1348", title: "Shader: IMG_1348", layers: ["Background Walls","God Rays","Pillar","Headpiece","Veil And Emblem"] },
+  { id: "IMG_1399", title: "Shader: IMG_1399", layers: ["Store Interior","Checkered Floor","Main Subject Torso","Skin Arms Neck","Shorts","Bare Legs","Head","Phone"] },
+  { id: "IMG_1415", title: "Shader: IMG_1415", layers: ["Runway Background","Model Shared Features","Model Left","Model Center","Model Right"] },
+  { id: "IMG_1426", title: "Shader: IMG_1426", layers: ["Sky","Clouds","Birds","Rocks","Plants","Vignette"] },
+  { id: "IMG_1449", title: "Shader: IMG_1449", layers: ["Mosaic Wall","Gold Frame","Padding","Wood Frame","Inside Wall"] },
+  { id: "IMG_1621", title: "Shader: IMG_1621", layers: ["Background","Floor","Wood Rack","Chair Table","Motorcycle"] },
+  { id: "IMG_1644", title: "Shader: IMG_1644", layers: ["Background","Text Elements","Top Impact","Bottom Impact","Hardhat","Family Group"] },
+  { id: "IMG_1663", title: "Shader: IMG_1663", layers: ["Sign Area","Pavement","Decorative Iron Gate","Red Warning Sign"] },
+  { id: "IMG_1714", title: "Shader: IMG_1714", layers: ["Storefront Alley","White Wall","Decorative Vent Block"] },
+  { id: "IMG_1718", title: "Shader: IMG_1718", layers: ["Background","Iron Gate","House Sign","Plant","Vines Leaves"] },
+  { id: "IMG_1720", title: "Shader: IMG_1720", layers: ["Background","Ground Path","Right Wall Column","White Gate Structure","Top Foliage","Motorcycle"] },
+  { id: "IMG_1721", title: "Shader: IMG_1721", layers: ["Background Wall","Bottom Stone","Top Trim","Strep Text","Cartoon Character"] },
+  { id: "IMG_1725", title: "Shader: IMG_1725", layers: ["Storefront Structure","Left Display Panel","Upper Display Case","Lower Display Case","Curvy Wooden Dividers","Lower Items"] },
+  { id: "IMG_1847", title: "Shader: IMG_1847", layers: ["Background","Carved Symbol","Top Louvers","Bottom Surface"] },
+  { id: "IMG_2148", title: "Shader: IMG_2148", layers: ["Sky","Road","Buildings","Power Lines","Scooter Rider","Bundles"] },
+  { id: "IMG_2249", title: "Shader: IMG_2249", layers: ["Ceiling","Lattice Structure","Side Walls"] },
+  { id: "IMG_2250", title: "Shader: IMG_2250", layers: ["Ceiling","Stone Base","Lattice Wall","Side Pillars"] },
+  { id: "IMG_2263", title: "Shader: IMG_2263", layers: ["Background","Ground","Blue Pillar","Blue Gate Structure","Fence"] },
+  { id: "IMG_2450", title: "Shader: IMG_2450", layers: ["Background","Head Structure","Label Texts"] },
+  { id: "IMG_2477", title: "Shader: IMG_2477", layers: ["Background","Top Certificate","Bottom Certificate"] },
+  { id: "IMG_2586", title: "Shader: IMG_2586", layers: ["Background","Table Benches"] },
+  { id: "IMG_2700", title: "Shader: IMG_2700", layers: ["Background","Trash Bin","Main Signboard","Sign Frame Cart"] },
+  { id: "IMG_2703", title: "Shader: IMG_2703", layers: ["Background","Fibonacci Trend Lines","Horizontal Price Levels","Candlesticks","Right Sidebar"] },
+  { id: "IMG_2745", title: "Shader: IMG_2745", layers: ["Background","Lantern Wire","Lantern","Tassel"] },
+  { id: "IMG_2768", title: "Shader: IMG_2768", layers: ["Altar Cloth","Floor","Feet"] },
+  { id: "IMG_2773", title: "Shader: IMG_2773", layers: ["Wall Base","Awning","Symbol","Leaves Overlay"] },
+  { id: "IMG_2982", title: "Shader: IMG_2982", layers: ["Background","Shrine Structure","Floor Shadow"] },
+  { id: "IMG_3105", title: "Shader: IMG_3105", layers: ["Sky","Roof Behind","Cat","Main Wall","Exposed Brick"] },
+  { id: "IMG_3714", title: "Shader: IMG_3714", layers: ["Asphalt","Arrow Shape","Feet Clothes"] },
+  { id: "IMG_3922", title: "Shader: IMG_3922", layers: ["Background","Text Letters","Food Picture"] },
+  { id: "IMG_4080", title: "Shader: IMG_4080", layers: ["Fabric","Red Symbols","Wood Slats","Ground"] },
+  { id: "IMG_4742", title: "Shader: IMG_4742", layers: ["Street","Person","Bags","Motorcycle"] },
+  { id: "IMG_4782", title: "Shader: IMG_4782", layers: ["Wall","Floor","Window","Table","Chair","Figure","Grid Borders"] },
+  { id: "IMG_4783", title: "Shader: IMG_4783", layers: ["Wall","Floor","TV","Plant","Furniture","Figure","Grid Borders"] },
+  { id: "IMG_4784", title: "Shader: IMG_4784", layers: ["Background","Blue Patterned Dress","Grey Suit","Maroon Dress","Black Floral Dress","Black Formal Ao Dai"] },
+  { id: "IMG_5181", title: "Shader: IMG_5181", layers: ["Concrete Background","Card"] },
+  { id: "IMG_5206", title: "Shader: IMG_5206", layers: ["Background","Left Sign","Golden Bat"] },
+  { id: "IMG_5211", title: "Shader: IMG_5211", layers: ["Background","Top Reflection","Leaf","Specular Highlight"] },
+  { id: "IMG_5212", title: "Shader: IMG_5212", layers: ["Sky","Green Building","Crane","White Building","Roof","Terrace Walls","Terrace Floor","Balustrade"] },
+  { id: "IMG_5214", title: "Shader: IMG_5214", layers: ["Background","Vase"] },
+  { id: "IMG_5215", title: "Shader: IMG_5215", layers: ["Background","Smoke","Object"] },
+  { id: "IMG_5225", title: "Shader: IMG_5225", layers: ["Image Center","Top Area","Bottom Area"] },
+  { id: "IMG_5251", title: "Shader: IMG_5251", layers: ["Fabric","Woman","Flowers","Hat"] },
+  { id: "IMG_5320", title: "Shader: IMG_5320", layers: ["Background","Tripod","Hanging Plant","Swinging Head","Swinging String"] },
+  { id: "IMG_5326", title: "Shader: IMG_5326", layers: ["Background","Sign","Leaves"] },
+  { id: "IMG_5346", title: "Shader: IMG_5346", layers: ["Banner","Background","Plants"] },
+  { id: "IMG_5506", title: "Shader: IMG_5506", layers: ["Top Section","Bottom Photo","Lasers","Foreground"] },
+  { id: "IMG_5517", title: "Shader: IMG_5517", layers: ["Ground","Pillar Base","Top Column","Decorative Tile"] },
+  { id: "IMG_5538", title: "Shader: IMG_5538", layers: ["Background","Motorcycle Wheel","Red Panel","Seat","Grab Rail"] },
+  { id: "IMG_5569", title: "Shader: IMG_5569", layers: ["Background","Rock Speaker","Speaker Holes","Logo","Cable"] },
+  { id: "IMG_6550", title: "Shader: IMG_6550", layers: ["Background","Roof","Symbols","Gate","Fence","Noise"] },
+  { id: "IMG_6551", title: "Shader: IMG_6551", layers: ["Wall","Railing","Window","Roof and Dragon"] },
+  { id: "IMG_6574", title: "Shader: IMG_6574", layers: ["Sky","Trees","Ground","Poles","Windows","Moto","Noise"] },
+  { id: "IMG_6609", title: "Shader: IMG_6609", layers: ["Background","Lattice Panels","Center Panel"] },
+  { id: "IMG_6693", title: "Shader: IMG_6693", layers: ["Shelves","Side Object","Figure","Shadow"] },
+  { id: "IMG_6694", title: "Shader: IMG_6694", layers: ["Shelves","Side Object","Figure","Shadow"] },
+  { id: "IMG_6695", title: "Shader: IMG_6695", layers: ["Background","Hat","Face","Torso","Arms","Pants","Shadow"] },
+  { id: "IMG_6697", title: "Shader: IMG_6697", layers: ["Panel","Torn Poster","Top Center Poster","Stickers"] },
+  { id: "IMG_6755", title: "Shader: IMG_6755", layers: ["Background","Shadow","Cutout","Vignette"] },
+  { id: "IMG_6786", title: "Shader: IMG_6786", layers: ["Background","Ticket","Hand"] },
+  { id: "IMG_6793", title: "Shader: IMG_6793", layers: ["Background","Casing","Screen","Scrolling Content"] },
+  { id: "IMG_6876", title: "Shader: IMG_6876", layers: ["Background","Protein","Zoom Circles","Lines","Vignette"] },
+  { id: "IMG_6994", title: "Shader: IMG_6994", layers: ["Floor","Wall","Figure","Vignette"] },
+  { id: "IMG_7211", title: "Shader: IMG_7211", layers: ["Background","Top Bar","Bottom Bar","Scroll Content"] },
+  { id: "IMG_7225", title: "Shader: IMG_7225", layers: ["Background","Box Base","Text NHANG","Text THAN TAI","Gold Seal"] },
+  { id: "IMG_7266", title: "Shader: IMG_7266", layers: ["Background","Character Shape","Mosaic"] },
+  { id: "IMG_7408", title: "Shader: IMG_7408", layers: ["Background","Blue Shirt","White Shirt","Star Badge"] },
+  { id: "IMG_7409", title: "Shader: IMG_7409", layers: ["Background","Background Garments","White Shirt","Blue Shirt"] },
+  { id: "IMG_7410", title: "Shader: IMG_7410", layers: ["Background","Shelves","Mannequin"] },
+  { id: "IMG_7680", title: "Shader: IMG_7680", layers: ["Sky","Building","String Lights","Red Lantern","Vignette"] },
+  { id: "IMG_7681", title: "Shader: IMG_7681", layers: ["Background","Temple Roof","Dragon","Vignette"] },
+  { id: "IMG_7682", title: "Shader: IMG_7682", layers: ["Wall","Window Grille","Railing","Dragon"] },
+  { id: "IMG_7683", title: "Shader: IMG_7683", layers: ["Background Courtyard","Temple Gate Header","Temple Gate Pillars","Temple Gate Grid","Red Chinese Characters","White Paper Sign","Vignette"] },
+  { id: "IMG_7684", title: "Shader: IMG_7684", layers: ["Background","Facade","Bottom Roof","Vignette"] },
+  { id: "IMG_7685", title: "Shader: IMG_7685", layers: ["Background Wall","Center Window","Balcony Railing","Bottom Red Section","Center Post","Vignette"] },
+  { id: "IMG_7686", title: "Shader: IMG_7686", layers: ["Background","Lotus Grate","Foreground Roof","Central Ornate Feature","Vignette"] },
+  { id: "IMG_7694", title: "Shader: IMG_7694", layers: ["Background","Green Door","Red Table","Chairs","Vignette"] },
+  { id: "IMG_9792", title: "Shader: IMG_9792", layers: ["Sky Trees","Wall Roof","Ground","Flowers Lamppost","Rock Cairn","Vignette"] },
+  { id: "IMG_9812", title: "Shader: IMG_9812", layers: ["Background Wood Panels","Left Objects","Bottom Surface","Center Wood Wheel Object","Vignette"] },
+  { id: "IMG_9813", title: "Shader: IMG_9813", layers: ["Background","Main Graphics","Text Opening Hours","Bottom Text Logos","Vignette"] }
 ];
 
 const PAT = ["grate (voice)", "mosaic (drums)", "paver (bass)", "keyboard (curb)",
@@ -818,6 +1064,9 @@ const PAT_COLOR = ["#aab2c0", "#2a3a6a", "#cdbb86", "#caa44a", "#3b5e3b", "#6f9b
 const INSTRUMENTS = [
   ["808 Sub / Kick", 7], ["Snare / Clap", 4], ["Hi-Hats", 6], ["Percussion / FX", 5],
   ["Synth Bass", 1], ["Keys / Pads", 3], ["Lead / Pluck", 2], ["Sampler / Strings", 8],
+  ["909 Kick", 21], ["909 Snare", 22], ["909 Clap", 23], ["909 Closed Hat", 24],
+  ["909 Open Hat", 25], ["909 Rimshot", 26], ["909 Tom Low", 27], ["909 Tom Mid", 28],
+  ["909 Tom High", 29], ["909 Ride", 30], ["909 Crash", 31],
 ];
 const FULL_NAMES = INSTRUMENTS.map(i => i[0]);
 const DEFAULT_NAMES = FULL_NAMES.slice();
@@ -827,6 +1076,7 @@ const DEFAULT_PATTERNS = ["cement","arrows","rings","blossom","grid","waves","sc
 
 let LAYERS = {};          // key -> {id, fileBase, name, url, title, label}
 let layerSearch = {};     // label -> key
+let activeLayerTab = "photos";
 const $ = (id) => document.getElementById(id);
 
 const state = {
@@ -846,18 +1096,42 @@ state.opacity = Array.from({length: state.channels}, () => 1);
 state.vol   = Array.from({length: state.channels}, () => 1);
 state.mute  = Array.from({length: state.channels}, () => 0);
 state.solo  = Array.from({length: state.channels}, () => 0);
+state.lock  = Array.from({length: state.channels}, () => 0);
 state.trackFx = Array.from({length: state.channels}, () => "");
 state.swing = 0; state.reverb = 0; state.master = 1;
 state.fx = {};
 let echoLevel = 0, fxFilter = 0;
 let strobeOn = false, tapeStop = false, tapeFactor = 1, stutterOn = false, stutterAnchor = 0, playAccum = 0;
 
-function hitPulse(c, s){ const i = c*state.steps + s; const A = state.adsr[c] ? state.adsr[c].a : 0.01;
-  if (A < 0.02){ pulses2d[i] = 1.0; rise2d[i] = 0; } else { pulses2d[i] = Math.max(pulses2d[i], 0.02); rise2d[i] = 1; } }
+let layerOffsetX = Array.from({length: 8}, () => 0.0);
+let layerOffsetY = Array.from({length: 8}, () => 0.0);
+let layerScale = Array.from({length: 8}, () => 1.0);
+let layerRotation = Array.from({length: 8}, () => 0.0);
+function randomizeLayerPlacement(c){
+  layerOffsetX[c] = (Math.random() - 0.5) * 1.65;
+  layerOffsetY[c] = (Math.random() - 0.5) * 1.65;
+  layerScale[c] = 0.35 + Math.random() * 1.85;
+  layerRotation[c] = (Math.random() - 0.5) * Math.PI * 2;
+}
+
+function hitPulse(c, s){ 
+  const i = c*state.steps + s; 
+  const A = state.adsr[c] ? state.adsr[c].a : 0.01;
+  if (A < 0.02){ pulses2d[i] = 1.0; rise2d[i] = 0; } else { pulses2d[i] = Math.max(pulses2d[i], 0.02); rise2d[i] = 1; }
+  
+  if (c < 8) {
+    randomizeLayerPlacement(c);
+  }
+}
 function visible(c){ const anySolo = state.solo.some(s=>s); return !state.mute[c] && (!anySolo || state.solo[c]); }
 let dragFrom = null;
 const ADSR_DEF = {a:0.01, d:0.1, s:0.7, r:0.3};
 const DEFAULTS = { pitch:0, noteLen:0.25, opacity:1, vis:1, mute:0, solo:0, swing:0, reverb:0, master:1, echo:0, bpm:120, filter:0 };
+
+let isDragging = false;
+let dragValue = 0;
+document.addEventListener("pointerup", () => isDragging = false);
+document.addEventListener("contextmenu", e => e.preventDefault());
 
 // ---------- WebGL ----------
 const canvas = $("glcanvas");
@@ -931,6 +1205,26 @@ const LAYER_HEADER = "precision highp float;\nuniform vec2 iResolution;\nuniform
 const PATTERN_HEADER = LAYER_HEADER + "float h2(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }\n";
 
 const layerTextures = {};   // id -> WebGLTexture (loaded) / WebGLProgram (builtin) / 'pending' / 'error'
+const layerUploadQueue = []; // {id, src:(ImageBitmap|HTMLImageElement), w, h} — drained 1/frame in loop()
+
+// Upload at most one decoded layer per frame so a rand touching many layers doesn't stack
+// several big texImage2D calls into a single frame (which stalls the GL pipeline → dropped frame).
+function processLayerUploads(){
+  if (!layerUploadQueue.length) return;
+  const job = layerUploadQueue.shift();
+  if (layerTextures[job.id] !== "pending"){ if (job.src.close) job.src.close(); return; } // superseded
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, job.src);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  layerTextures[job.id] = { tex, w: job.w, h: job.h };
+  if (job.src.close) job.src.close();
+}
 
 function compileLayer(id){
   if (!id || layerTextures[id]) return;
@@ -951,31 +1245,85 @@ function compileLayer(id){
     return;
   }
 
-  // Load photo cutout as texture (store dimensions for aspect-ratio-correct rendering)
+  // Check if it's a 6687 layer from window.FILE_GLOBALS
+  const src = window.FILE_GLOBALS && window.FILE_GLOBALS[L.fileBase];
+  if (src && L.fn) {
+    try {
+      const prog = gl.createProgram();
+      gl.attachShader(prog, compile(gl.VERTEX_SHADER, VERT));
+      let fragCode = LAYER_HEADER + "\n" + src + `\nvoid main(){ vec2 uv = gl_FragCoord.xy / iResolution.xy; vec4 c = ${L.fn}(uv); gl_FragColor = c; }`;
+      gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, fragCode));
+      gl.linkProgram(prog);
+      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+      layerTextures[id] = prog;
+    } catch (e) { console.error("layer " + id, e); layerTextures[id] = "error"; }
+    return;
+  }
+
+  if (L.externalHtml) {
+    layerTextures[id] = "pending";
+    fetch(L.externalHtml).then(r => r.text()).then(html => {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, "text/html");
+      const fragScript = doc.getElementById("fragment-shader") || doc.querySelector("script[type='x-shader/x-fragment']");
+      if (!fragScript) throw new Error("No fragment shader found in " + L.externalHtml);
+      
+      const prog = gl.createProgram();
+      gl.attachShader(prog, compile(gl.VERTEX_SHADER, VERT));
+      
+      // Some external shaders define their own main(), others might just be snippets.
+      // We'll assume they define their own full shader if they are an external file,
+      // but we prepend PATTERN_HEADER just in case they need iResolution/iTime etc.
+      let src = fragScript.textContent;
+      if (!src.includes("void main")) {
+        // If it doesn't have main(), wrap it like built-ins
+        src = PATTERN_HEADER + "\n" + src;
+      }
+      
+      gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, src));
+      gl.linkProgram(prog);
+      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+      layerTextures[id] = prog;
+    }).catch(err => {
+      console.error("Failed to compile external layer " + id, err);
+      layerTextures[id] = "error";
+    });
+    return;
+  }
+
+  // Load photo cutout as texture. Decode OFF the main thread (createImageBitmap) and hand the
+  // result to the staggered upload queue, so neither the decode nor the GPU upload stalls a frame.
   layerTextures[id] = "pending";
-  const img = new Image();
-  img.onload = () => {
-    const tex = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, tex);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    layerTextures[id] = { tex, w: img.naturalWidth, h: img.naturalHeight };
-  };
-  img.onerror = () => {
-    console.error("Failed to load texture for cutout layer: " + L.url);
-    layerTextures[id] = "error";
-  };
-  img.src = L.url;
+  if (window.createImageBitmap && window.fetch){
+    const CAP = 1600;   // cap decoded size so a full-res phone cutout doesn't stall the GPU upload
+    fetch(L.url)
+      .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.blob(); })
+      .then(async blob => {
+        let bm = await createImageBitmap(blob, { imageOrientation: "none" });
+        const big = Math.max(bm.width, bm.height);
+        if (big > CAP){
+          const s = CAP / big;
+          const rw = Math.max(1, Math.round(bm.width * s)), rh = Math.max(1, Math.round(bm.height * s));
+          const rbm = await createImageBitmap(blob, { imageOrientation: "none", resizeWidth: rw, resizeHeight: rh, resizeQuality: "medium" });
+          bm.close(); bm = rbm;
+        }
+        layerUploadQueue.push({ id, src: bm, w: bm.width, h: bm.height });
+      })
+      .catch(err => { console.error("Failed to load cutout layer: " + L.url, err); layerTextures[id] = "error"; });
+  } else {
+    const img = new Image();   // fallback: still defers upload to the queue
+    img.onload = () => layerUploadQueue.push({ id, src: img, w: img.naturalWidth, h: img.naturalHeight });
+    img.onerror = () => { console.error("Failed to load texture for cutout layer: " + L.url); layerTextures[id] = "error"; };
+    img.src = L.url;
+  }
 }
 
 function loadLayersManifest() {
-  return new Promise(resolve => {
+  let tagRenames = {}; try { tagRenames = JSON.parse(localStorage.getItem("layerTagRenames") || "{}"); } catch (e) {}
+  const dispTag = (t) => tagRenames[String(t).toLowerCase()] || t;
+  return new Promise(async resolve => {
     const dl = document.createElement("datalist"); dl.id = "layerlist";
+    const BATCH = window.LAYER_BATCH || {};
     
     // Clear option
     { const s = "▪ default (lane element)  none clear reset"; layerSearch[s] = "__clear__";
@@ -988,6 +1336,36 @@ function loadLayersManifest() {
       const s = label + "  pattern default builtin " + name; layerSearch[s] = key;
       const opt = document.createElement("option"); opt.value = s; dl.appendChild(opt);
     });
+
+    // Fetch external GLSL layers from ../index.html
+    try {
+      const resp = await fetch('../index.html');
+      const htmlText = await resp.text();
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(htmlText, "text/html");
+      const links = Array.from(doc.querySelectorAll('a[href]'));
+      
+      const hs = `──────  GLSL Shaders  ──────`;
+      layerSearch[hs] = "__hdr__";
+      const ho = document.createElement("option"); ho.value = hs; dl.appendChild(ho);
+      
+      links.forEach(a => {
+        const href = a.getAttribute('href');
+        if (!href.endsWith('.html') || href === 'index.html' || href === 'boilerplate.html' || href.includes('moodboard_htmls/')) return;
+        
+        const name = href.replace('.html', '');
+        const key = "glsl:" + name;
+        const label = "❖ GLSL · " + name;
+        
+        LAYERS[key] = { id: key, externalHtml: '../' + href, name: name, url: null, title: label, label: label };
+        
+        const s = label + "  external glsl shader";
+        layerSearch[s] = key;
+        const opt = document.createElement("option"); opt.value = s; dl.appendChild(opt);
+      });
+    } catch (err) {
+      console.warn("Failed to load external GLSL layers:", err);
+    }
     
     // Cutout photo layers
     CUTOUT_PHOTOS.forEach(photo => {
@@ -1009,6 +1387,40 @@ function loadLayersManifest() {
         const opt = document.createElement("option"); opt.value = s; dl.appendChild(opt);
       });
     });
+
+    // 6687 objects, grouped by category
+    const CAT = window.LAYER_CATEGORY || {};
+    const groups = { background: [], patterns: [], objects: [], misc: [] };
+    for (const [fileBase, layerNames] of Object.entries(window.LAYER_SOURCES || {})) {
+      const meta = (window.LAYER_METADATA && window.LAYER_METADATA[fileBase]) || { layers: [] };
+      layerNames.forEach((layerName) => {
+        const isImg = fileBase.startsWith("IMG_");
+        const id = (isImg ? "glsl_obj:" : "") + fileBase + "#" + layerName;
+        
+        const layerMeta = meta.layers.find(l => l.name.replace(/\s+/g, '') === layerName) || {};
+        const nameStr = layerMeta.name || layerName;
+        const keywords = (layerMeta.keywords || []).map(k => String(k).toLowerCase());
+        const dispTag = (t) => tagRenames[String(t).toLowerCase()] || t;
+        const shownTags = keywords.map(dispTag);
+        
+        const label = "❖ GLSL · " + fileBase + " · " + nameStr;
+        const o = { id, fileBase, fn: "layer_" + layerName, url: null,
+          title: (meta.title || fileBase) + " - " + nameStr, tags: shownTags, label };
+        LAYERS[o.id] = o;
+        
+        const cat = CAT[fileBase + "#" + layerName] || "misc";
+        const s = label + "  " + o.title + "  " + [...new Set([...shownTags, ...keywords])].join(" ") + "  " + cat + "  " + (BATCH[fileBase] || "");
+        layerSearch[s] = o.id;
+        (groups[cat] || groups.misc).push(s);
+      });
+    }
+
+    [["background","BACKGROUND"],["patterns","PATTERNS"],["objects","OBJECTS"],["misc","MISC"]].forEach(([k,lab]) => {
+      const items = groups[k]; if (!items.length) return;
+      const hs = "──────  " + lab + " (" + items.length + ")  ──────"; layerSearch[hs] = "__hdr__";
+      const ho = document.createElement("option"); ho.value = hs; dl.appendChild(ho);
+      items.sort().forEach(s => { const opt = document.createElement("option"); opt.value = s; dl.appendChild(opt); });
+    });
     
     document.body.appendChild(dl);
     resolve();
@@ -1017,6 +1429,20 @@ function loadLayersManifest() {
 
 const ATLAS_COLS = 4, ATLAS_ROWS = 2;
 let TILE_W = 0, TILE_H = 0, atlasTex = null, atlasFBO = null;
+let feedbackTex = null, feedbackW = 0, feedbackH = 0;
+function ensureFeedbackTexture(){
+  const w = Math.max(2, canvas.width), h = Math.max(2, canvas.height);
+  if (feedbackTex && feedbackW === w && feedbackH === h) return;
+  feedbackW = w; feedbackH = h;
+  if (feedbackTex) gl.deleteTexture(feedbackTex);
+  feedbackTex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, feedbackTex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, feedbackW, feedbackH, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+}
 function ensureAtlas(){
   const tw = Math.max(2, canvas.width), th = Math.max(2, canvas.height);
   if (tw === TILE_W && th === TILE_H && atlasTex) return;
@@ -1100,7 +1526,7 @@ function renderLayers(now){
 
 // ---------- Audio synth ----------
 let actx = null, noiseBuf = null, master = null, outGain = null, gateGain = null, fxFilterNode = null, fxDelay = null, fxDelayMix = null, revMix = null;
-let eqLo = null, eqMid = null, eqHi = null, shaper = null, tremGain = null, tremDepth = null, tremLFO = null;
+let eqLo = null, eqMid = null, eqHi = null, shaper = null, tremGain = null, tremDepth = null, tremLFO = null, flangerDelay = null, flangerMix = null, flangerFb = null, flangerLFO = null, flangerDepth = null, phaserNode = null, phaserLFO = null, phaserDepth = null;
 function distCurve(a){ const k = a*120, n = 256, c = new Float32Array(n);
   for (let i=0;i<n;i++){ const x = i/(n-1)*2-1; c[i] = (3+k)*x*0.3 / (1 + k*Math.abs(x)); } return c; }
 function makeIR(){
@@ -1126,23 +1552,33 @@ function initAudio(){
   eqLo = actx.createBiquadFilter(); eqLo.type="lowshelf"; eqLo.frequency.value=120;
   eqMid = actx.createBiquadFilter(); eqMid.type="peaking"; eqMid.frequency.value=1000; eqMid.Q.value=0.8;
   eqHi = actx.createBiquadFilter(); eqHi.type="highshelf"; eqHi.frequency.value=4000;
+  phaserNode = actx.createBiquadFilter(); phaserNode.type="allpass"; phaserNode.frequency.value=1200; phaserNode.Q.value=0.8;
+  flangerDelay = actx.createDelay(0.05); flangerDelay.delayTime.value = 0.004;
+  flangerMix = actx.createGain(); flangerMix.gain.value = 0;
+  flangerFb = actx.createGain(); flangerFb.gain.value = 0.15;
+  flangerLFO = actx.createOscillator(); flangerLFO.type = "sine"; flangerLFO.frequency.value = 0.23;
+  flangerDepth = actx.createGain(); flangerDepth.gain.value = 0; flangerLFO.connect(flangerDepth); flangerDepth.connect(flangerDelay.delayTime); flangerLFO.start();
+  phaserLFO = actx.createOscillator(); phaserLFO.type = "sine"; phaserLFO.frequency.value = 0.18;
+  phaserDepth = actx.createGain(); phaserDepth.gain.value = 0; phaserLFO.connect(phaserDepth); phaserDepth.connect(phaserNode.frequency); phaserLFO.start();
   shaper = actx.createWaveShaper(); shaper.oversample="2x"; shaper.curve = distCurve(state.fx.distort||0);
   tremGain = actx.createGain(); tremGain.gain.value=1;
   tremDepth = actx.createGain(); tremDepth.gain.value=(state.fx.tremolo||0)*0.5;
   tremLFO = actx.createOscillator(); tremLFO.type="sine"; tremLFO.frequency.value=6; tremLFO.connect(tremDepth); tremDepth.connect(tremGain.gain); tremLFO.start();
   
   master.connect(fxFilterNode); fxFilterNode.connect(eqLo); eqLo.connect(eqMid); eqMid.connect(eqHi);
-  eqHi.connect(shaper); shaper.connect(tremGain); tremGain.connect(outGain); outGain.connect(gateGain); gateGain.connect(actx.destination);
+  eqHi.connect(phaserNode); phaserNode.connect(shaper); phaserNode.connect(flangerDelay); flangerDelay.connect(flangerFb); flangerFb.connect(flangerDelay); flangerDelay.connect(flangerMix); flangerMix.connect(shaper); shaper.connect(tremGain); tremGain.connect(outGain); outGain.connect(gateGain); gateGain.connect(actx.destination);
   fxFilterNode.connect(fxDelay); fxDelay.connect(fb); fb.connect(fxDelay); fxDelay.connect(fxDelayMix); fxDelayMix.connect(outGain);
   fxFilterNode.connect(conv); conv.connect(revMix); revMix.connect(outGain);
   
   applyFilter(fxFilter); applyEcho(echoLevel);
-  applyEQ(); applyDistort(state.fx.distort||0); applyTremolo(state.fx.tremolo||0);
+  applyEQ(); applyDistort(state.fx.distort||0); applyTremolo(state.fx.tremolo||0); applyFlanger(state.fx.flanger||0); applyPhaser(state.fx.phaser||0);
 }
 function applyReverb(v){ if (revMix) revMix.gain.setTargetAtTime(v, actx.currentTime, 0.05); }
 function applyEQ(){ if(!eqLo) return; eqLo.gain.value=(state.fx.lo||0)*15; eqMid.gain.value=(state.fx.mid||0)*15; eqHi.gain.value=(state.fx.hi||0)*15; }
 function applyDistort(v){ if(shaper) shaper.curve = distCurve(v||0); }
 function applyTremolo(v){ if(tremDepth) tremDepth.gain.value = (v||0)*0.5; }
+function applyFlanger(v){ if(!flangerDelay || !flangerMix) return; v = v || 0; flangerDelay.delayTime.setTargetAtTime(0.0015 + v*0.006, actx.currentTime, 0.03); flangerMix.gain.setTargetAtTime(v*0.85, actx.currentTime, 0.03); if(flangerFb) flangerFb.gain.setTargetAtTime(0.08 + v*0.72, actx.currentTime, 0.03); if(flangerDepth) flangerDepth.gain.setTargetAtTime(v*0.0065, actx.currentTime, 0.03); if(flangerLFO) flangerLFO.frequency.setTargetAtTime(0.18 + v*1.4, actx.currentTime, 0.05); }
+function applyPhaser(v){ if(!phaserNode) return; v = v || 0; phaserNode.frequency.setTargetAtTime(350 + v*1800, actx.currentTime, 0.04); phaserNode.Q.setTargetAtTime(0.7 + v*14.0, actx.currentTime, 0.04); if(phaserDepth) phaserDepth.gain.setTargetAtTime(v*1700, actx.currentTime, 0.04); if(phaserLFO) phaserLFO.frequency.setTargetAtTime(0.12 + v*1.1, actx.currentTime, 0.05); }
 function applyMaster(v){ if (outGain) outGain.gain.setTargetAtTime(v, actx.currentTime, 0.02); }
 function applyEnv(g, t, peak, dur, c){
   const e = state.adsr[c] || ADSR_DEF;
@@ -1166,14 +1602,18 @@ function applyFilter(v){
 function applyEcho(level){
   if (!fxDelay) return;
   fxDelay.delayTime.value = 60 / state.bpm / 2;
-  fxDelayMix.gain.setTargetAtTime(level * 0.6, actx.currentTime, 0.05);
+  fxDelayMix.gain.setTargetAtTime((level || 0) * 0.85, actx.currentTime, 0.05);
 }
-function blip(ch, scheduledTime){
+function blip(ch, scheduledTime, rollCopy=false){
   if (!actx) return;
   if (state.mute[ch]) return;
   if (state.solo.some(s => s) && !state.solo[ch]) return;
   const type = (state.inst[ch] !== undefined) ? state.inst[ch] : 0;
-  const semi = (state.pitch[ch] || 0) + (state.fx.trans || 0) + (state.fx.pitch || 0);   // + global transpose
+  const trackFxKey = state.trackFx[ch];
+  const trackFxVal = trackFxKey && state.fx[trackFxKey] !== undefined ? state.fx[trackFxKey] : 0;
+  const semi = (state.pitch[ch] || 0) + (state.fx.trans || 0) + (state.fx.pitch || 0)
+    + ((trackFxKey === "pitch" || trackFxKey === "trans") ? trackFxVal : 0)
+    + (state.fx.spiral || 0) * Math.sin(ch * 1.7) * 3.0;   // + global/track transpose
   const ft = (base) => base * Math.pow(2, semi / 12);
   const dur = Math.max(0.04, (state.noteLen[ch] || 0.25) * 4 * 60 / state.bpm);
   const t = scheduledTime !== undefined ? scheduledTime : actx.currentTime;
@@ -1185,8 +1625,49 @@ function blip(ch, scheduledTime){
     const f = actx.createBiquadFilter(); f.type = "bandpass"; f.frequency.value = cut; f.Q.value = q;
     src.connect(f); f.connect(g); return src;
   };
+  const noiseHP = (cut) => {
+    const src = actx.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
+    const f = actx.createBiquadFilter(); f.type = "highpass"; f.frequency.value = cut; f.Q.value = 0.7;
+    src.connect(f); f.connect(g); return src;
+  };
   let peak = 0.5, stop = t + dur + 0.1;
-  if (type === 7){
+  if (type === 21){
+    const o = actx.createOscillator(); o.type="sine"; o.connect(g);
+    o.frequency.setValueAtTime(ft(170), t); o.frequency.exponentialRampToValueAtTime(ft(47), t+0.16);
+    const click = noiseHP(5200);
+    peak = 1.0; stop = applyEnv(g, t, peak, Math.min(dur,0.55), ch); o.start(t); o.stop(stop+0.03); click.start(t); click.stop(t+0.022);
+  }
+  else if (type === 22){
+    const body = actx.createOscillator(); body.type="triangle"; body.frequency.value=ft(185); body.connect(g);
+    const s = noiseSrc(2300,0.9); peak=0.65; stop=applyEnv(g,t,peak,Math.min(dur,0.32),ch); body.start(t); body.stop(stop+0.04); s.start(t); s.stop(stop+0.02);
+  }
+  else if (type === 23){
+    peak=0.55; stop=applyEnv(g,t,peak,Math.min(dur,0.45),ch);
+    [0,0.012,0.025,0.041].forEach((off,i)=>{ const s=noiseHP(1200+i*260); s.start(t+off); s.stop(t+off+0.055); });
+  }
+  else if (type === 24){
+    const s=noiseHP(7600); peak=0.28; stop=applyEnv(g,t,peak,0.055,ch); s.start(t); s.stop(stop+0.01);
+  }
+  else if (type === 25){
+    const s=noiseHP(6200); peak=0.34; stop=applyEnv(g,t,peak,Math.min(dur,0.75),ch); s.start(t); s.stop(stop+0.02);
+  }
+  else if (type === 26){
+    const o=actx.createOscillator(); o.type="square"; o.frequency.value=ft(910); o.connect(g);
+    const s=noiseSrc(3400,1.5); peak=0.45; stop=applyEnv(g,t,peak,0.08,ch); o.start(t); o.stop(stop+0.02); s.start(t); s.stop(stop+0.02);
+  }
+  else if (type === 27 || type === 28 || type === 29){
+    const base = type===27 ? 115 : type===28 ? 165 : 235;
+    const o=actx.createOscillator(); o.type="sine"; o.connect(g); o.frequency.setValueAtTime(ft(base*1.45), t); o.frequency.exponentialRampToValueAtTime(ft(base), t+0.13);
+    peak=0.7; stop=applyEnv(g,t,peak,Math.min(dur,0.48),ch); o.start(t); o.stop(stop+0.03);
+  }
+  else if (type === 30){
+    [520,810,1210,1780,2460].forEach((f,i)=>{ const o=actx.createOscillator(); o.type="square"; o.frequency.value=ft(f); const og=actx.createGain(); og.gain.value=0.045/(i+1); o.connect(og); og.connect(g); o.start(t); o.stop(t+Math.min(dur,1.2)+0.2); });
+    const s=noiseHP(5000); peak=0.36; stop=applyEnv(g,t,peak,Math.min(dur,1.2),ch); s.start(t); s.stop(stop+0.03);
+  }
+  else if (type === 31){
+    const s=noiseHP(3600); peak=0.5; stop=applyEnv(g,t,peak,Math.min(dur,1.6),ch); s.start(t); s.stop(stop+0.05);
+  }
+  else if (type === 7){
     const o = actx.createOscillator(); o.type="sine"; o.connect(g);
     o.frequency.setValueAtTime(ft(140), t); o.frequency.exponentialRampToValueAtTime(ft(42), t+0.12);
     peak = 0.9; stop = applyEnv(g, t, peak, Math.min(dur,0.5), ch); o.start(t); o.stop(stop+0.05);
@@ -1214,9 +1695,80 @@ function blip(ch, scheduledTime){
     const o = actx.createOscillator(); o.type = (type===1)?"sine":"triangle"; o.frequency.value = ft(type===1?70:330); o.connect(g);
     peak = (type===1)?0.5:0.45; stop = applyEnv(g, t, peak, Math.min(dur,6.0), ch); o.start(t); o.stop(stop+0.05);
   }
+  const roll = state.fx.roll || 0;
+  if (!rollCopy && roll > 0.05){
+    const repeats = 1 + Math.floor(roll * 5);
+    const gap = Math.max(0.025, stepDur() * (0.5 - roll * 0.35));
+    for (let i=1; i<=repeats; i++) blip(ch, t + gap * i, true);
+  }
 }
 
-// ---------- MIDI Output ----------
+// ---------- MIDI output (notes + clock) ----------
+let midiOut = null, midiNotesOn = true, midiClockOn = true, midiClockTimer = null;
+const flashTimers = {};
+function flashButton(id, ms=120, delay=0){
+  const pulse = () => {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    btn.classList.remove("flash-orange");
+    void btn.offsetWidth; // restart CSS animation on every MIDI send
+    btn.classList.add("flash-orange");
+    if (flashTimers[id]) clearTimeout(flashTimers[id]);
+    flashTimers[id] = setTimeout(() => {
+      btn.classList.remove("flash-orange");
+      flashTimers[id] = null;
+    }, ms);
+  };
+  if (delay > 0) setTimeout(pulse, delay);
+  else pulse();
+}
+async function ensureMidi({silent=false} = {}){
+  if (midiOut !== null) return midiOut;
+  if (!navigator.requestMIDIAccess){ if (!silent) alert("Web MIDI not supported in this browser."); return null; }
+  try { const a = await navigator.requestMIDIAccess(); const outs = [...a.outputs.values()];
+    midiOut = outs[0] || null; if (!midiOut && !silent) alert("No MIDI output device found."); return midiOut;
+  } catch(e){ if (!silent) alert("MIDI access denied."); return null; }
+}
+function midiNote(ch, scheduledTime){
+  if (!midiNotesOn) return;
+  if (state.mute[ch]) return;
+  if (state.solo.some(s => s) && !state.solo[ch]) return;
+  
+  const note = Math.max(0, Math.min(127, 36 + (state.pitch[ch]||0) + (state.fx.trans||0) + (state.fx.pitch||0) + (ch*2)));
+  const c = ch & 15; const durMs = Math.max(40, (state.noteLen[ch]||0.25) * 4 * 60000 / state.bpm);
+  const now = scheduledTime !== undefined ? scheduledTime : performance.now();
+
+  if (!midiOut) return;
+  try {
+    midiOut.send([0x90 | c, note, 100], now);
+    midiOut.send([0x80 | c, note, 0], now + durMs);   // scheduled note-off
+    flashButton("toggleMidiNotes", 140, Math.max(0, now - performance.now()));
+  } catch(e){}
+}
+let midiClockTicks = 0;
+function clockTick(){
+  if (midiClockOn && midiOut) {
+    try {
+      midiOut.send([0xF8]);
+      if (midiClockTicks % 24 === 0) flashButton("toggleMidiClock", 140);   // beam once per quarter-note
+      midiClockTicks++;
+    } catch(e){}
+  }
+}
+function startMidiClock(sendStart){
+  if (!midiClockOn || !state.playing) return;
+  if (midiClockTimer) clearInterval(midiClockTimer);
+  midiClockTicks = 0;
+  if (sendStart && midiOut) { midiOut.send([0xFA]); flashButton("toggleMidiClock", 160); }                            // MIDI Start
+  midiClockTimer = setInterval(clockTick, 60000 / state.bpm / 24);  // 24 PPQN
+}
+function stopMidiClock(sendStop){
+  if (midiClockTimer){ clearInterval(midiClockTimer); midiClockTimer = null; }
+  if (sendStop && midiOut) { midiOut.send([0xFC]); flashButton("toggleMidiClock", 160); }                  // MIDI Stop
+}
+
+/*
+// ---------- OLD MIDI (Backup) ----------
 let midiAccess = null;
 let midiOutputs = [];
 let nextMidiClockTime = 0;
@@ -1236,23 +1788,22 @@ function initMidi() {
 }
 function fireMidi(ch, scheduledTime) {
   if (!sendMidiNotes) return;
-  if (state.inst[ch] !== 7) return; // 7 = 808 Sub / Kick
   if (state.mute[ch]) return;
   if (state.solo.some(s => s) && !state.solo[ch]) return;
   if (midiOutputs.length === 0) return;
-  
   const baseNote = 60 + (state.pitch[ch] || 0) + (state.fx.trans || 0) + (state.fx.pitch || 0);
   const note = Math.max(0, Math.min(127, baseNote));
   const velocity = Math.max(0, Math.min(127, Math.round((state.vol[ch] !== undefined ? state.vol[ch] : 1) * 127)));
-  
   if (velocity === 0) return;
-  
+  const btn = document.getElementById("toggleMidiNotes");
+  if (btn) {
+    btn.style.textShadow = "0 0 10px #0f0, 0 0 20px #0f0";
+    setTimeout(() => btn.style.textShadow = "", 100);
+  }
   const durMs = Math.max(40, (state.noteLen[ch] || 0.25) * 4 * 60000 / state.bpm);
   const now = scheduledTime !== undefined ? scheduledTime : performance.now();
-  
   midiOutputs.forEach(out => {
     try {
-      // Broadcast on all 16 MIDI channels
       for (let mc = 0; mc < 16; mc++) {
         out.send([0x90 + mc, note, velocity], now);
         out.send([0x80 + mc, note, 0], now + durMs);
@@ -1262,6 +1813,7 @@ function fireMidi(ch, scheduledTime) {
     }
   });
 }
+*/
 
 // ---------- Audio-file reactivity ----------
 let analyser = null, bins = null, audioEl = null, fileLoaded = false;
@@ -1294,7 +1846,7 @@ function updateBands(){
 }
 
 // ---------- reusable knob ----------
-function makeKnob({label, min=0, max=1, value=0, def=0, fmt, onInput}){
+function makeKnob({label, min=0, max=1, value=0, def=0, fmt, onInput, isLocked}){
   const wrap = document.createElement("div"); wrap.className = "knob"; wrap.draggable = false;
   const dial = document.createElement("div"); dial.className = "dial";
   const cap  = document.createElement("div"); cap.className = "klabel"; cap.textContent = label;
@@ -1310,11 +1862,11 @@ function makeKnob({label, min=0, max=1, value=0, def=0, fmt, onInput}){
   }
   set(value, false);
   let drag=false, sy=0, sv=0;
-  dial.addEventListener("pointerdown", e => { drag=true; sy=e.clientY; sv=v; dial.setPointerCapture(e.pointerId); e.preventDefault(); });
-  dial.addEventListener("pointermove", e => { if(!drag) return; set(sv + (sy-e.clientY)/120*(max-min), true); });
+  dial.addEventListener("pointerdown", e => { if(isLocked && isLocked()) return; drag=true; sy=e.clientY; sv=v; dial.setPointerCapture(e.pointerId); e.preventDefault(); });
+  dial.addEventListener("pointermove", e => { if(isLocked && isLocked()) return; if(!drag) return; set(sv + (sy-e.clientY)/120*(max-min), true); });
   dial.addEventListener("pointerup",   () => { drag=false; });
-  wrap.addEventListener("contextmenu", e => { e.preventDefault(); set(def, true); });
-  dial.addEventListener("dblclick",    () => set(def, true));
+  wrap.addEventListener("contextmenu", e => { e.preventDefault(); if(isLocked && isLocked()) return; set(def, true); });
+  dial.addEventListener("dblclick",    () => { if(isLocked && isLocked()) return; set(def, true); });
   return { el: wrap, set: nv => set(nv, false), get: () => v };
 }
 function bindReset(el, def, apply){
@@ -1334,13 +1886,23 @@ function buildGrid(){
       }
       setActiveChannel(c);
     };
-    lane.draggable = true;
+    // Draggable only while grabbing the grip — a row full of inputs/knobs otherwise suppresses
+    // native dragstart (most visible on the top lane). Grip pointerdown arms it; reset after.
+    lane.draggable = false;
     lane.addEventListener("dragstart", () => { dragFrom = c; lane.style.opacity = "0.4"; });
-    lane.addEventListener("dragend",   () => { lane.style.opacity = ""; document.querySelectorAll(".lane.dragover").forEach(e=>e.classList.remove("dragover")); });
+    lane.addEventListener("dragend",   () => { lane.draggable = false; lane.style.opacity = ""; document.querySelectorAll(".lane.dragover").forEach(e=>e.classList.remove("dragover")); });
     lane.addEventListener("dragover",  (e) => { e.preventDefault(); lane.classList.add("dragover"); });
     lane.addEventListener("dragleave", () => lane.classList.remove("dragover"));
-    lane.addEventListener("drop",      (e) => { e.preventDefault(); lane.classList.remove("dragover"); if (dragFrom!==null && dragFrom!==c) reorderChannel(dragFrom, c); dragFrom = null; });
+    lane.addEventListener("drop",      (e) => {
+      e.preventDefault();
+      lane.classList.remove("dragover");
+      if (state.lock[c] || (dragFrom !== null && state.lock[dragFrom])) { dragFrom = null; return; }
+      if (dragFrom!==null && dragFrom!==c) reorderChannel(dragFrom, c);
+      dragFrom = null;
+    });
     const grip = document.createElement("span"); grip.className = "grip"; grip.textContent = "⋮⋮"; grip.title = "drag to reorder";
+    grip.addEventListener("pointerdown", () => { if (!state.lock[c]) lane.draggable = true; });
+    grip.addEventListener("pointerup",   () => { lane.draggable = false; });
     const sw = document.createElement("div"); sw.className = "swatch"; sw.style.background = PAT_COLOR[c%NP];
     
     const nm = document.createElement("select"); nm.className = "nm nmsel"; nm.title = "instrument / track name";
@@ -1360,29 +1922,58 @@ function buildGrid(){
     solo.onclick = () => { state.solo[c] = state.solo[c]?0:1; solo.classList.toggle("on", !!state.solo[c]); save(); };
     bindReset(solo, DEFAULTS.solo, v => { state.solo[c]=v; solo.classList.toggle("on", !!v); });
     
-    const kVol = makeKnob({label:"VOL", value:(state.vol[c]!==undefined?state.vol[c]:1), def:1, fmt:v=>Math.round(v*100)+"%", onInput:v=>{state.vol[c]=v;save();}});
-    const adsr = state.adsr[c] || (state.adsr[c] = {...ADSR_DEF});
-    const kA = makeKnob({label:"A", value:adsr.a, def:ADSR_DEF.a, onInput:v=>{adsr.a=v;save();}});
-    const kPit = makeKnob({label:"PIT", min:-24, max:24, value:state.pitch[c]||0, def:DEFAULTS.pitch, fmt:v=>Math.round(v), onInput:v=>{state.pitch[c]=Math.round(v);save();}});
-    const kD = makeKnob({label:"D", value:adsr.d, def:ADSR_DEF.d, onInput:v=>{adsr.d=v;save();}});
-    const kS = makeKnob({label:"S", value:adsr.s, def:ADSR_DEF.s, onInput:v=>{adsr.s=v;save();}});
-    const kR = makeKnob({label:"R", value:adsr.r, def:ADSR_DEF.r, onInput:v=>{adsr.r=v;save();}});
-    const kOp = makeKnob({label:"OP", value:(state.opacity[c]!==undefined?state.opacity[c]:1), def:DEFAULTS.opacity, onInput:v=>{state.opacity[c]=v;save();}});
+    const lockBtn = document.createElement("button"); lockBtn.className = "ms lock" + (state.lock[c]?" on":""); lockBtn.textContent = "🔒"; lockBtn.title = "lock track"; lockBtn.draggable = false;
+    lockBtn.onclick = () => { state.lock[c] = state.lock[c]?0:1; lockBtn.classList.toggle("on", !!state.lock[c]); save(); buildGrid(); };
+    bindReset(lockBtn, 0, v => { state.lock[c]=v; lockBtn.classList.toggle("on", !!v); save(); buildGrid(); });
     
-    const fxBtn = document.createElement("button"); fxBtn.className = "ms fx"; fxBtn.textContent = "⚙"; fxBtn.title = "ADSR + pitch + opacity"; fxBtn.draggable = false;
-    const fxPop = document.createElement("div"); fxPop.className = "fxpop";
-    [kA, kPit, kD, kS, kR, kOp].forEach(k => fxPop.appendChild(k.el));
+    const isLocked = () => !!state.lock[c];
+    const kVol = makeKnob({label:"VOL", value:(state.vol[c]!==undefined?state.vol[c]:1), def:1, fmt:v=>Math.round(v*100)+"%", onInput:v=>{state.vol[c]=v;save();}, isLocked});
+    const adsr = state.adsr[c] || (state.adsr[c] = {...ADSR_DEF});
+    const kA = makeKnob({label:"A", value:adsr.a, def:ADSR_DEF.a, onInput:v=>{adsr.a=v;save();}, isLocked});
+    const kPit = makeKnob({label:"PIT", min:-24, max:24, value:state.pitch[c]||0, def:DEFAULTS.pitch, fmt:v=>Math.round(v), onInput:v=>{state.pitch[c]=Math.round(v);save();}, isLocked});
+    const kD = makeKnob({label:"D", value:adsr.d, def:ADSR_DEF.d, onInput:v=>{adsr.d=v;save();}, isLocked});
+    const kS = makeKnob({label:"S", value:adsr.s, def:ADSR_DEF.s, onInput:v=>{adsr.s=v;save();}, isLocked});
+    const kR = makeKnob({label:"R", value:adsr.r, def:ADSR_DEF.r, onInput:v=>{adsr.r=v;save();}, isLocked});
+
+    const fxBtn = document.createElement("button"); fxBtn.className = "ms fx"; fxBtn.textContent = "⚙"; fxBtn.title = "ADSR + pitch (click to open/collapse)"; fxBtn.draggable = false;
+    const fxPop = document.createElement("div"); fxPop.className = "adsr-row";
+    [kVol, kA, kPit, kD, kS, kR].forEach(k => fxPop.appendChild(k.el));
     fxBtn.onclick = () => { const open = fxPop.classList.toggle("open"); fxBtn.classList.toggle("on", open); };
     
-    const fxslot = document.createElement("div"); fxslot.className = "fxslot" + (state.trackFx[c] ? " set" : "");
-    fxslot.textContent = state.trackFx[c] || "FX";
-    fxslot.title = "drop a master-FX knob here to apply it to this track · right-click clear";
+    const fxslot = document.createElement("div");
+    const renderFxSlot = () => {
+      fxslot.innerHTML = "";
+      const key = state.trackFx[c];
+      const sp = key && FX_SPEC.find(item => item.k === key);
+      fxslot.className = "fxslot" + (sp ? " set" : "");
+      fxslot.title = sp ? `${sp.label}: tweak this FX here; right-click clear` : "drop a master-FX knob here to apply it to this track";
+      if (!sp) { fxslot.textContent = "FX"; return; }
+      const val = fxCurrent(sp);
+      const mini = makeKnob({
+        label: sp.label,
+        min: sp.min !== undefined ? sp.min : 0,
+        max: sp.max !== undefined ? sp.max : 1,
+        value: val,
+        def: sp.def !== undefined ? sp.def : 0,
+        fmt: sp.fmt,
+        onInput: v => {
+          if (sp.wired) sp.set(v); else state.fx[sp.k] = v;
+          if (fxKnobs[sp.k]) fxKnobs[sp.k].set(v);
+          if (sp.k === "bpm") updateBpmFaderUI(v);
+          save();
+        },
+        isLocked
+      });
+      mini.el.draggable = false;
+      fxslot.appendChild(mini.el);
+    };
+    renderFxSlot();
     fxslot.addEventListener("dragover", e => { e.preventDefault(); fxslot.classList.add("over"); });
     fxslot.addEventListener("dragleave", () => fxslot.classList.remove("over"));
     fxslot.addEventListener("drop", e => { e.preventDefault(); fxslot.classList.remove("over");
-      const k = e.dataTransfer.getData("text/fx"); if(!k) return; state.trackFx[c]=k; fxslot.textContent=k; fxslot.classList.add("set"); save(); });
-    fxslot.addEventListener("contextmenu", e => { e.preventDefault(); state.trackFx[c]=""; fxslot.textContent="FX"; fxslot.classList.remove("set"); save(); });
-    
+      if (state.lock[c]) return;
+      const k = e.dataTransfer.getData("text/fx"); if(!k) return; state.trackFx[c]=k; renderFxSlot(); save(); });
+    fxslot.addEventListener("contextmenu", e => { e.preventDefault(); if (state.lock[c]) return; state.trackFx[c]=""; renderFxSlot(); save(); });    
     const gsel = document.createElement("input"); gsel.className = "lsel"; gsel.setAttribute("list", "layerlist");
     gsel.placeholder = "layer (click to choose)"; gsel.title = "graphic layer (replaces element) · right-click clear";
     gsel.value = state.layer[c] && LAYERS[state.layer[c]] ? LAYERS[state.layer[c]].label : "";
@@ -1396,7 +1987,28 @@ function buildGrid(){
       else { gsel.value = state.layer[c] && LAYERS[state.layer[c]] ? LAYERS[state.layer[c]].label : ""; return; }
       save();
     };
+    gsel.addEventListener("dragover", e => {
+      if (state.lock[c]) return;
+      if ([...e.dataTransfer.types].includes("text/layer")) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; }
+    });
+    gsel.addEventListener("drop", e => {
+      if (state.lock[c]) return;
+      const id = e.dataTransfer.getData("text/layer") || e.dataTransfer.getData("text/plain");
+      if (!id || !LAYERS[id]) return;
+      e.preventDefault();
+      state.layer[c] = id;
+      compileLayer(id);
+      gsel.value = LAYERS[id].label;
+      setActiveChannel(c);
+      save();
+    });
     bindReset(gsel, "", () => { state.layer[c] = ""; gsel.value = ""; });
+    
+    if (state.lock[c]) {
+      nm.disabled = true;
+      nsel.disabled = true;
+      gsel.disabled = true;
+    }
     
     const cells = document.createElement("div"); cells.className = "cells";
     cells.style.gridTemplateColumns = `repeat(${state.steps}, 1fr)`;
@@ -1406,18 +2018,50 @@ function buildGrid(){
       cell.style.color = PAT_COLOR[c%NP];
       if (state.grid[c*state.steps+s]) cell.classList.add("on");
       cell.dataset.c = c; cell.dataset.s = s;
-      cell.onclick = () => {
-        const i = c*state.steps+s; state.grid[i] = state.grid[i] ? 0 : 1;
-        cell.classList.toggle("on", !!state.grid[i]); save();
-      };
+      cell.addEventListener("pointerdown", (e) => {
+        if (state.lock[c]) return;
+        e.preventDefault();
+        const isRight = (e.button === 2 || e.buttons === 2);
+        const i = c*state.steps+s;
+        state.grid[i] = isRight ? 0 : 1;
+        cell.classList.toggle("on", !!state.grid[i]);
+        isDragging = true; dragValue = state.grid[i]; save();
+      });
+      cell.addEventListener("pointerenter", (e) => {
+        if (!isDragging || state.lock[c]) return;
+        const isRight = (e.buttons === 2);
+        const i = c*state.steps+s;
+        const targetVal = isRight ? 0 : 1;
+        if (state.grid[i] !== targetVal) {
+          state.grid[i] = targetVal; cell.classList.toggle("on", !!targetVal); save();
+        }
+      });
       cells.appendChild(cell);
     }
     
     lane.appendChild(grip);
-    lane.appendChild(sw); lane.appendChild(nm); lane.appendChild(mute); lane.appendChild(solo);
-    lane.appendChild(kVol.el); lane.appendChild(nsel); lane.appendChild(fxBtn); lane.appendChild(fxslot);
+    lane.appendChild(sw); lane.appendChild(nm); lane.appendChild(mute); lane.appendChild(solo); lane.appendChild(lockBtn);
+    lane.appendChild(nsel); lane.appendChild(fxBtn); lane.appendChild(fxslot);
+    lane.appendChild(fxPop);   // inline ADSR knob row (collapsed by default)
     lane.appendChild(gsel);
-    lane.appendChild(cells); lane.appendChild(fxPop); wrap.appendChild(lane);
+    lane.appendChild(cells); wrap.appendChild(lane);
+  }
+}
+
+// Lightweight in-place refresh — updates only mutable visuals (cell on/off + layer field)
+// without tearing down and rebuilding lane DOM. Use when lane STRUCTURE is unchanged
+// (rand, applyPhoto, pattern recall) to avoid the buildGrid() main-thread stall.
+function refreshGrid(){
+  const wrap = $("grid");
+  const lanes = wrap.querySelectorAll(".lane");
+  if (lanes.length !== state.channels){ buildGrid(); return; }   // structure changed → full rebuild
+  for (let c=0;c<state.channels;c++){
+    const lane = lanes[c];
+    const cells = lane.querySelectorAll(".cells .cell");
+    for (let s=0;s<cells.length;s++) cells[s].classList.toggle("on", !!state.grid[c*state.steps+s]);
+    const gsel = lane.querySelector(".lsel");
+    if (gsel && document.activeElement !== gsel)
+      gsel.value = state.layer[c] && LAYERS[state.layer[c]] ? LAYERS[state.layer[c]].label : "";
   }
 }
 
@@ -1426,7 +2070,7 @@ function reorderChannel(from, to){
   const S = state.steps;
   const move = (a) => { const v = a.splice(from,1)[0]; a.splice(to,0,v); };
   move(state.names); move(state.pitch); move(state.noteLen); move(state.layer); move(state.inst);
-  move(state.adsr); move(state.opacity); move(state.vol); move(state.mute); move(state.solo); move(state.trackFx);
+  move(state.adsr); move(state.opacity); move(state.vol); move(state.mute); move(state.solo); move(state.trackFx); move(state.lock);
   const rows = (buf, Ctor) => { const r=[]; for (let c=0;c<state.channels;c++) r.push(buf.slice(c*S,(c+1)*S)); const v=r.splice(from,1)[0]; r.splice(to,0,v);
     const out = new Ctor(state.channels*S); r.forEach((row,c)=>out.set(row,c*S)); return out; };
   state.grid = rows(state.grid, Uint8Array);
@@ -1452,22 +2096,13 @@ function markPlayhead(step){
 function save(){ try{ localStorage.setItem("photoCutoutSeq1", JSON.stringify({
   steps:state.steps, channels:state.channels, names:state.names, bpm:state.bpm,
   pitch:state.pitch, noteLen:state.noteLen, layer:state.layer, inst:state.inst,
-  adsr:state.adsr, opacity:state.opacity, vol:state.vol, mute:state.mute, solo:state.solo, trackFx:state.trackFx,
+  adsr:state.adsr, opacity:state.opacity, vol:state.vol, mute:state.mute, solo:state.solo, trackFx:state.trackFx, lock:state.lock,
   swing:state.swing, reverb:state.reverb, master:state.master, fx:state.fx, fxFilter, echo:echoLevel,
   activePhoto:state.activePhoto, grid:Array.from(state.grid) })); }catch(e){} }
 function load(){ try{ const d = JSON.parse(localStorage.getItem("photoCutoutSeq1"));
   if(!d) {
-    state.activePhoto = "IMG_0398";
-    const photo = CUTOUT_PHOTOS[0];
-    for (let c = 0; c < state.channels; c++) {
-      if (c < photo.layers.length) {
-        const layerName = photo.layers[c];
-        const cleanName = layerName.replace(/\s+/g, "");
-        state.layer[c] = `${photo.id}#${cleanName}`;
-      } else {
-        state.layer[c] = "";
-      }
-    }
+    state.activePhoto = "";
+    state.layer = Array.from({length: state.channels}, () => "");
     pulses2d = new Float32Array(state.channels*state.steps);
     rise2d = new Float32Array(state.channels*state.steps);
     return;
@@ -1484,50 +2119,79 @@ function load(){ try{ const d = JSON.parse(localStorage.getItem("photoCutoutSeq1
   state.vol = d.vol || Array.from({length:N},()=>1);
   state.mute = d.mute || Array.from({length:N},()=>0);
   state.solo = d.solo || Array.from({length:N},()=>0);
+  state.lock = d.lock || Array.from({length:N},()=>0);
   state.trackFx = d.trackFx || Array.from({length:N},()=>"");
   state.swing = d.swing||0; state.reverb = d.reverb||0; state.master = (d.master!==undefined?d.master:1); state.fx = d.fx||{};
   fxFilter=d.fxFilter||0; echoLevel = (d.echo!==undefined ? d.echo : 0);
-  state.activePhoto = d.activePhoto || "IMG_0398";
+  state.activePhoto = d.activePhoto || "";
   pulses2d = new Float32Array(state.channels*state.steps); rise2d = new Float32Array(state.channels*state.steps); }catch(e){} }
 
 // ---------- transport ----------
 const stepDur = () => 60 / state.bpm / state.stepsPerBeat;
-function playStop(){
+async function playStop(){
   state.playing = !state.playing;
   $("play").textContent = state.playing ? "⏸ pause" : "▶ play";
   if (state.playing){
     initAudio(); if (actx) actx.resume();
-    initMidi();
+    await ensureMidi({silent:true});
     if (fileLoaded && audioEl) audioEl.play().catch(()=>{});
     else state.startTime = performance.now()/1000 - state.playhead*stepDur();
-    nextMidiClockTime = performance.now();
-    if (sendMidiClock) {
-      midiOutputs.forEach(o => { try { o.send([0xFA], nextMidiClockTime); } catch(e){} });
-    }
+    if (midiClockOn) startMidiClock(true);
     startScheduler();
   } else { 
     if (fileLoaded && audioEl) audioEl.pause(); 
-    if (sendMidiClock) {
-      midiOutputs.forEach(o => { try { o.send([0xFC], performance.now()); } catch(e){} });
-    }
+    stopMidiClock(true);
     stopScheduler();
   }
 }
 
 // ---------- controls ----------
 $("play").onclick = playStop;
-$("toggleMidiNotes").onclick = () => { sendMidiNotes = !sendMidiNotes; $("toggleMidiNotes").classList.toggle("on", sendMidiNotes); };
-$("toggleMidiClock").onclick = () => { sendMidiClock = !sendMidiClock; $("toggleMidiClock").classList.toggle("on", sendMidiClock); };
+$("toggleMidiNotes").onclick = async () => {
+  midiNotesOn = !midiNotesOn;
+  $("toggleMidiNotes").classList.toggle("on", midiNotesOn);
+  if (midiNotesOn) await ensureMidi({silent:true});
+};
+$("toggleMidiClock").onclick = async () => {
+  midiClockOn = !midiClockOn;
+  $("toggleMidiClock").classList.toggle("on", midiClockOn);
+  if (midiClockOn) { await ensureMidi({silent:true}); startMidiClock(true); }
+  else stopMidiClock(true);
+};
 $("clear").onclick = () => {
   if (state.playing) playStop();
   if (fileLoaded && audioEl){ audioEl.pause(); }
-  if (actx) applyMaster(state.master);
   visualQueue = [];
-  state.grid.fill(0); pulses2d.fill(0); rise2d.fill(0); state.lastStep = -1;
-  for (let c=0;c<state.channels;c++){
-    state.layer[c] = ""; state.pitch[c] = 0; state.vol[c] = 1; state.opacity[c] = 1;
-    state.adsr[c] = {...ADSR_DEF}; state.mute[c] = 0; state.solo[c] = 0; state.trackFx[c] = "";
-  }
+  state.grid.fill(0);
+  state.activePhoto = "";
+  state.layer = Array.from({length: state.channels}, () => "");
+  state.pitch = Array.from({length: state.channels}, () => 0);
+  state.vol = Array.from({length: state.channels}, () => 1);
+  state.opacity = Array.from({length: state.channels}, () => 1);
+  state.adsr = Array.from({length: state.channels}, () => ({...ADSR_DEF}));
+  state.mute = Array.from({length: state.channels}, () => 0);
+  state.solo = Array.from({length: state.channels}, () => 0);
+  state.trackFx = Array.from({length: state.channels}, () => "");
+  state.lock = Array.from({length: state.channels}, () => 0);
+  state.fx = {};
+  state.reverb = 0;
+  state.swing = 0;
+  state.master = 1;
+  fxFilter = 0;
+  echoLevel = 0;
+  strobeOn = false;
+  tapeStop = false;
+  tapeFactor = 1;
+  stutterOn = false;
+  pulses2d.fill(0); rise2d.fill(0); state.lastStep = -1;
+  FX_SPEC.forEach(sp => {
+    if (sp.k === "bpm") return;
+    const v = sp.k === "master" ? 1 : 0;
+    if (sp.wired) sp.set(v);
+    if (fxKnobs[sp.k]) fxKnobs[sp.k].set(v);
+  });
+  state.fx = {};
+  ["strobe-btn", "tapestop-btn", "stutter-btn"].forEach(id => { const b = $(id); if (b) b.classList.remove("on"); });
   buildGrid(); save();
 };
 $("add").onclick = () => {
@@ -1537,7 +2201,7 @@ $("add").onclick = () => {
   state.names.push(FULL_NAMES[state.channels] || ("Ch " + (state.channels+1)));
   state.pitch.push(0); state.noteLen.push(0.25); state.layer.push("");
   state.inst.push(INSTRUMENTS[state.channels%8][1]);
-  state.adsr.push({...ADSR_DEF}); state.opacity.push(1); state.vol.push(1); state.mute.push(0); state.solo.push(0); state.trackFx.push("");
+  state.adsr.push({...ADSR_DEF}); state.opacity.push(1); state.vol.push(1); state.mute.push(0); state.solo.push(0); state.trackFx.push(""); state.lock.push(0);
   state.channels++;
   buildGrid(); save();
 };
@@ -1562,7 +2226,9 @@ const FX_SPEC = [
   { k:"master",  label:"VOL",     min:0, max:1.5, def:1, fmt:pct, wired:true, set:v=>{ state.master=v; initAudio(); applyMaster(v); } },
   { k:"tremolo", label:"TREMOLO", min:0, max:1, def:0, fmt:pct, wired:true, set:v=>{ state.fx.tremolo=v; initAudio(); applyTremolo(v); } },
   { k:"trans",   label:"TRANS",   min:-12, max:12, def:0, fmt:v=>Math.round(v), wired:true, set:v=>{ state.fx.trans=Math.round(v); } },
-  { k:"flanger", label:"FLANGER" }, { k:"phaser", label:"PHASER" }, { k:"roll", label:"ROLL" },
+  { k:"flanger", label:"FLANGER", min:0, max:1, def:0, fmt:pct, wired:true, set:v=>{ state.fx.flanger=v; initAudio(); applyFlanger(v); } },
+  { k:"phaser", label:"PHASER", min:0, max:1, def:0, fmt:pct, wired:true, set:v=>{ state.fx.phaser=v; initAudio(); applyPhaser(v); } },
+  { k:"roll", label:"ROLL", min:0, max:1, def:0, fmt:pct, wired:true, set:v=>{ state.fx.roll=v; } },
   { k:"pitch",   label:"PITCH",   min:-12, max:12, def:0, fmt:v=>Math.round(v), wired:true, set:v=>{ state.fx.pitch=Math.round(v); } },
   { k:"spiral",  label:"SPIRAL",  min:0, max:1, def:0, fmt:pct, wired:true, set:v=>{ state.fx.spiral=v; } },
   { k:"distort", label:"DISTORT", min:0, max:1, def:0, fmt:pct, wired:true, set:v=>{ state.fx.distort=v; initAudio(); applyDistort(v); } },
@@ -1598,27 +2264,21 @@ FX_SPEC.forEach(sp => {
   }
 });
 
-// Random pattern generator — also randomizes visual layers
+function randomChoice(items){ return items[Math.floor(Math.random() * items.length)]; }
+
+// Random pattern generator - changes step pattern and visual layers only.
 $("rand").onclick = () => {
   const dens = [0.5,0.25,0.4,0.2,0.6,0.3,0.5,0.3];
-  // Collect all available cutout layer IDs
-  const allLayerIds = [];
-  CUTOUT_PHOTOS.forEach(photo => {
-    photo.layers.forEach(layerName => {
-      const cleanName = layerName.replace(/\s+/g, "");
-      allLayerIds.push(`${photo.id}#${cleanName}`);
-    });
-  });
+  const allLayerIds = Object.keys(LAYERS).filter(id => id !== "__clear__");
   for (let c=0;c<state.channels;c++){
+    if (state.lock[c]) continue;
     const d = dens[c%8];
     for (let s=0;s<state.steps;s++){
       const beat = (s % state.stepsPerBeat) === 0;
       state.grid[c*state.steps+s] = (Math.random() < d*(beat?1.5:0.6)) ? 1 : 0;
     }
-    state.opacity[c] = (0.7 + Math.random()*0.3);
-    // Randomize cutout layer assignment
     if (allLayerIds.length > 0) {
-      const randomId = allLayerIds[Math.floor(Math.random() * allLayerIds.length)];
+      const randomId = randomChoice(allLayerIds);
       state.layer[c] = randomId;
       compileLayer(randomId);
     }
@@ -1631,6 +2291,7 @@ function applyPhoto(photoId) {
   if (!photo) return;
   state.activePhoto = photoId;
   for (let c = 0; c < state.channels; c++) {
+    if (state.lock[c]) continue;
     if (c < photo.layers.length) {
       const layerName = photo.layers[c];
       const cleanName = layerName.replace(/\s+/g, "");
@@ -1641,29 +2302,38 @@ function applyPhoto(photoId) {
       state.layer[c] = "";
     }
   }
-  buildGrid();
+  refreshGrid();
   save();
 }
 
-function patSlot(slot, recall){
-  const key = "photoCutoutSeqPat_" + slot, btn = $("pat"+slot);
-  if (recall){
-    const d = localStorage.getItem(key); if (!d) return;
-    try { const o = JSON.parse(d);
-      if (o.steps !== state.steps){ state.steps=o.steps; $("steps").value=String(o.steps); pulses2d=new Float32Array(state.channels*o.steps); rise2d=new Float32Array(state.channels*o.steps); }
-      state.grid = Uint8Array.from(o.grid); state.lastStep=-1; buildGrid(); save();
-    } catch(e){}
-  } else {
-    localStorage.setItem(key, JSON.stringify({ steps:state.steps, grid:Array.from(state.grid) }));
-    btn.classList.add("on"); setTimeout(()=>btn.classList.remove("on"), 300);
-  }
+const bankKey = (slot) => "photoCutoutSeqPat_" + slot;
+function bankSave(slot){
+  const btn = $("bank" + slot);
+  localStorage.setItem(bankKey(slot), JSON.stringify({ steps:state.steps, grid:Array.from(state.grid) }));
+  if (btn){ btn.classList.add("filled", "on"); setTimeout(()=>btn.classList.remove("on"), 300); }
 }
+function bankLoad(slot){
+  const d = localStorage.getItem(bankKey(slot)); if (!d) return;
+  try { const o = JSON.parse(d);
+    const stepsChanged = o.steps !== state.steps;
+    if (stepsChanged){ state.steps=o.steps; $("steps").value=String(o.steps); pulses2d=new Float32Array(state.channels*o.steps); rise2d=new Float32Array(state.channels*o.steps); }
+    state.grid = Uint8Array.from(o.grid); state.lastStep=-1;
+    if (stepsChanged) buildGrid(); else refreshGrid();   // steps changed = structural rebuild; else cheap refresh
+    save();
+  } catch(e){}
+}
+function bankClear(slot){
+  localStorage.removeItem(bankKey(slot));
+  const btn = $("bank" + slot); if (btn) btn.classList.remove("filled", "on");
+}
+// Smart click: empty bank → SAVE current pattern; filled bank → LOAD it; right-click → clear.
 ["A", "B", "C", "D"].forEach(slot => {
   const btn = $("bank" + slot);
-  if (btn) {
-    btn.onclick = () => patSlot(slot, true);
-    btn.ondblclick = () => patSlot(slot, false);
-  }
+  if (!btn) return;
+  if (localStorage.getItem(bankKey(slot))) btn.classList.add("filled");   // reflect stored state on boot
+  btn.title = "empty: click to SAVE · filled: click to LOAD · right-click to clear";
+  btn.onclick = () => { if (localStorage.getItem(bankKey(slot))) bankLoad(slot); else bankSave(slot); };
+  btn.oncontextmenu = (e) => { e.preventDefault(); bankClear(slot); };
 });
 
 // output second screen
@@ -1673,7 +2343,7 @@ async function openOutput(){
   const feat = scr ? `left=${scr.availLeft},top=${scr.availTop},width=${scr.availWidth},height=${scr.availHeight}` : "width=960,height=540";
   const w = window.open("", "vjout", feat);
   if (!w){ alert("Popup blocked — allow popups to use output."); return; }
-  w.document.write('<!doctype html><title>VJ Output</title><style>html,body{margin:0;background:#000;overflow:hidden}video{width:100vw;height:100vh;object-fit:contain;background:#000}</style><video id=v autoplay muted playsinline></video>');
+  w.document.write('<!doctype html><title>VJ Output</title><style>html,body{margin:0;background:#000;overflow:hidden}video{width:100vw;height:100vh;object-fit:fill;background:#000}</style><video id=v autoplay muted playsinline></video>');
   w.document.close();
   if (!canvas.captureStream){ alert("captureStream unsupported in this browser."); return; }
   const v = w.document.getElementById("v"); v.srcObject = canvas.captureStream(60);
@@ -1690,97 +2360,250 @@ addEventListener("keydown", (e) => {
 
 // ---------- active channel and selection scroll helpers ----------
 let activeChannelIndex = 0;
+let previewLayerId = "";
+
+const isCutout = (id) => id && id.startsWith("IMG_");
+
+// Show a layer in the green preview panel. Photo cutouts show their PNG; GLSL/pattern layers
+// have no image, so show placeholder text instead of a broken <img>.
+function showLayerPreview(layerId) {
+  previewLayerId = layerId || "";
+  const img = $("cutout-preview-img"), cv = $("previewCanvas"), placeholder = $("cutout-preview-placeholder");
+  if (!img || !cv || !placeholder) return;
+  const L = layerId && LAYERS[layerId];
+  const url = L && (L.url || (L.fileBase && isCutout(L.id) ? `cutouts/${L.fileBase}/${L.name.replace(/\s+/g, "")}.png` : null));
+  if (url) {
+    img.src = url; img.style.display = "block"; cv.style.display = "none"; placeholder.style.display = "none";
+  } else if (L && (L.builtin || L.externalHtml || (window.FILE_GLOBALS && window.FILE_GLOBALS[L.fileBase]))) {
+    img.style.display = "none"; cv.style.display = "block"; placeholder.style.display = "none"; placeholder.textContent = "";
+  } else {
+    img.style.display = "none"; cv.style.display = "none"; placeholder.style.display = "block";
+    placeholder.textContent = L ? (L.label + " — no preview") : "Select a Layer";
+  }
+  document.querySelectorAll(".scroll-layer-item").forEach(el => el.classList.toggle("active", el.dataset.layerId === layerId));
+}
+
+// Assign a layer id to the active channel and sync its lane input.
+function assignActiveLayer(id) {
+  const i = activeChannelIndex;
+  if (i < 0 || i >= state.channels) return;
+  state.layer[i] = id; compileLayer(id);
+  const gsel = document.querySelector(`.lane[data-c="${i}"] .lsel`);
+  if (gsel) gsel.value = LAYERS[id] ? LAYERS[id].label : "";
+  save();
+}
 
 function setActiveChannel(idx) {
   activeChannelIndex = idx;
   document.querySelectorAll(".lane").forEach((lane, i) => {
     lane.classList.toggle("active-lane", i === idx);
   });
-  
-  // Update the green preview to show the active lane's layer if it exists!
   const layerId = state.layer[idx];
-  const img = $("cutout-preview-img");
-  const placeholder = $("cutout-preview-placeholder");
   if (layerId && LAYERS[layerId]) {
-    const L = LAYERS[layerId];
-    if (img && placeholder) {
-      img.src = L.url || `cutouts/${L.fileBase}/${L.name.replace(/\s+/g, "")}.png`;
-      img.style.display = "block";
-      placeholder.style.display = "none";
-    }
-    // Also highlight in the list
-    document.querySelectorAll(".scroll-layer-item").forEach(el => {
-      el.classList.toggle("active", el.dataset.layerId === layerId);
-    });
+    showLayerPreview(layerId);
   } else {
-    if (img && placeholder) {
+    const img = $("cutout-preview-img"), cv = $("previewCanvas"), placeholder = $("cutout-preview-placeholder");
+    if (img && cv && placeholder) {
       img.style.display = "none";
+      cv.style.display = "none";
       placeholder.style.display = "block";
       placeholder.textContent = `Lane ${idx + 1} (No Cutout Layer)`;
     }
+    previewLayerId = "";
     document.querySelectorAll(".scroll-layer-item").forEach(el => el.classList.remove("active"));
   }
 }
 
+let prevGL = null, prevQuad = null;
+const prevProgs = {};
+function previewCompile(id) {
+  if (prevProgs[id] !== undefined) return prevProgs[id];
+  const L = LAYERS[id];
+  const g = prevGL;
+  let frag = null;
+  if (L && L.builtin) {
+    const el = document.getElementById("layer-" + L.builtin);
+    if (el) frag = PATTERN_HEADER + "\n" + el.textContent;
+  } else if (L && L.externalHtml) {
+    prevProgs[id] = "pending";
+    fetch(L.externalHtml).then(r => r.text()).then(html => {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, "text/html");
+      const fragScript = doc.getElementById("fragment-shader") || doc.querySelector("script[type='x-shader/x-fragment']");
+      if (!fragScript) return;
+      let src = fragScript.textContent;
+      if (!src.includes("void main")) src = PATTERN_HEADER + "\n" + src;
+      const v = g.createShader(g.VERTEX_SHADER); g.shaderSource(v, VERT); g.compileShader(v);
+      const f = g.createShader(g.FRAGMENT_SHADER); g.shaderSource(f, src); g.compileShader(f);
+      if (!g.getShaderParameter(f, g.COMPILE_STATUS)) return;
+      const p = g.createProgram(); g.attachShader(p, v); g.attachShader(p, f); g.linkProgram(p);
+      prevProgs[id] = g.getProgramParameter(p, g.LINK_STATUS) ? p : null;
+    }).catch(() => { prevProgs[id] = null; });
+    return "pending";
+  } else if (L) {
+    const src = window.FILE_GLOBALS && window.FILE_GLOBALS[L.fileBase];
+    if (src && L.fn) {
+      frag = LAYER_HEADER + "\n" + src + `\nvoid main(){ vec2 uv = gl_FragCoord.xy / iResolution.xy; vec4 c = ${L.fn}(uv); gl_FragColor = c; }`;
+    }
+  }
+  if (!frag) return prevProgs[id] = null;
+  
+  try {
+    const v = g.createShader(g.VERTEX_SHADER); g.shaderSource(v, VERT); g.compileShader(v);
+    const f = g.createShader(g.FRAGMENT_SHADER); g.shaderSource(f, frag); g.compileShader(f);
+    if (!g.getShaderParameter(f, g.COMPILE_STATUS)) { console.error("preview shader compilation failed", g.getShaderInfoLog(f)); return prevProgs[id] = null; }
+    const p = g.createProgram(); g.attachShader(p, v); g.attachShader(p, f); g.linkProgram(p);
+    return prevProgs[id] = g.getProgramParameter(p, g.LINK_STATUS) ? p : null;
+  } catch (e) {
+    console.error("preview shader compilation error", e);
+    return prevProgs[id] = null;
+  }
+}
+
+function renderPreview(now) {
+  const cv = $("previewCanvas"), img = $("cutout-preview-img"), placeholder = $("cutout-preview-placeholder");
+  if (!cv) return;
+  const id = previewLayerId || state.layer[activeChannelIndex];
+  const L = id && LAYERS[id];
+  const imageUrl = L && L.url;
+  const isGlsl = L && !imageUrl && (L.builtin || L.externalHtml || (window.FILE_GLOBALS && window.FILE_GLOBALS[L.fileBase]));
+  
+  if (imageUrl) {
+    if (img) { if (img.src !== new URL(imageUrl, location.href).href) img.src = imageUrl; img.style.display = "block"; }
+    cv.style.display = "none";
+    if (placeholder) { placeholder.style.display = "none"; placeholder.textContent = ""; }
+    return;
+  }
+  if (!id || !isGlsl) {
+    cv.style.display = "none";
+    if (img) img.style.display = "none";
+    if (placeholder) { placeholder.style.display = "block"; placeholder.textContent = L ? (L.label + " � no preview") : "Select a Layer"; }
+    return;
+  }
+  
+  cv.style.display = "block";
+  if (img) img.style.display = "none";
+  if (placeholder) { placeholder.style.display = "none"; placeholder.textContent = ""; }
+  if (!prevGL) {
+    prevGL = cv.getContext("webgl", { premultipliedAlpha: false, alpha: true });
+    if (!prevGL) return;
+    prevQuad = prevGL.createBuffer();
+    prevGL.bindBuffer(prevGL.ARRAY_BUFFER, prevQuad);
+    prevGL.bufferData(prevGL.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), prevGL.STATIC_DRAW);
+  }
+  
+  const prog = previewCompile(id);
+  if (prog === "pending") {
+    return;
+  }
+  if (!prog) {
+    cv.style.display = "none";
+    if (placeholder) {
+      placeholder.style.display = "block";
+      placeholder.textContent = L.label + " (Compile Error)";
+    }
+    return;
+  }
+  
+  const g = prevGL;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const w = Math.max(16, Math.round((cv.clientWidth || 320) * dpr)), h = Math.max(16, Math.round((cv.clientHeight || 180) * dpr));
+  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+  
+  g.viewport(0, 0, cv.width, cv.height);
+  g.clearColor(0, 0, 0, 0);
+  g.clear(g.COLOR_BUFFER_BIT);
+  
+  g.useProgram(prog);
+  g.bindBuffer(g.ARRAY_BUFFER, prevQuad);
+  const lp = g.getAttribLocation(prog, "position");
+  g.enableVertexAttribArray(lp);
+  g.vertexAttribPointer(lp, 2, g.FLOAT, false, 0, 0);
+  
+  g.uniform2f(g.getUniformLocation(prog, "iResolution"), cv.width, cv.height);
+  g.uniform1f(g.getUniformLocation(prog, "iTime"), now);
+  ["iBass", "iMid", "iTreble", "iLevel", "iBeat"].forEach(u => {
+    const l = g.getUniformLocation(prog, u);
+    if (l) g.uniform1f(l, 0.0);
+  });
+  g.drawArrays(g.TRIANGLES, 0, 3);
+}
+
+function wireLayerListItem(item, id) {
+  item.onclick = () => showLayerPreview(id);
+  item.draggable = true;
+  item.addEventListener("dragstart", e => {
+    e.dataTransfer.effectAllowed = "copy";
+    e.dataTransfer.setData("text/layer", id);
+    e.dataTransfer.setData("text/plain", id);
+    showLayerPreview(id);
+  });
+}
 function buildScrollSelectionList() {
   const list = $("scrollList");
   if (!list) return;
   list.innerHTML = "";
-  
-  CUTOUT_PHOTOS.forEach(photo => {
-    const group = document.createElement("div");
-    group.className = "scroll-photo-group";
-    
-    const header = document.createElement("div");
-    header.className = "scroll-photo-header";
-    header.textContent = `${photo.id} (${photo.layers.length})`;
+  const photosTab = $("tabPhotos");
+  const shadersTab = $("tabShaders");
+  if (photosTab) photosTab.classList.toggle("on", activeLayerTab === "photos");
+  if (shadersTab) shadersTab.classList.toggle("on", activeLayerTab === "shaders");
+
+  const appendGroup = (title, ids, itemLabel, itemTitle) => {
+    if (!ids.length) return;
+    const group = document.createElement("div"); group.className = "scroll-photo-group";
+    const header = document.createElement("div"); header.className = "scroll-photo-header";
+    header.textContent = title;
     group.appendChild(header);
-    
-    photo.layers.forEach(layerName => {
-      const cleanName = layerName.replace(/\s+/g, "");
-      const id = `${photo.id}#${cleanName}`;
-      const item = document.createElement("div");
-      item.className = "scroll-layer-item";
-      item.textContent = layerName;
+    ids.forEach(id => {
+      if (!LAYERS[id]) return;
+      const item = document.createElement("div"); item.className = "scroll-layer-item";
+      item.textContent = itemLabel ? itemLabel(id) : LAYERS[id].label;
       item.dataset.layerId = id;
-      item.title = `Click to preview/select layer`;
-      
-      item.onclick = () => {
-        // Highlight in the scroll list
-        document.querySelectorAll(".scroll-layer-item").forEach(el => el.classList.remove("active"));
-        item.classList.add("active");
-        
-        // Update Cutout Layer Preview (Green panel)
-        const img = $("cutout-preview-img");
-        const placeholder = $("cutout-preview-placeholder");
-        if (img && placeholder) {
-          const url = `cutouts/${photo.id}/${cleanName}.png`;
-          img.src = url;
-          img.style.display = "block";
-          placeholder.style.display = "none";
-        }
-        
-        // Also assign to active channel!
-        const activeIdx = activeChannelIndex;
-        if (activeIdx !== -1 && activeIdx < state.channels) {
-          state.layer[activeIdx] = id;
-          compileLayer(id);
-          // Update the select/input element for this channel in the grid
-          const gsel = document.querySelector(`.lane[data-c="${activeIdx}"] .lsel`);
-          if (gsel) {
-            gsel.value = LAYERS[id] ? LAYERS[id].label : "";
-          }
-          save();
-        }
-      };
-      
+      item.title = itemTitle || "Click to preview layer";
+      wireLayerListItem(item, id);
       group.appendChild(item);
     });
-    
     list.appendChild(group);
+  };
+
+  if (activeLayerTab === "photos") {
+    CUTOUT_PHOTOS.forEach(photo => {
+      const ids = photo.layers
+        .map(layerName => `${photo.id}#${layerName.replace(/\s+/g, "")}`)
+        .filter(id => !!LAYERS[id]);
+      appendGroup(`${photo.id} (${ids.length})`, ids, (id) => {
+        const clean = id.split("#")[1] || id;
+        const layer = photo.layers.find(name => name.replace(/\s+/g, "") === clean);
+        return layer || clean;
+      }, "Click to preview cutout; drag to a track layer");
+    });
+    if (!list.children.length) {
+      const empty = document.createElement("div"); empty.className = "scroll-layer-item"; empty.textContent = "No photo cutouts loaded"; list.appendChild(empty);
+    }
+    return;
+  }
+
+  const patIds = Object.keys(LAYERS).filter(id => id.startsWith("pat:")).sort();
+  appendGroup(`BUILT-IN PATTERNS (${patIds.length})`, patIds, id => LAYERS[id].label, "Click to preview pattern; drag to a track layer");
+
+  const glslIds = Object.keys(LAYERS).filter(id => id.startsWith("glsl:")).sort();
+  appendGroup(`EXTERNAL SHADERS (${glslIds.length})`, glslIds, id => LAYERS[id].label, "Click to preview shader; drag to a track layer");
+
+  const CAT = window.LAYER_CATEGORY || {};
+  const groups = { background: [], patterns: [], objects: [], misc: [] };
+  Object.keys(LAYERS).forEach(id => {
+    if (id.includes("#") && !isCutout(id)) {
+      const cleanId = id.startsWith("glsl_obj:") ? id.substring(9) : id;
+      const cat = CAT[cleanId] || "misc";
+      (groups[cat] || groups.misc).push(id);
+    }
+  });
+
+  [["background","BACKGROUND"],["patterns","PATTERNS"],["objects","OBJECTS"],["misc","MISC"]].forEach(([k, lab]) => {
+    const ids = groups[k].sort();
+    appendGroup(`${lab} (${ids.length})`, ids, id => LAYERS[id].label, "Click to preview shader layer; drag to a track layer");
   });
 }
-
 function updateBpmFaderUI(val) {
   const min = 60, max = 200;
   const pct = (val - min) / (max - min);
@@ -1796,26 +2619,13 @@ function updateBpmFaderUI(val) {
 load();
 $("steps").value = String(state.steps);
 
-// Setup photo select dropdown options
-const psel = $("photoSelect");
-if (psel) {
-  CUTOUT_PHOTOS.forEach(photo => {
-    const opt = document.createElement("option");
-    opt.value = photo.id;
-    opt.textContent = photo.id + " (" + photo.layers.length + " layers)";
-    if (state.activePhoto === photo.id) opt.selected = true;
-    psel.appendChild(opt);
-  });
-  psel.onchange = () => {
-    applyPhoto(psel.value);
-    setActiveChannel(activeChannelIndex); // Update preview for selected lane
-  };
-}
-
 initTextureProgram();
 
 loadLayersManifest().then(() => {
   state.layer.forEach((id) => compileLayer(id));
+  const tabPhotos = $("tabPhotos"), tabShaders = $("tabShaders");
+  if (tabPhotos) tabPhotos.onclick = () => { activeLayerTab = "photos"; buildScrollSelectionList(); };
+  if (tabShaders) tabShaders.onclick = () => { activeLayerTab = "shaders"; buildScrollSelectionList(); };
   buildScrollSelectionList();
   buildGrid();
   
@@ -1906,17 +2716,34 @@ let lastT = performance.now()/1000;
 let lastTickTimePerf = performance.now();
 let lastTickTimeAudio = 0;
 let visualQueue = [];
-let schedulerTimer = null;
+
+const workerBlob = new Blob([`
+  let interval;
+  self.onmessage = function(e) {
+    if (e.data === 'start') {
+      interval = setInterval(() => self.postMessage('tick'), 25);
+    } else if (e.data === 'stop') {
+      clearInterval(interval);
+    }
+  };
+`], {type: 'application/javascript'});
+const timerWorker = new Worker(URL.createObjectURL(workerBlob));
 
 function startScheduler() {
-    if (schedulerTimer) clearInterval(schedulerTimer);
     lastTickTimePerf = performance.now();
     lastTickTimeAudio = actx ? actx.currentTime : 0;
-    schedulerTimer = setInterval(schedulerTick, 25);
+    timerWorker.onmessage = () => {
+        schedulerTick();
+        if (document.hidden || (performance.now() - lastT*1000) > 100) {
+            if (typeof rafId !== 'undefined') cancelAnimationFrame(rafId);
+            loop();
+        }
+    };
+    timerWorker.postMessage('start');
 }
 
 function stopScheduler() {
-    if (schedulerTimer) { clearInterval(schedulerTimer); schedulerTimer = null; }
+    timerWorker.postMessage('stop');
     visualQueue = [];
 }
 
@@ -1952,12 +2779,12 @@ function schedulerTick() {
     const stepBoundary = (n) => {
         const base = Math.floor(n);
         const frac = n - base;
-        const off = (base % 2 === 1) ? state.swing * 0.5 : 0.0;
+        const off = (base % 2 === 1) ? state.swing * 0.75 : 0.0;
         return base + off;
     };
 
     const startIdx = Math.floor(prevAccum);
-    const endIdx = Math.floor(playAccum) + 1;
+    const endIdx = Math.floor(playAccum) + 2; // +2 to never miss boundary at wrap
 
     for (let i = startIdx; i <= endIdx; i++) {
         const b = stepBoundary(i);
@@ -1965,13 +2792,15 @@ function schedulerTick() {
             let fraction = (playAccum - prevAccum) > 0 ? (b - prevAccum) / (playAccum - prevAccum) : 1.0;
             fraction = Math.max(0, Math.min(1, fraction));
             
-            const schedPerf = nowPerf - (dt * 1000) + (fraction * dt * 1000) + 50;
-            const schedAudio = nowAudio - dt + (fraction * dt) + 0.050;
+            const schedPerf = nowPerf - (dt * 1000) + (fraction * dt * 1000);
+            const schedMidi = schedPerf + 5;   // tiny 5ms lookahead for MIDI (tight)
+            const schedAudio = nowAudio - dt + (fraction * dt) + 0.050; // 50ms lookahead for Web Audio
 
-            const stepIndex = i % state.steps;
+            const stepIndex = ((i % state.steps) + state.steps) % state.steps;
             let stepToPlay = stepIndex;
-            if (stutterOn) {
-                const sz = gateSteps(state.fx.stutter !== undefined ? state.fx.stutter : 0.25);
+            const sliceValue = state.fx.stutter || 0;
+            if (sliceValue > 0.02) {
+                const sz = gateSteps(sliceValue);
                 stepToPlay = stutterAnchor + (((stepIndex - stutterAnchor) % sz) + sz) % sz;
             }
 
@@ -1987,7 +2816,7 @@ function schedulerTick() {
                     const on = fills[c % 4];
                     if (on) {
                         activeChannels.push(c);
-                        if (sendMidiNotes) fireMidi(c, schedPerf);
+                        midiNote(c, schedMidi);
                     }
                 }
             } else {
@@ -1995,30 +2824,29 @@ function schedulerTick() {
                     if (state.grid[c * state.steps + stepToPlay]) {
                         activeChannels.push(c);
                         blip(c, schedAudio);
-                        if (sendMidiNotes) fireMidi(c, schedPerf);
+                        const sliceAmt = state.fx.stutter || 0;
+                        if (sliceAmt > 0.02) {
+                          const repeats = Math.min(8, 2 + Math.round(sliceAmt * 8));
+                          const gap = Math.max(0.018, stepDur() / repeats);
+                          for (let r=1; r<repeats; r++) blip(c, schedAudio + gap * r, true);
+                        }
+                        midiNote(c, schedMidi);
                     }
                 }
             }
-            visualQueue.push({ step: stepToPlay, time: schedPerf, channels: activeChannels, isFile: fileLoaded });
+            visualQueue.push({ step: stepToPlay, time: schedPerf + 50, channels: activeChannels, isFile: fileLoaded });
         }
     }
 
-    // MIDI Clock scheduling
-    if (sendMidiClock && tapeFactor > 0.01) {
-        const tickDurMs = (60000 / state.bpm / 24) / tapeFactor;
-        if (nextMidiClockTime < nowPerf - 250) nextMidiClockTime = nowPerf;
-        while (nextMidiClockTime < nowPerf + 50) {
-            const t = nextMidiClockTime;
-            midiOutputs.forEach(o => { try { o.send([0xF8], t); } catch(e){} });
-            nextMidiClockTime += tickDurMs;
-        }
-    }
+    // MIDI Clock scheduling is now handled by setInterval in startMidiClock
 }
 
-(function loop(){
+let rafId;
+function loop(){
   const now = performance.now();
   const dt = Math.min(0.25, (now/1000) - lastT); lastT = now/1000;
-  
+  processLayerUploads();   // upload at most one freshly-decoded layer texture this frame
+
   while (visualQueue.length > 0 && visualQueue[0].time <= now) {
       const q = visualQueue.shift();
       if (q.isFile) {
@@ -2058,14 +2886,17 @@ function schedulerTick() {
 
   // render at full HD (CSS scales it into the panel; 2nd-screen output stays sharp)
   if (canvas.width !== 1920 || canvas.height !== 1080){ canvas.width = 1920; canvas.height = 1080; }
-  renderLayers(now);
+  ensureFeedbackTexture();
+  const nowSec = now / 1000;
+  renderLayers(nowSec);
+  renderPreview(nowSec);
 
   gl.viewport(0,0,canvas.width,canvas.height);
   gl.useProgram(prog);
   const pos = gl.getAttribLocation(prog, "position");
   gl.bindBuffer(gl.ARRAY_BUFFER, quad); gl.enableVertexAttribArray(pos); gl.vertexAttribPointer(pos,2,gl.FLOAT,false,0,0);
   gl.uniform2f(U("iResolution"), canvas.width, canvas.height);
-  gl.uniform1f(U("iTime"), now);
+  gl.uniform1f(U("iTime"), nowSec);
   gl.uniform1f(U("uBass"), bands.bass);
   gl.uniform1f(U("uMid"), bands.mid);
   gl.uniform1f(U("uTreble"), bands.treble);
@@ -2075,10 +2906,31 @@ function schedulerTick() {
   gl.uniform1f(U("uStrobe"), strobeOn ? 1.0 : 0.0);
   gl.uniform1f(U("uSpiral"), state.fx.spiral || 0.0);
   // Visual FX uniforms
-  gl.uniform1f(U("uDistortVis"), state.fx.distort || 0.0);
-  gl.uniform1f(U("uFilterVis"), fxFilter || 0.0);
-  gl.uniform1f(U("uTremoloVis"), state.fx.tremolo || 0.0);
-  gl.uniform1f(U("uDelayVis"), echoLevel || 0.0);
+  const trackFxPulse = (key) => { let m = 0; for (let c=0; c<state.channels; c++) if (state.trackFx[c] === key) m = Math.max(m, energy(c)); return m; };
+  const fxVis = (key, base) => Math.min(1.0, Math.max(0.0, (base || 0) + trackFxPulse(key) * Math.max(0.35, base || 0)));
+  const trackLayerFx = (c, key, base) => {
+    const pulse = state.trackFx[c] === key ? energy(c) : 0;
+    return Math.min(1.0, Math.max(0.0, (base || 0) + pulse * Math.max(0.35, Math.abs(base || 0))));
+  };
+  for (let c=0; c<8; c++) {
+    const pitchTotalLayer = (state.fx.pitch || 0) + (state.fx.trans || 0) + (state.pitch[c] || 0) + ((state.trackFx[c] === "pitch" || state.trackFx[c] === "trans") ? (energy(c) * 12) : 0);
+    gl.uniform1f(U(`uLayerOffset[${c}].x`), layerOffsetX[c]);
+    gl.uniform1f(U(`uLayerOffset[${c}].y`), layerOffsetY[c]);
+    gl.uniform1f(U(`uLayerScale[${c}]`), layerScale[c]);
+    gl.uniform1f(U(`uLayerRot[${c}]`), layerRotation[c]);
+    gl.uniform1f(U(`uLayerPitchVis[${c}]`), Math.min(1.0, Math.abs(pitchTotalLayer) / 12.0));
+    gl.uniform1f(U(`uLayerPitchWarp[${c}]`), Math.max(-1.0, Math.min(1.0, pitchTotalLayer / 12.0)));
+    gl.uniform1f(U(`uLayerFlangerVis[${c}]`), trackLayerFx(c, "flanger", state.fx.flanger || 0.0));
+    gl.uniform1f(U(`uLayerPhaserVis[${c}]`), trackLayerFx(c, "phaser", state.fx.phaser || 0.0));
+  }
+  gl.uniform1f(U("uSpiral"), state.fx.spiral || 0.0);
+  gl.uniform1f(U("uDistortVis"), fxVis("distort", state.fx.distort || 0.0));
+  gl.uniform1f(U("uFilterVis"), Math.max(-1.0, Math.min(1.0, (fxFilter || 0.0) + trackFxPulse("filter") * (fxFilter || 0.5))));
+  gl.uniform1f(U("uTremoloVis"), fxVis("tremolo", state.fx.tremolo || 0.0));
+  gl.uniform1f(U("uDelayVis"), fxVis("delay", echoLevel || 0.0));
+  gl.uniform1f(U("uRollVis"), fxVis("roll", state.fx.roll || 0.0));
+  gl.uniform1f(U("uReverbVis"), fxVis("reverb", state.reverb || 0.0));
+  gl.uniform3f(U("uEqVis"), state.fx.lo || 0.0, state.fx.mid || 0.0, state.fx.hi || 0.0);
   // Gate visual: compute whether current beat is gated off
   const gateVal = state.fx.gate || 0;
   let gateVisVal = 0.0;
@@ -2090,15 +2942,19 @@ function schedulerTick() {
   gl.uniform1f(U("uGateVis"), gateVisVal);
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, pulseTex); gl.uniform1i(U("uPulseTex"), 0);
   gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, atlasTex); gl.uniform1i(U("uAtlas"), 1);
+  gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, feedbackTex); gl.uniform1i(U("uFeedback"), 2);
   for (let c=0;c<8;c++){
     gl.uniform1f(U("uHasLayer[" + c + "]"), (c < state.channels && layerReady(c)) ? 1.0 : 0.0);
-    gl.uniform1f(U("uVis[" + c + "]"), (c < state.channels && visible(c)) ? 1.0 : 0.0);
+    gl.uniform1f(U("uVis[" + c + "]"), (c < state.channels && visible(c) && layerReady(c)) ? 1.0 : 0.0);
     gl.uniform1f(U("uOpacity[" + c + "]"), (c < state.channels) ? (state.opacity[c] !== undefined ? state.opacity[c] : 1.0) : 1.0);
     gl.uniform1f(U("uPulse[" + c + "]"), (c < state.channels) ? energy(c) : 0.0);
   }
   gl.drawArrays(gl.TRIANGLES, 0, 6);
-  requestAnimationFrame(loop);
-})();
+  gl.bindTexture(gl.TEXTURE_2D, feedbackTex);
+  gl.copyTexSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 0, 0, feedbackW, feedbackH);
+  rafId = requestAnimationFrame(loop);
+}
+loop();
 </script>
 </body>
 </html>
